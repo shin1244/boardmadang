@@ -49,10 +49,18 @@ type payload struct {
 	IssuedAt int64  `json:"iat"`
 }
 
+// Members는 계정 저장소입니다 (internal/account). 토큰을 확인할 때 계정 이름을 읽고, 없는 계정은 거절합니다.
+type Members interface {
+	Name(id string) (string, bool)
+}
+
 // Issuer는 세션 토큰을 발급하고 확인합니다.
 type Issuer struct {
 	secret []byte
 	now    func() time.Time // 테스트에서 시간을 바꾸려고 둡니다
+
+	// Members가 없으면 계정 토큰은 모두 거절합니다 (로그인을 켜지 않은 서버).
+	Members Members
 }
 
 func NewIssuer(secret []byte) *Issuer {
@@ -112,14 +120,29 @@ func (is *Issuer) Verify(token string) (User, bool) {
 	if now.Sub(issued) > MaxAge || issued.Sub(now) > clockSkew {
 		return User{}, false
 	}
+	u := User{ID: p.ID, Kind: p.Kind, Tag: tagOf(p.ID)}
 	switch {
 	case p.Kind == KindGuest && strings.HasPrefix(p.ID, "g_"):
 	case p.Kind == KindMember && strings.HasPrefix(p.ID, "m_"):
-		// TODO: 로그인을 붙이면 저장소에서 이름을 읽고, 탈퇴·강제 만료된 계정은 거절합니다.
+		// 이름은 토큰에 넣지 않고 저장소에서 읽습니다. 저장소에 없는 계정(지워진 계정)은 거절합니다.
+		// TODO: 탈퇴·강제 만료 (계정마다 "이 시각 이전 토큰은 거절"을 두기)
+		if is.Members == nil {
+			return User{}, false
+		}
+		name, ok := is.Members.Name(p.ID)
+		if !ok {
+			return User{}, false
+		}
+		u.Name = name
 	default:
 		return User{}, false
 	}
-	return User{ID: p.ID, Kind: p.Kind, Tag: tagOf(p.ID)}, true
+	return u, true
+}
+
+// Member는 계정 id와 이름으로 User를 만듭니다. 로그인한 직후 쿠키를 발급할 때 씁니다.
+func Member(id, name string) User {
+	return User{ID: id, Kind: KindMember, Name: name, Tag: tagOf(id)}
 }
 
 // FromRequest는 요청의 세션 쿠키에서 신원을 읽습니다.
@@ -139,13 +162,27 @@ func (is *Issuer) SetCookie(w http.ResponseWriter, r *http.Request, u User) {
 		Path:     "/",
 		MaxAge:   int(MaxAge / time.Second),
 		HttpOnly: true, // 페이지 스크립트(와 그 안의 게임 코드)가 읽지 못하게
-		Secure:   isHTTPS(r),
+		Secure:   IsHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 }
 
+// ClearCookie는 세션 쿠키를 지웁니다 (로그아웃). 다음 /api/me에서 새 게스트가 됩니다.
+func (is *Issuer) ClearCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     CookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   IsHTTPS(r),
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// IsHTTPS는 브라우저가 HTTPS로 왔는지입니다.
 // GCP 부하 분산기 뒤에서는 서버까지 HTTP로 오므로 X-Forwarded-Proto를 봅니다.
-func isHTTPS(r *http.Request) bool {
+func IsHTTPS(r *http.Request) bool {
 	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 }
 

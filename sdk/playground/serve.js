@@ -11,7 +11,9 @@
 // 한 주소에서 로비와 대전을 같이 쓰려는 것입니다. 운영에서는 Go 서버가 전부 맡습니다.
 //   cd server && go run ./cmd/server          → Go 서버를 같이 켜 두면 대전 찾기가 됩니다
 // /api/me 는 Go 서버가 준 게스트 쿠키를 그대로 넘기되, 화면에는 계정으로 보이게 바꿉니다 (등록창을 쓰려고).
-// Go 서버가 꺼져 있으면 가짜 신원만 돌려줍니다.
+// 진짜로 로그인한 계정이면 그대로 보여줍니다. Go 서버가 꺼져 있으면 가짜 신원만 돌려줍니다.
+// 소셜 로그인(/auth/..., /api/auth/providers)도 Go 서버로 넘깁니다. Host를 그대로 넘기므로
+// 돌아올 주소는 http://localhost:5173/auth/<google|github>/callback 입니다 (docs/identity.md).
 //   DEV_AS=guest node sdk/playground/serve.js    → 게스트로 보이게 (등록창이 막히는지 확인)
 
 import crypto from 'node:crypto';
@@ -110,7 +112,7 @@ function proxyMe(req, res) {
         return json(res, 200, DEV_ME);
       }
       if (r.headers['set-cookie']) res.setHeader('Set-Cookie', r.headers['set-cookie']);
-      const shown = DEV_ME.kind === 'member' ? { ...real, kind: 'member', name: DEV_ME.name } : real;
+      const shown = DEV_ME.kind === 'member' && real.kind !== 'member' ? { ...real, kind: 'member', name: DEV_ME.name } : real;
       json(res, 200, shown);
     });
   });
@@ -140,6 +142,26 @@ function proxyGo(req, res, url) {
         fail();
       }
     });
+  });
+  up.on('error', fail);
+  up.on('timeout', () => up.destroy());
+  req.pipe(up);
+}
+
+/**
+ * 소셜 로그인은 응답을 고치지 않고 그대로 넘깁니다 (리다이렉트, 쿠키).
+ * Host를 그대로 보내서 Go 서버가 이 주소(localhost:5173)로 돌아올 주소를 만들게 합니다.
+ * Go 서버가 꺼져 있으면 로그인 방법은 빈 목록(버튼이 "준비 중"), 나머지는 503입니다.
+ */
+function proxyRaw(req, res, url) {
+  const fail = () => (url.pathname === '/api/auth/providers' ? json(res, 200, { providers: [] }) : json(res, 503, { error: 'no game server' }));
+  const headers = { host: req.headers.host ?? '', cookie: req.headers.cookie ?? '' };
+  if (req.headers['sec-fetch-site']) headers['sec-fetch-site'] = req.headers['sec-fetch-site'];
+  const up = http.request(new URL(url.pathname + url.search, GO), { method: req.method, headers, timeout: 15000 }, (r) => {
+    const out = {};
+    for (const h of ['content-type', 'location', 'set-cookie', 'cache-control']) if (r.headers[h]) out[h] = r.headers[h];
+    res.writeHead(r.statusCode, out);
+    r.pipe(res);
   });
   up.on('error', fail);
   up.on('timeout', () => up.destroy());
@@ -239,6 +261,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/games') return json(res, 200, listGames());
   if (url.pathname === '/api/locale') return json(res, 200, detectLocale(req));
   if (url.pathname === '/api/me') return proxyMe(req, res);
+  if (url.pathname === '/api/auth/providers' || url.pathname.startsWith('/auth/')) return proxyRaw(req, res, url);
   if (url.pathname === '/api/rooms' || url.pathname === '/api/live' || /^\/api\/matches(\/[A-Z0-9]+)?$/.test(url.pathname)) return proxyGo(req, res, url);
   if (/^\/api\/games\/[a-z0-9-]+\/comments(\/[A-Z0-9]+)?$/.test(url.pathname) || url.pathname === '/api/reports') return proxyGo(req, res, url);
   const m = url.pathname.match(/^\/api\/games\/([a-z0-9-]+)\/listing$/);

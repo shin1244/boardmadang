@@ -128,3 +128,50 @@ func TestNewIDIsValid(t *testing.T) {
 		seen[id] = true
 	}
 }
+
+func TestAdoptGuest(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := Open(dir)
+	base := time.Now()
+	at := func(m *Match, min int) *Match { m.Ended = base.Add(time.Duration(min) * time.Minute); return m }
+
+	// 계정이 예전에 둔 대국 사이사이에 게스트로 둔 대국이 끼어 있습니다
+	old := at(sample("m_shin", "g_xxx"), 1)
+	g1 := at(sample("g_me", "g_yyy"), 2)
+	mid := at(sample("g_zzz", "m_shin"), 3)
+	g2 := at(sample("g_me", "g_me"), 4) // 혼자 두 자리
+	for _, m := range []*Match{old, g1, mid, g2} {
+		s.Save(m)
+		s.Close()
+	}
+
+	member := Player{ID: "m_shin", Kind: "member", Tag: "0193", Name: "shin"}
+	n, err := s.Adopt("g_me", member)
+	if err != nil || n != 2 {
+		t.Fatalf("Adopt = %d, %v; want 2", n, err)
+	}
+	list, _ := s.ListByUser("m_shin", 10)
+	var got []string
+	for _, m := range list {
+		got = append(got, m.ID)
+	}
+	if want := []string{g2.ID, mid.ID, g1.ID, old.ID}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("member list = %v, want %v", got, want)
+	}
+	if list, _ := s.ListByUser("g_me", 10); len(list) != 0 {
+		t.Errorf("guest still has %d matches", len(list))
+	}
+	m, _ := s.Get(g2.ID)
+	if m.Players[0] != member || m.Players[1] != member {
+		t.Errorf("players not moved: %+v", m.Players)
+	}
+	m, _ = s.Get(g1.ID)
+	if m.Players[0] != member || m.Players[1].ID != "g_yyy" {
+		t.Errorf("only the guest should move: %+v", m.Players)
+	}
+
+	// 두 번 불러도 괜찮습니다
+	if n, err := s.Adopt("g_me", member); n != 0 || err != nil {
+		t.Errorf("second Adopt = %d, %v", n, err)
+	}
+}

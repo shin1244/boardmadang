@@ -137,8 +137,44 @@ func TestSecureCookieBehindHTTPS(t *testing.T) {
 	}
 }
 
+// members는 테스트용 계정 저장소입니다.
+type members map[string]string
+
+func (m members) Name(id string) (string, bool) {
+	name, ok := m[id]
+	return name, ok
+}
+
+func TestMemberNameFromStore(t *testing.T) {
+	is := NewIssuer(secret)
+	token := is.Sign(Member("m_shin", "old"))
+
+	if _, ok := is.Verify(token); ok {
+		t.Error("member accepted without a store")
+	}
+	is.Members = members{"m_shin": "shin"}
+	got, ok := is.Verify(token)
+	if !ok || got != Member("m_shin", "shin") {
+		t.Errorf("Verify = %+v, %v; want name from store", got, ok)
+	}
+	is.Members = members{}
+	if _, ok := is.Verify(token); ok {
+		t.Error("deleted member accepted")
+	}
+}
+
+func TestClearCookie(t *testing.T) {
+	is := NewIssuer(secret)
+	rec := httptest.NewRecorder()
+	is.ClearCookie(rec, httptest.NewRequest("POST", "/auth/logout", nil))
+	if c := rec.Result().Cookies(); len(c) != 1 || c[0].Name != CookieName || c[0].MaxAge >= 0 {
+		t.Fatalf("cookie not cleared: %+v", c)
+	}
+}
+
 func TestRequireMember(t *testing.T) {
 	is := NewIssuer(secret)
+	is.Members = members{"m_test": "test"}
 	h := is.RequireMember(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
