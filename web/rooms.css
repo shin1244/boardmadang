@@ -34,6 +34,7 @@
 }
 .room-timer.none { color: var(--muted); border-style: dashed; }
 .room .btn { flex: none; padding: 8px 18px; text-decoration: none; }
+.room .btn[aria-disabled="true"] { opacity: 0.45; pointer-events: none; }
 
 /* 내 대국: 결과 표시 */
 .result-tag { flex: none; width: 3.2em; font-weight: 700; text-align: center; }

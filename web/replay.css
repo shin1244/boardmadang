@@ -19,3 +19,15 @@
 #position { font-variant-numeric: tabular-nums; }
 .replay-keys { margin: 0; color: var(--muted); font-size: 12px; }
 .who .winner { color: var(--good); font-weight: 700; }
+
+/* 게임 코드가 기보를 둔 때와 다를 때 */
+.version-note {
+  max-width: 480px;
+  margin: 0 auto 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  color: var(--warn);
+  font-size: 13px;
+}
+.version-note[hidden] { display: none; }

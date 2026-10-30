@@ -1,7 +1,8 @@
 // 기보 다시보기: 서버에 저장된 시드와 행동 기록을 받아, 게임 로직으로 처음부터 한 수씩 다시 둡니다 (락스텝과 같은 방식).
 // 기보 id를 아는 사람은 누구나 볼 수 있습니다. 내가 둔 판이면 내 자리 시점으로 엽니다.
 //
-// 제작자가 게임 코드를 고쳤으면 예전 기보가 다르게 재생될 수 있습니다 (서버의 record 패키지 TODO).
+// 제작자가 게임 코드를 고쳤으면 예전 기보가 다르게 재생될 수 있습니다.
+// 기보에 남은 코드 버전이 지금 코드(/api/games의 version)와 다르면 알려 줍니다. 옛 코드는 아직 보관하지 않습니다.
 
 import { BoardView, PLAYER_COLORS } from '/sdk/playground/board.js';
 import { gameLang, localize } from '/sdk/playground/listing.js';
@@ -164,6 +165,8 @@ function render() {
   renderHead();
   renderPlayers();
   renderStatus();
+  // 버전을 모르던 때의 기보(version 없음)는 비교하지 않습니다
+  $('#version-note').hidden = !game || !rec.version || rec.version === entry.version;
   renderBoard();
   renderControls();
 }

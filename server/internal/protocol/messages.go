@@ -57,11 +57,15 @@ type Action struct {
 // ---- 클라이언트 → 서버 ----
 
 // Join은 빠른 매칭입니다. Minutes는 타이머(분), null이면 타이머 없음.
-// 같은 게임, 같은 타이머끼리만 매칭합니다. 브라우저는 등록 정보의 기본 타이머를 넣어 보냅니다.
+// 같은 게임, 같은 타이머, 같은 코드 버전끼리만 매칭합니다. 브라우저는 등록 정보의 기본 타이머를 넣어 보냅니다.
+//
+// Version은 브라우저가 불러온 게임 코드의 버전입니다 (/api/games의 version, 코드 파일의 해시).
+// 코드가 다르면 같은 행동으로 다른 판이 되어 무효가 나므로 섞지 않고, 기보에도 남깁니다.
 type Join struct {
 	Type    string `json:"type"`
 	Game    string `json:"game"`
 	Minutes *int   `json:"minutes"`
+	Version string `json:"version"`
 }
 
 // Create는 방 만들기입니다. 방 목록(GET /api/rooms)에 올라가고, 누가 Enter하면 대국이 시작됩니다.
@@ -69,12 +73,14 @@ type Create struct {
 	Type    string `json:"type"`
 	Game    string `json:"game"`
 	Minutes *int   `json:"minutes"`
+	Version string `json:"version"`
 }
 
-// Enter는 방 목록의 방에 들어가기입니다.
+// Enter는 방 목록의 방에 들어가기입니다. 방장과 코드 버전이 다르면 "version mismatch" 오류입니다.
 type Enter struct {
-	Type string `json:"type"`
-	Room string `json:"room"`
+	Type    string `json:"type"`
+	Room    string `json:"room"`
+	Version string `json:"version"`
 }
 
 // Bump는 방장이 자기 방을 목록 맨 위로 올리는 것입니다. BumpEvery마다 한 번 됩니다.
@@ -143,6 +149,7 @@ type Clock struct {
 type OpenRoom struct {
 	Room    string     `json:"room"`
 	Game    string     `json:"game"`
+	Version string     `json:"version"`
 	Minutes *int       `json:"minutes"`
 	Host    PlayerInfo `json:"host"`
 	Age     int        `json:"age"`

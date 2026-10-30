@@ -3,6 +3,7 @@
 //   node sdk/playground/serve.js     → http://localhost:5173 (로비)
 //
 // GET /api/games, /api/locale 은 나중에 Go 서버가 같은 모양으로 제공합니다 (docs/protocol.md).
+// /api/games 의 version 은 게임 폴더의 코드 파일 해시입니다. 코드를 고치면 바뀝니다.
 // PUT /api/games/<id>/listing 은 개발용 등록창이 games/<id>/listing.json 에 저장할 때 씁니다.
 //   DEV_COUNTRY=US node sdk/playground/serve.js  → 다른 나라에서 들어온 것처럼 확인
 //
@@ -13,6 +14,7 @@
 // Go 서버가 꺼져 있으면 가짜 신원만 돌려줍니다.
 //   DEV_AS=guest node sdk/playground/serve.js    → 게스트로 보이게 (등록창이 막히는지 확인)
 
+import crypto from 'node:crypto';
 import http from 'node:http';
 import net from 'node:net';
 import fs from 'node:fs';
@@ -42,10 +44,37 @@ function listGames() {
     for (const d of fs.readdirSync(base, { withFileTypes: true })) {
       if (!d.isDirectory() || !/^[a-z0-9-]+$/.test(d.name)) continue;
       if (!fs.existsSync(path.join(base, d.name, 'index.js'))) continue;
-      list.push({ id: d.name, module: `/${dir}/${d.name}/index.js`, private: isPrivate, ...readListing(path.join(base, d.name)) });
+      const folder = path.join(base, d.name);
+      list.push({ id: d.name, module: `/${dir}/${d.name}/index.js`, version: codeVersion(folder), private: isPrivate, ...readListing(folder) });
     }
   }
   return list;
+}
+
+/**
+ * 게임 코드의 버전: 폴더 안 .js 파일(테스트 제외)의 경로와 내용을 이은 SHA-256 앞 16글자.
+ * 같은 버전끼리만 매칭하고 기보에도 남깁니다. 등록 정보(listing.json)는 판에 영향이 없어 넣지 않습니다.
+ */
+function codeVersion(folder) {
+  const files = [];
+  (function walk(dir) {
+    for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, d.name);
+      if (d.isDirectory()) {
+        if (d.name !== 'node_modules') walk(p);
+      } else if (/\.m?js$/.test(d.name) && !/\.test\.m?js$/.test(d.name)) {
+        files.push(p);
+      }
+    }
+  })(folder);
+  const hash = crypto.createHash('sha256');
+  for (const p of files.sort()) {
+    hash.update(path.relative(folder, p).split(path.sep).join('/'));
+    hash.update('\0');
+    hash.update(fs.readFileSync(p));
+    hash.update('\0');
+  }
+  return hash.digest('hex').slice(0, 16);
 }
 
 /** listing.json 을 읽습니다. 없으면 listing: null (등록 전), 깨졌으면 listingError. */

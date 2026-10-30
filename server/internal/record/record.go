@@ -8,7 +8,9 @@
 //
 // 서버 한 대(VM 디스크)를 전제로 합니다. 서버를 여러 대로 늘리면 DB나 Cloud Storage로 옮깁니다.
 //
-// TODO: 게임 코드의 버전을 같이 남기기. 제작자가 코드를 고치면 예전 기보가 다르게 재생될 수 있습니다.
+// 게임 코드의 버전(코드 파일의 해시)도 같이 남깁니다. 제작자가 코드를 고치면 예전 기보가 다르게 재생될 수 있어서,
+// 다시보기 화면이 지금 코드와 버전이 다르면 알려 줍니다.
+// TODO: 옛 버전의 코드도 보관해서 그 코드로 재생하기
 package record
 
 import (
@@ -47,6 +49,7 @@ type Move struct {
 type Match struct {
 	ID      string    `json:"id"`
 	Game    string    `json:"game"`
+	Version string    `json:"version,omitempty"` // 게임 코드 버전. 버전을 모르던 클라이언트의 대국이면 없음
 	Seed    uint32    `json:"seed"`
 	Minutes *int      `json:"minutes"` // 타이머(분). null이면 없음
 	Players [2]Player `json:"players"`

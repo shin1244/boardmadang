@@ -18,6 +18,7 @@ const mineLimit = 50
 type View struct {
 	ID      string                 `json:"id"`
 	Game    string                 `json:"game"`
+	Version string                 `json:"version,omitempty"`
 	Seed    uint32                 `json:"seed"`
 	Minutes *int                   `json:"minutes"`
 	Players [2]protocol.PlayerInfo `json:"players"`
@@ -33,7 +34,7 @@ type View struct {
 
 func viewOf(m *Match, viewer string, withMoves bool) View {
 	v := View{
-		ID: m.ID, Game: m.Game, Seed: m.Seed, Minutes: m.Minutes,
+		ID: m.ID, Game: m.Game, Version: m.Version, Seed: m.Seed, Minutes: m.Minutes,
 		You: []int{}, Count: len(m.Moves),
 		Winner: m.Winner, Reason: m.Reason, Clock: m.Clock, Started: m.Started, Ended: m.Ended,
 	}

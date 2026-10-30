@@ -3,6 +3,7 @@
 //   ?game=x                       빠른 매칭. 등록 정보의 기본 타이머로 같은 타이머끼리 만납니다.
 //   ?game=x&create=1&minutes=N    방 만들기. 방 목록에 올라가고 누가 들어오면 시작합니다. minutes=none이면 타이머 없음.
 //   ?game=x&room=CODE             방 목록에서 그 방에 들어가기.
+// 게임 코드의 버전(/api/games의 version)을 같이 보내서, 같은 코드를 불러온 사람끼리만 만납니다.
 // 서버는 규칙을 모르고 행동에 순번만 붙여 양쪽에 보냅니다 (docs/protocol.md).
 // 이 페이지가 게임 로직을 돌려 판을 계산하고, 행동마다 상태 해시를, 끝나면 결과를 서버에 보고합니다.
 //
@@ -83,11 +84,12 @@ function wantedMinutes() {
 
 /** 서버에 처음 보낼 메시지 */
 function firstMessage() {
+  const version = entry.version ?? '';
   // 대국 중에 끊겨 다시 붙을 때는 항상 join: 서버가 끊긴 대국으로 돌려보내고(resumed), 유예가 지났으면 대기열(waiting)로 넣습니다.
-  if (offlineUntil) return { type: 'join', game: gameId, minutes };
-  if (mode === 'create') return { type: 'create', game: gameId, minutes: wantedMinutes() };
-  if (mode === 'enter') return { type: 'enter', room: params.get('room') };
-  return { type: 'join', game: gameId, minutes: wantedMinutes() };
+  if (offlineUntil) return { type: 'join', game: gameId, minutes, version };
+  if (mode === 'create') return { type: 'create', game: gameId, minutes: wantedMinutes(), version };
+  if (mode === 'enter') return { type: 'enter', room: params.get('room'), version };
+  return { type: 'join', game: gameId, minutes: wantedMinutes(), version };
 }
 
 /** 지금 누구 차례인지 (게임의 turn()). 서버가 이걸로 시계를 넘깁니다. */
@@ -241,9 +243,12 @@ function onMessage(m) {
       break;
     case 'error':
       if (phase === 'connecting') {
-        // 시작하지 못했습니다 (없어진 방, 잘못된 타이머 등)
+        // 시작하지 못했습니다 (없어진 방, 잘못된 타이머, 다른 버전의 코드 등)
         phase = 'error';
-        problem = m.message === 'room not found' ? t('match.roomGone') : t('match.serverError', { msg: m.message });
+        problem = {
+          'room not found': t('match.roomGone'),
+          'version mismatch': t('match.versionMismatch'),
+        }[m.message] ?? t('match.serverError', { msg: m.message });
         break;
       }
       note = t('match.serverError', { msg: m.message });

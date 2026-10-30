@@ -5,13 +5,15 @@
 | 요청 | 응답 |
 |---|---|
 | `GET /healthz` | `ok` |
-| `GET /api/games` | 게임 목록 `[{"id":"tictactoe","module":"/games/tictactoe/index.js","private":false,"listing":{...}}]` |
+| `GET /api/games` | 게임 목록 `[{"id":"tictactoe","module":"/games/tictactoe/index.js","version":"3f1c9a0b2e7d4c56","private":false,"listing":{...}}]` |
 | `GET /api/locale` | 접속 나라와 화면 언어 `{"country":"KR","lang":"ko"}` |
 | `GET /api/me` | 지금 신원 `{"id":"g_…","kind":"guest","tag":"4821"}`. 쿠키가 없으면 게스트를 새로 발급합니다 |
-| `GET /api/matches/{id}` | 기보 하나. 시드와 행동 기록이 있어 처음부터 다시 둘 수 있습니다 `{"id":"VJ7QHHVKDY","game":"tictactoe","seed":3551073280,"minutes":10,"players":[{…},{…}],"you":[0],"moves":[{"player":0,"action":{"kind":"click","row":1,"col":1},"at":10854}],"count":1,"winner":0,"reason":"result","clock":[587103,597876],"started":"…","ended":"…"}` |
+| `GET /api/matches/{id}` | 기보 하나. 시드와 행동 기록이 있어 처음부터 다시 둘 수 있습니다 `{"id":"VJ7QHHVKDY","game":"tictactoe","version":"3f1c9a0b2e7d4c56","seed":3551073280,"minutes":10,"players":[{…},{…}],"you":[0],"moves":[{"player":0,"action":{"kind":"click","row":1,"col":1},"at":10854}],"count":1,"winner":0,"reason":"result","clock":[587103,597876],"started":"…","ended":"…"}` |
 | `GET /api/matches` | 내가 둔 대국 목록, 최근 것부터 50개 (`moves` 없이). 쿠키가 없으면 `[]` |
-| `GET /api/rooms` | 상대를 기다리는 방 목록. 최근에 만들거나 올린 방이 먼저 `[{"room":"K3P9QX","game":"tictactoe","minutes":10,"host":{"kind":"guest","tag":"4821"},"age":42}]` |
+| `GET /api/rooms` | 상대를 기다리는 방 목록. 최근에 만들거나 올린 방이 먼저 `[{"room":"K3P9QX","game":"tictactoe","version":"3f1c9a0b2e7d4c56","minutes":10,"host":{"kind":"guest","tag":"4821"},"age":42}]` |
 
+- `version`은 게임 코드 버전입니다. 개발 서버가 게임 폴더의 `.js`, `.mjs` 파일(테스트 제외)을 경로 순으로 이어 SHA-256을 구하고 앞 16글자를 씁니다.
+  코드를 한 글자라도 고치면 바뀝니다. 대전할 때 서버에 같이 보내고, 기보에도 남습니다.
 - `listing`은 등록 정보(이름, 소개, 룰북, 난이도, 지원 언어, 타이머)입니다. 등록 전이면 `null`입니다.
   보드 크기 같은 규칙 정보는 넣지 않습니다. 브라우저가 `module`을 import해서 게임 모듈에서 직접 읽습니다.
 - `PUT /api/games/<id>/listing`: 개발 서버 전용. 등록창이 등록 정보를 `games/<id>/listing.json`에 저장합니다.
@@ -25,6 +27,8 @@
   - 개발 서버는 쿠키를 붙여 Go 서버에 그대로 묻습니다.
 - `/api/rooms`: 방 목록은 Go 서버의 메모리에만 있습니다. 개발 서버는 Go 서버에 물어 그대로 넘깁니다.
   `age`는 마지막으로 만들거나 올린 뒤 지난 초, `minutes`가 `null`이면 타이머 없음입니다. 최대 200개입니다.
+- 기보의 `version`이 지금 게임 코드와 다르면 다시보기 화면이 "판이 다르게 보일 수 있다"고 알립니다.
+  예전 코드를 보관해 그 코드로 재생하는 건 아직 하지 않습니다.
 - `/api/locale`: 나라는 GCP 부하 분산기의 커스텀 요청 헤더 `X-Client-Region: {client_region}`에서 읽습니다.
   KR이면 `ko`, 다른 나라면 `en`, 나라를 모르면 `Accept-Language`로 정합니다. 화면 언어 고르기에만 쓰므로
   헤더를 위조해도 문제 없습니다. 유저가 로비에서 직접 고른 언어가 있으면 브라우저가 이 요청보다 그걸 먼저 씁니다.
@@ -43,9 +47,9 @@
 
 | type | 언제 | 예시 |
 |---|---|---|
-| `join` | 빠른 매칭 대기열에 들어갈 때. 같은 게임, 같은 타이머끼리 만납니다. 대국이 끝나면 같은 연결로 다시 보낼 수 있습니다 | `{"type":"join","game":"tictactoe","minutes":10}` |
-| `create` | 방을 만들어 방 목록에 올릴 때 | `{"type":"create","game":"tictactoe","minutes":5}` |
-| `enter` | 방 목록의 방에 들어갈 때. 먼저 들어온 한 명만 됩니다 | `{"type":"enter","room":"K3P9QX"}` |
+| `join` | 빠른 매칭 대기열에 들어갈 때. 같은 게임, 같은 타이머, 같은 코드 버전끼리 만납니다. 대국이 끝나면 같은 연결로 다시 보낼 수 있습니다 | `{"type":"join","game":"tictactoe","minutes":10,"version":"3f1c…"}` |
+| `create` | 방을 만들어 방 목록에 올릴 때 | `{"type":"create","game":"tictactoe","minutes":5,"version":"3f1c…"}` |
+| `enter` | 방 목록의 방에 들어갈 때. 먼저 들어온 한 명만 되고, 방장과 코드 버전이 같아야 합니다 | `{"type":"enter","room":"K3P9QX","version":"3f1c…"}` |
 | `bump` | 방장이 자기 방을 목록 맨 위로 다시 올릴 때 (1분에 한 번) | `{"type":"bump"}` |
 | `action` | 내 행동 (클릭, 패스 등) | `{"type":"action","action":{"kind":"click","row":0,"col":2}}` |
 | `hash` | 행동을 적용한 뒤 상태 해시와 그 상태에서 누구 차례인지(`turn()`, 없으면 `null`). 시작 상태는 `seq: -1` | `{"type":"hash","seq":4,"hash":"9f2c…","turn":1}` |
@@ -65,6 +69,8 @@
   - 15초 안에 안 돌아오면 상대가 이깁니다 (`left`). 그 뒤에 `join`하면 평범하게 대기열에 들어갑니다.
   - 새로고침도 같은 흐름이라 대국이 이어집니다.
   - 타이머가 있으면 기다리는 동안에도 그 사람 차례면 시계가 갑니다. 15초보다 먼저 시간이 다 되면 `timeout`으로 끝납니다.
+- `version`은 게임 코드 버전(`/api/games`의 `version`, 16진수 64자 이하)입니다. 비워 보내도 되고, 그러면 비운 사람끼리만 만납니다.
+  코드가 다르면 같은 행동에도 판이 달라져 `desync`가 나므로, 다른 버전끼리는 매칭하지 않습니다.
 - `action`에는 **순번을 넣지 않습니다.** 순번은 서버가 받은 순서대로 붙입니다.
 - `winner`가 `null`이면 무승부입니다.
 - `matched`를 받으면 `setup()`한 시작 상태의 해시를 `seq: -1`로 보냅니다.
@@ -116,7 +122,9 @@
 | `unknown game` | 게임 id 모양이 틀림 (영문 소문자, 숫자, `-`, 40자 이하) |
 | `already joined` | 이미 대기 중이거나, 방을 만들었거나, 대국 중인데 `join`, `create`, `enter`를 보냄 |
 | `bad minutes` | 타이머가 1~180분도 `null`도 아님 |
+| `bad version` | 코드 버전이 16진수 64자 이하가 아님 |
 | `room not found` | 들어가려는 방이 없음 (이미 시작했거나 방장이 나감) |
+| `version mismatch` | 방장과 게임 코드 버전이 다름 |
 | `not hosting` / `too soon` | 방이 없는데 `bump`를 보냄 / 마지막으로 올린 지 1분이 안 됨 |
 | `not in a room` | 대국 중이 아닌데 `action`, `hash`, `result`, `resign`을 보냄 |
 | `bad action` / `bad hash` / `bad result` | 값이 틀림. 클릭 좌표는 0~31, 해시는 64자 이하, `turn`과 `winner`는 0, 1, `null` |

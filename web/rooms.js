@@ -1,6 +1,7 @@
 // 방 목록: 방 만들기로 열린 방들을 최근에 만들거나 올린 순서로 보여줍니다 (GET /api/rooms).
 // 방장은 대전 화면에서 1분에 한 번 자기 방을 맨 위로 다시 올릴 수 있습니다.
 // 들어가기를 누르면 대전 화면(match.html?game=x&room=CODE)으로 가서 바로 시작합니다.
+// 방장과 게임 코드 버전이 다르면 들어갈 수 없으므로 버튼을 막아 둡니다.
 
 import { localize } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
@@ -16,6 +17,12 @@ let fetchedAt = 0;
 let loadError = null;
 
 const gameName = (id) => localize(games.get(id)?.listing?.name, lang).text || id;
+
+/** 지금 불러온 게임 코드와 버전이 다른지. 버전을 모르면 다르다고 보지 않습니다. */
+const otherVersion = (room) => {
+  const mine = games.get(room.game)?.version;
+  return !!mine && room.version !== mine;
+};
 
 /** 마지막으로 올린 뒤 지난 시간. 받은 뒤로 흐른 시간도 더합니다. */
 function ageText(room) {
@@ -63,6 +70,12 @@ function renderRoom(room) {
   const a = li.querySelector('.btn');
   a.href = `/web/match.html?game=${encodeURIComponent(room.game)}&room=${encodeURIComponent(room.room)}`;
   a.textContent = t('rooms.enter');
+  if (otherVersion(room)) {
+    a.setAttribute('aria-disabled', 'true');
+    a.removeAttribute('href');
+    a.textContent = t('rooms.otherVersion');
+    a.title = t('rooms.otherVersion.title');
+  }
   return li;
 }
 

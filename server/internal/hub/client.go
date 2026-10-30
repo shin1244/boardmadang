@@ -39,7 +39,7 @@ type Client struct {
 	closeOnce sync.Once
 
 	// 아래 넷은 hub.mu를 잡고만 읽고 씁니다. 상대의 고루틴이 매칭하면서 바꾸기 때문입니다.
-	queued  string // 빠른 매칭 대기열의 키 (게임|타이머). 없으면 ""
+	queued  string // 빠른 매칭 대기열의 키 (게임|타이머|버전). 없으면 ""
 	hosting string // 방 목록에 올린 내 방 코드. 없으면 ""
 	room    *Room
 	player  int // 방 안에서의 번호 (0 = 선공, 1 = 후공)
@@ -139,7 +139,7 @@ func (c *Client) handle(data []byte) {
 			c.sendError("bad message")
 			return
 		}
-		c.hub.join(c, m.Game, m.Minutes)
+		c.hub.join(c, m.Game, m.Minutes, m.Version)
 		return
 	case protocol.TypeCreate:
 		var m protocol.Create
@@ -147,7 +147,7 @@ func (c *Client) handle(data []byte) {
 			c.sendError("bad message")
 			return
 		}
-		c.hub.create(c, m.Game, m.Minutes)
+		c.hub.create(c, m.Game, m.Minutes, m.Version)
 		return
 	case protocol.TypeEnter:
 		var m protocol.Enter
@@ -155,7 +155,7 @@ func (c *Client) handle(data []byte) {
 			c.sendError("bad message")
 			return
 		}
-		c.hub.enter(c, m.Room)
+		c.hub.enter(c, m.Room, m.Version)
 		return
 	case protocol.TypeBump:
 		c.hub.bump(c)

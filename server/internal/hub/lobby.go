@@ -19,13 +19,14 @@ const maxListed = 200
 type openRoom struct {
 	ID      string
 	Game    string
+	Version string // 방장이 불러온 게임 코드 버전. 들어오는 사람도 같아야 합니다
 	Minutes *int
 	host    *Client
 	bumped  time.Time // 만든 때 또는 마지막으로 올린 때. 목록은 이 순서로 최신이 위입니다
 }
 
 // create는 방을 만들어 방 목록에 올립니다.
-func (h *Hub) create(c *Client, game string, minutes *int) {
+func (h *Hub) create(c *Client, game string, minutes *int, version string) {
 	if !gameIDPattern.MatchString(game) {
 		c.sendError("unknown game")
 		return
@@ -34,12 +35,16 @@ func (h *Hub) create(c *Client, game string, minutes *int) {
 		c.sendError("bad minutes")
 		return
 	}
+	if !versionPattern.MatchString(version) {
+		c.sendError("bad version")
+		return
+	}
 	if !h.begin(c) {
 		return
 	}
 	defer h.mu.Unlock()
 
-	o := &openRoom{ID: h.newRoomID(), Game: game, Minutes: minutes, host: c, bumped: time.Now()}
+	o := &openRoom{ID: h.newRoomID(), Game: game, Version: version, Minutes: minutes, host: c, bumped: time.Now()}
 	h.open[o.ID] = o
 	c.hosting = o.ID
 	c.Send(protocol.Created{
@@ -52,7 +57,8 @@ func (h *Hub) create(c *Client, game string, minutes *int) {
 }
 
 // enter는 방 목록의 방에 들어가 대국을 시작합니다. 먼저 들어온 한 명만 됩니다.
-func (h *Hub) enter(c *Client, code string) {
+// 방장과 게임 코드 버전이 다르면 들어갈 수 없습니다 (한쪽 브라우저가 옛 코드를 들고 있음).
+func (h *Hub) enter(c *Client, code, version string) {
 	if !h.begin(c) {
 		return
 	}
@@ -63,9 +69,13 @@ func (h *Hub) enter(c *Client, code string) {
 		c.sendError("room not found")
 		return
 	}
+	if o.Version != version {
+		c.sendError("version mismatch")
+		return
+	}
 	delete(h.open, code)
 	o.host.hosting = ""
-	h.start(o.ID, o.Game, o.Minutes, [2]*Client{o.host, c})
+	h.start(o.ID, o.Game, o.Minutes, o.Version, [2]*Client{o.host, c})
 }
 
 // bump는 방장의 방을 목록 맨 위로 올립니다. BumpEvery가 지나야 다시 됩니다.
@@ -105,6 +115,7 @@ func (h *Hub) ServeRooms(w http.ResponseWriter, r *http.Request) {
 		out[i] = protocol.OpenRoom{
 			Room:    o.ID,
 			Game:    o.Game,
+			Version: o.Version,
 			Minutes: o.Minutes,
 			Host:    protocol.PlayerInfo{Kind: u.Kind, Tag: u.Tag, Name: u.Name},
 			Age:     int(now.Sub(o.bumped) / time.Second),

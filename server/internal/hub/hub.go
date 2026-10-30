@@ -63,6 +63,9 @@ func validMinutes(m *int) bool {
 
 var gameIDPattern = regexp.MustCompile(`^[a-z0-9-]{1,40}$`)
 
+// 게임 코드 버전 (코드 파일의 해시, 16진수). 버전을 모르는 클라이언트는 ""를 보냅니다.
+var versionPattern = regexp.MustCompile(`^[0-9a-f]{0,64}$`)
+
 type Hub struct {
 	cfg      config.Config
 	ids      *identity.Issuer
@@ -70,7 +73,7 @@ type Hub struct {
 	upgrader websocket.Upgrader
 
 	mu    sync.Mutex
-	queue map[string]*Client   // 게임 id별로 상대를 기다리는 한 명
+	queue map[string]*Client   // 대기열 키(게임|타이머|버전)별로 상대를 기다리는 한 명
 	rooms map[string]*Room     // 방 코드 → 진행 중인 대국
 	open  map[string]*openRoom // 방 코드 → 방 목록에서 상대를 기다리는 방 (lobby.go)
 	away  map[string]*Room     // 연결이 끊겨 돌아오기를 기다리는 user.ID → 그 방 (끝난 방일 수도 있습니다)
@@ -157,12 +160,12 @@ func (h *Hub) begin(c *Client) bool {
 	return true
 }
 
-// join은 c를 빠른 매칭 대기열에 넣고, 같은 게임·같은 타이머로 기다리던 상대가 있으면 대국을 시작합니다.
+// join은 c를 빠른 매칭 대기열에 넣고, 같은 게임·같은 타이머·같은 코드 버전으로 기다리던 상대가 있으면 대국을 시작합니다.
 //
 // 같은 신원끼리도 매칭합니다. 탭 두 개로 혼자 둬볼 수 있어 개발할 때 편합니다.
 // TODO: 랭킹이 생기면 같은 user.ID끼리는 매칭하지 않기
 // TODO: Go 서버가 게임 목록을 알게 되면 모르는 게임 id를 거절하기 (지금은 모양만 봅니다)
-func (h *Hub) join(c *Client, game string, minutes *int) {
+func (h *Hub) join(c *Client, game string, minutes *int, version string) {
 	if !gameIDPattern.MatchString(game) {
 		c.sendError("unknown game")
 		return
@@ -171,12 +174,16 @@ func (h *Hub) join(c *Client, game string, minutes *int) {
 		c.sendError("bad minutes")
 		return
 	}
+	if !versionPattern.MatchString(version) {
+		c.sendError("bad version")
+		return
+	}
 	if !h.begin(c) {
 		return
 	}
 	defer h.mu.Unlock()
 
-	key := queueKey(game, minutes)
+	key := queueKey(game, minutes, version)
 	other := h.queue[key]
 	if other == nil {
 		h.queue[key] = c
@@ -186,23 +193,24 @@ func (h *Hub) join(c *Client, game string, minutes *int) {
 	}
 	delete(h.queue, key)
 	other.queued = ""
-	h.start(h.newRoomID(), game, minutes, [2]*Client{other, c})
+	h.start(h.newRoomID(), game, minutes, version, [2]*Client{other, c})
 }
 
-// 대기열은 게임과 타이머가 같아야 만납니다.
-func queueKey(game string, minutes *int) string {
-	if minutes == nil {
-		return game + "|-"
+// 대기열은 게임, 타이머, 코드 버전이 같아야 만납니다.
+func queueKey(game string, minutes *int, version string) string {
+	m := "-"
+	if minutes != nil {
+		m = fmt.Sprint(*minutes)
 	}
-	return fmt.Sprintf("%s|%d", game, *minutes)
+	return fmt.Sprintf("%s|%s|%s", game, m, version)
 }
 
 // start는 두 사람의 대국을 시작합니다. 선후공은 랜덤입니다. h.mu를 잡고 부릅니다.
-func (h *Hub) start(id, game string, minutes *int, players [2]*Client) {
+func (h *Hub) start(id, game string, minutes *int, version string, players [2]*Client) {
 	if randUint32()%2 == 1 {
 		players[0], players[1] = players[1], players[0]
 	}
-	r := newRoom(h, id, game, randUint32(), minutes, players)
+	r := newRoom(h, id, game, version, randUint32(), minutes, players)
 	h.rooms[r.ID] = r
 	for i, p := range players {
 		p.room = r

@@ -18,6 +18,7 @@ type Room struct {
 	hub     *Hub
 	ID      string
 	Game    string
+	Version string // 게임 코드 버전. 기보에 남깁니다
 	Seed    uint32
 	Minutes *int // 타이머(분). nil이면 없음
 	Players [2]*Client
@@ -48,11 +49,12 @@ type report struct {
 	turn *int
 }
 
-func newRoom(h *Hub, id, game string, seed uint32, minutes *int, players [2]*Client) *Room {
+func newRoom(h *Hub, id, game, version string, seed uint32, minutes *int, players [2]*Client) *Room {
 	r := &Room{
 		hub:      h,
 		ID:       id,
 		Game:     game,
+		Version:  version,
 		Seed:     seed,
 		Minutes:  minutes,
 		Players:  players,
@@ -261,6 +263,7 @@ func (r *Room) record(winner *int, reason string) *record.Match {
 	m := &record.Match{
 		ID:      record.NewID(),
 		Game:    r.Game,
+		Version: r.Version,
 		Seed:    r.Seed,
 		Minutes: r.Minutes,
 		Moves:   make([]record.Move, len(r.Log)),
