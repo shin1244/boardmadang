@@ -13,6 +13,9 @@
 // 대국 중에 연결이 끊기면 15초 동안 다시 붙어 봅니다. 서버도 그동안 자리를 비워 두고,
 // 돌아오면 시드와 행동 기록(resumed)을 보내 주므로 처음부터 재생해서 판을 복원합니다. 새로고침해도 같습니다.
 //
+// 대국 중에는 무승부를 제안할 수 있고(상대가 수락하면 무승부, 누가 두면 없어짐),
+// 끝난 뒤에는 두 사람이 모두 재대결을 누르면 자리를 바꿔 다시 둡니다.
+//
 // 타이머가 있으면 서버가 대국 시계를 돌립니다. 누구 차례인지는 해시와 같이 보내는 게임의 turn()으로 알려 줍니다.
 // 화면의 시계는 서버가 보낸 clock을 받아 이 페이지에서 줄여 보여주기만 합니다. 시간이 다 됐는지는 서버가 정합니다.
 //
@@ -66,6 +69,8 @@ let clock = null; // 서버가 보낸 시계 { remaining: [ms, ms], running, at:
 let hostedRoom = null; // 방을 만들었으면 방 코드
 let bumpEvery = 60; // 초
 let nextBumpAt = 0; // 이 시각(ms)부터 다시 올릴 수 있습니다
+let drawBy = null; // 무승부를 제안해 둔 자리. 없으면 null
+let rematch = { mine: false, theirs: false, off: false }; // 끝난 대국의 재대결: 내가 원함, 상대가 원함, 할 수 없음
 
 const flip = () => game.board.flipForPlayer === seat;
 const playLang = () => gameLang(entry?.listing, lang);
@@ -240,6 +245,22 @@ function onMessage(m) {
       ended = m;
       phase = 'ended';
       oppAwayUntil = null;
+      drawBy = null;
+      break;
+    case 'draw':
+      drawBy = m.player;
+      break;
+    case 'drawOff':
+      // 내 제안이 없어졌으면 (상대가 거절했거나 누가 뒀음) 알려 줍니다
+      if (drawBy === seat && phase === 'playing') note = t('match.draw.gone');
+      drawBy = null;
+      break;
+    case 'rematch':
+      if (m.player === seat) rematch.mine = true;
+      else rematch.theirs = true;
+      break;
+    case 'rematchOff':
+      rematch.off = true;
       break;
     case 'error':
       if (phase === 'connecting') {
@@ -251,7 +272,11 @@ function onMessage(m) {
         }[m.message] ?? t('match.serverError', { msg: m.message });
         break;
       }
-      note = t('match.serverError', { msg: m.message });
+      if (m.message === 'no rematch') {
+        rematch.off = true;
+        break;
+      }
+      note = m.message === 'too soon' ? t('match.draw.tooSoon') : t('match.serverError', { msg: m.message });
       break;
   }
   render();
@@ -273,6 +298,8 @@ function start(m) {
   note = '';
   offlineUntil = null;
   oppAwayUntil = null;
+  drawBy = null;
+  rematch = { mine: false, theirs: false, off: false };
   phase = 'playing';
   send({ type: 'hash', seq: -1, hash: stateHash, turn: turnNow() });
   fit();
@@ -292,6 +319,7 @@ function resume(m) {
   }
   start(m);
   if (m.clock) clock = { remaining: m.clock.remaining, running: m.clock.running, at: Date.now() };
+  drawBy = m.draw ?? null;
   for (const r of m.log) apply(r);
 }
 
@@ -358,6 +386,8 @@ function reasonText() {
     case 'result':
       if (reported?.reason === 'maxActions') return t('match.reason.maxActions');
       return reported?.reason ?? '';
+    case 'agreed':
+      return t('match.reason.agreed');
     case 'resign':
     case 'spam':
     case 'timeout':
@@ -474,8 +504,36 @@ function renderBoard() {
   $('#message').textContent = phase === 'playing' ? view.message ?? '' : '';
 }
 
+/** 무승부 제안 줄과 재대결 버튼 */
+function renderOffers(playing) {
+  const offer = playing && drawBy !== null;
+  $('#draw').hidden = !playing || offer;
+  $('#draw-offer').hidden = !offer;
+  if (offer) {
+    const mine = drawBy === seat;
+    $('#draw-text').textContent = t(mine ? 'match.draw.mine' : 'match.draw.theirs');
+    $('#draw-accept').hidden = mine;
+    $('#draw-decline').hidden = mine;
+    $('#draw-withdraw').hidden = !mine;
+  }
+
+  const canRematch = phase === 'ended' && seat !== null && !rematch.off;
+  const b = $('#rematch');
+  b.hidden = !canRematch;
+  b.disabled = rematch.mine;
+  b.textContent = t(rematch.mine ? 'match.rematch.waiting' : rematch.theirs ? 'match.rematch.accept' : 'match.rematch');
+  const n = $('#rematch-note');
+  const text = phase !== 'ended' || seat === null ? ''
+    : rematch.off ? t('match.rematch.off')
+      : rematch.theirs ? t('match.rematch.theirs')
+        : rematch.mine ? t('match.rematch.mine') : '';
+  n.hidden = !text;
+  n.textContent = text;
+}
+
 function renderActions() {
   const playing = phase === 'playing' && !reported && !offlineUntil;
+  renderOffers(playing);
   $('#resign').hidden = !playing;
   $('#cancel').hidden = !['waiting', 'hosting', 'connecting'].includes(phase);
   $('#again').hidden = !['ended', 'idle', 'error'].includes(phase) || !game;
@@ -562,6 +620,11 @@ async function main() {
   $('#resign').addEventListener('click', () => {
     if (confirm(t('match.resign.confirm'))) send({ type: 'resign' });
   });
+  $('#draw').addEventListener('click', () => send({ type: 'draw' }));
+  $('#draw-accept').addEventListener('click', () => send({ type: 'draw' }));
+  $('#draw-decline').addEventListener('click', () => send({ type: 'decline' }));
+  $('#draw-withdraw').addEventListener('click', () => send({ type: 'decline' }));
+  $('#rematch').addEventListener('click', () => send({ type: 'rematch' }));
   $('#cancel').addEventListener('click', cancel);
   $('#again').addEventListener('click', findAgain);
   $('#bump').addEventListener('click', () => send({ type: 'bump' }));

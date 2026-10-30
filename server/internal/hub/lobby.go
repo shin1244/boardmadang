@@ -75,7 +75,7 @@ func (h *Hub) enter(c *Client, code, version string) {
 	}
 	delete(h.open, code)
 	o.host.hosting = ""
-	h.start(o.ID, o.Game, o.Minutes, o.Version, [2]*Client{o.host, c})
+	h.start(o.ID, o.Game, o.Minutes, o.Version, [2]*Client{o.host, c}, true)
 }
 
 // bump는 방장의 방을 목록 맨 위로 올립니다. BumpEvery가 지나야 다시 됩니다.

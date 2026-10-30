@@ -55,14 +55,25 @@
       <p id="message" class="message"></p>
     </div>
 
+    <!-- 무승부 제안: 내가 했으면 철회, 상대가 했으면 수락 / 거절 -->
+    <div id="draw-offer" class="offer" hidden>
+      <span id="draw-text"></span>
+      <button id="draw-accept" class="btn" type="button" data-i18n="match.draw.accept">수락</button>
+      <button id="draw-decline" class="btn ghost" type="button" data-i18n="match.draw.decline">거절</button>
+      <button id="draw-withdraw" class="btn ghost" type="button" data-i18n="match.draw.withdraw">철회</button>
+    </div>
+
     <div class="match-actions">
       <span id="specials" class="specials"></span>
+      <button id="draw" class="btn ghost" type="button" data-i18n="match.draw.offer" hidden>무승부 제안</button>
       <button id="resign" class="btn ghost" type="button" data-i18n="match.resign" hidden>기권</button>
       <button id="cancel" class="btn ghost" type="button" data-i18n="match.cancel" hidden>취소</button>
+      <button id="rematch" class="btn" type="button" hidden></button>
       <button id="again" class="btn" type="button" data-i18n="match.again" hidden>다시 찾기</button>
       <a id="replay" class="btn ghost" data-i18n="match.replay" hidden>기보 보기</a>
       <a id="to-lobby" class="btn ghost" href="/web/" data-i18n="match.toLobby">게임 목록</a>
     </div>
+    <p id="rematch-note" class="match-note" hidden></p>
     <p id="note" class="match-note" hidden></p>
   </main>
 

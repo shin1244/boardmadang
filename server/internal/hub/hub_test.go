@@ -198,6 +198,7 @@ func TestBothPlayersCanJoinAgainAfterEnd(t *testing.T) {
 	p[0].expect(protocol.TypeWaiting, nil)
 	p[1].send(protocol.Join{Type: protocol.TypeJoin, Game: "tictactoe"})
 	p[0].expect(protocol.TypeMatched, nil)
+	p[1].expect(protocol.TypeRematchOff, nil) // 상대가 새 대전을 찾기 시작해서 재대결은 못 합니다
 	p[1].expect(protocol.TypeMatched, nil)
 }
 

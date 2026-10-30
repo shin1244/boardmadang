@@ -76,6 +76,26 @@
 .bump-wait { color: var(--muted); font-size: 13px; }
 
 .match-note { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
+.match-note[hidden] { display: none; }
+
+/* 무승부 제안 줄 */
+.offer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 14px auto 0;
+  padding: 10px 14px;
+  max-width: 480px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-size: 14px;
+}
+.offer[hidden], .offer [hidden] { display: none; }
+.offer span { flex-basis: 100%; }
+.offer .btn { flex: none; padding: 6px 16px; }
 
 @media (max-width: 760px) {
   .match { padding: 20px 16px 48px; }

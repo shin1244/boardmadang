@@ -41,6 +41,11 @@ type Room struct {
 
 	started time.Time
 	at      []int64 // Log[i]가 시작부터 몇 ms 뒤에 왔는지. 기보에 남깁니다
+
+	drawBy    *int   // 무승부를 제안해 둔 자리. 없으면 nil (offers.go)
+	drawAt    [2]int // 자리별로 마지막에 제안했을 때의 행동 수. 그 뒤로 행동이 있어야 다시 제안할 수 있습니다
+	again     [2]bool
+	noRematch bool // 재대결을 이미 시작했거나 할 수 없게 됨
 }
 
 // report는 한 플레이어가 보고한 상태 해시와 그 상태에서 누구 차례인지입니다.
@@ -62,6 +67,7 @@ func newRoom(h *Hub, id, game, version string, seed uint32, minutes *int, player
 		agreed:   make(map[int]string),
 		clockSeq: -2,
 		started:  time.Now(),
+		drawAt:   [2]int{-1, -1},
 	}
 	if minutes != nil {
 		r.clock = newClock(time.Duration(*minutes) * MinuteUnit)
@@ -71,6 +77,7 @@ func newRoom(h *Hub, id, game, version string, seed uint32, minutes *int, player
 
 // relay는 player의 행동에 다음 순번을 붙여 기록하고 양쪽에 보냅니다.
 // 행동이 규칙에 맞는지는 검사하지 않습니다. 그건 클라이언트의 게임 로직이 합니다.
+// 무승부 제안이 있었으면 행동 하나로 없어집니다.
 //
 // maxActions는 서버가 세지 않습니다. 무시된 행동은 세지 않아야 하는데, 그건 해시가 모여야 알 수 있습니다.
 // 상태를 바꾼 행동 수는 양쪽 클라이언트가 세고, maxActions에 이르면 무승부 결과를 보고합니다.
@@ -79,6 +86,9 @@ func (r *Room) relay(player int, a protocol.Action) {
 	defer r.mu.Unlock()
 	if r.ended {
 		return
+	}
+	if r.drawBy != nil {
+		r.clearDraw()
 	}
 	msg := protocol.Relay{Type: protocol.TypeRelay, Seq: len(r.Log), Player: player, Action: a}
 	r.Log = append(r.Log, msg)
@@ -231,6 +241,7 @@ func (r *Room) resume(c *Client) bool {
 		Opponent: protocol.PlayerInfo{Kind: opp.Kind, Tag: opp.Tag, Name: opp.Name},
 		Minutes:  r.Minutes,
 		Clock:    r.clockMsg(),
+		Draw:     r.drawBy,
 		Log:      slices.Clone(r.Log),
 	})
 	if r.ended {

@@ -55,6 +55,9 @@
 | `hash` | 행동을 적용한 뒤 상태 해시와 그 상태에서 누구 차례인지(`turn()`, 없으면 `null`). 시작 상태는 `seq: -1` | `{"type":"hash","seq":4,"hash":"9f2c…","turn":1}` |
 | `result` | 게임 로직이 끝났다고 판정했을 때 | `{"type":"result","winner":0,"reason":"5목"}` |
 | `resign` | 기권 (게임 로직이 아니라 플랫폼이 처리) | `{"type":"resign"}` |
+| `draw` | 무승부 제안. 상대가 이미 제안해 둔 상태면 수락이 되어 무승부로 끝납니다 | `{"type":"draw"}` |
+| `decline` | 상대의 무승부 제안 거절. 제안한 쪽이 보내면 철회 | `{"type":"decline"}` |
+| `rematch` | 대국이 끝난 뒤 재대결 요청. 상대도 보내면 선후공을 바꿔 새 대국이 시작됩니다 | `{"type":"rematch"}` |
 
 - 대기열이나 방 목록에서 빠지려면 연결을 닫습니다. 끊기는 즉시 빠지고, 방장이 끊기면 방도 바로 없어집니다.
 - `minutes`는 타이머(분, 1~180)이고 `null`이면 타이머 없음입니다. 브라우저는 빠른 매칭에 등록 정보의 기본 타이머를,
@@ -71,6 +74,9 @@
   - 타이머가 있으면 기다리는 동안에도 그 사람 차례면 시계가 갑니다. 15초보다 먼저 시간이 다 되면 `timeout`으로 끝납니다.
 - `version`은 게임 코드 버전(`/api/games`의 `version`, 16진수 64자 이하)입니다. 비워 보내도 되고, 그러면 비운 사람끼리만 만납니다.
   코드가 다르면 같은 행동에도 판이 달라져 `desync`가 나므로, 다른 버전끼리는 매칭하지 않습니다.
+- **무승부 제안**은 누가 행동을 하나 보내면(`relay`) 없어집니다. 거절당한 뒤 다시 제안하려면 그 사이에 행동이 하나 이상 오가야 합니다.
+- **재대결**은 끝난 대국의 두 사람이 모두 `rematch`를 보내야 시작됩니다. 한쪽이 연결을 닫거나 `join`, `create`, `enter`로
+  다른 대국을 찾기 시작하면 남은 쪽에 `rematchOff`가 가고 그 대국으로는 재대결할 수 없습니다.
 - `action`에는 **순번을 넣지 않습니다.** 순번은 서버가 받은 순서대로 붙입니다.
 - `winner`가 `null`이면 무승부입니다.
 - `matched`를 받으면 `setup()`한 시작 상태의 해시를 `seq: -1`로 보냅니다.
@@ -85,9 +91,13 @@
 | `waiting` | 대기열에 들어갔을 때 | `{"type":"waiting","game":"tictactoe"}` |
 | `created` | 방을 만들었을 때. 누가 들어오면 `matched`가 옵니다 | `{"type":"created","room":"K3P9QX","game":"tictactoe","minutes":5,"bumpEvery":60}` |
 | `bumped` | 방을 목록 맨 위로 올렸을 때 | `{"type":"bumped"}` |
-| `resumed` | 끊겼다가 15초 안에 돌아와 `join`했을 때 | `{"type":"resumed","room":"K3P9QX","game":"tictactoe","player":1,"seed":3141592653,"opponent":{…},"minutes":10,"clock":{…},"log":[{"type":"relay","seq":0,…}]}` |
+| `resumed` | 끊겼다가 15초 안에 돌아와 `join`했을 때 | `{"type":"resumed","room":"K3P9QX","game":"tictactoe","player":1,"seed":3141592653,"opponent":{…},"minutes":10,"clock":{…},"draw":0,"log":[{"type":"relay","seq":0,…}]}` |
 | `away` | 상대 연결이 끊겼을 때 | `{"type":"away","player":0,"seconds":15}` |
 | `back` | 끊겼던 상대가 돌아왔을 때 | `{"type":"back","player":0}` |
+| `draw` | 누가 무승부를 제안했을 때 (양쪽에게) | `{"type":"draw","player":0}` |
+| `drawOff` | 무승부 제안이 없어졌을 때 (거절, 철회, 다음 행동) | `{"type":"drawOff"}` |
+| `rematch` | 누가 재대결을 원할 때 (양쪽에게). 둘 다 원하면 바로 `matched`가 옵니다 | `{"type":"rematch","player":1}` |
+| `rematchOff` | 상대가 나가거나 다른 대국을 찾아 재대결을 할 수 없게 됐을 때 | `{"type":"rematchOff"}` |
 | `matched` | 상대가 정해졌을 때. 방에 들어왔으면 `room`은 그 방 코드입니다 | `{"type":"matched","room":"K3P9QX","game":"tictactoe","player":1,"seed":3141592653,"opponent":{"kind":"guest","tag":"4821"},"minutes":10}` |
 | `clock` | 대국 시계가 넘어가거나 멈출 때 (타이머가 있을 때만) | `{"type":"clock","remaining":[598512,600000],"running":1}` |
 | `relay` | 누군가의 행동 (내 행동도 포함) | `{"type":"relay","seq":4,"player":0,"action":{"kind":"click","row":1,"col":1}}` |
@@ -113,6 +123,7 @@
 | `spam` | 한쪽이 무시된 행동을 너무 많이 보냄 → 상대 승 |
 | `limit` | 행동 기록이 상한(3,000)에 닿음 → 무효 (`winner`는 `null`) |
 | `timeout` | 한쪽이 시간을 다 씀 → 상대 승 |
+| `agreed` | 무승부 제안을 상대가 수락함 (`winner`는 `null`) |
 
 ### `error`의 `message`
 
@@ -125,8 +136,9 @@
 | `bad version` | 코드 버전이 16진수 64자 이하가 아님 |
 | `room not found` | 들어가려는 방이 없음 (이미 시작했거나 방장이 나감) |
 | `version mismatch` | 방장과 게임 코드 버전이 다름 |
-| `not hosting` / `too soon` | 방이 없는데 `bump`를 보냄 / 마지막으로 올린 지 1분이 안 됨 |
-| `not in a room` | 대국 중이 아닌데 `action`, `hash`, `result`, `resign`을 보냄 |
+| `not hosting` / `too soon` | 방이 없는데 `bump`를 보냄 / 마지막으로 올린 지 1분이 안 됨. 무승부 제안을 거절당한 뒤 행동 없이 다시 제안해도 `too soon` |
+| `no rematch` | 끝난 대국이 없거나 아직 대국 중인데 `rematch`를 보냄, 또는 이미 재대결을 할 수 없게 됨 |
+| `not in a room` | 대국 중이 아닌데 `action`, `hash`, `result`, `resign`, `draw`, `decline`을 보냄 |
 | `bad action` / `bad hash` / `bad result` | 값이 틀림. 클릭 좌표는 0~31, 해시는 64자 이하, `turn`과 `winner`는 0, 1, `null` |
 | `too many actions` | 초당 행동 수 제한(20)을 넘음. 그 행동은 버립니다 |
 

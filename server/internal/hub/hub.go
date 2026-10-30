@@ -136,9 +136,11 @@ func (h *Hub) seat(c *Client) (*Room, int) {
 }
 
 // begin은 c가 새 대국을 찾기 전(join, create, enter)에 부릅니다.
+// 방금 끝낸 대국의 재대결은 할 수 없게 됩니다.
 // 같은 신원이 끊긴 채로 기다리는 대국이 있으면 그리로 돌려보내고 false입니다 (게임 id가 달라도 끊긴 대국이 먼저).
 // true면 h.mu를 잡은 채로 돌아옵니다. 부른 쪽이 풀어야 합니다.
 func (h *Hub) begin(c *Client) bool {
+	h.dropRematch(c)
 	h.mu.Lock()
 	if c.busy() {
 		h.mu.Unlock()
@@ -193,7 +195,7 @@ func (h *Hub) join(c *Client, game string, minutes *int, version string) {
 	}
 	delete(h.queue, key)
 	other.queued = ""
-	h.start(h.newRoomID(), game, minutes, version, [2]*Client{other, c})
+	h.start(h.newRoomID(), game, minutes, version, [2]*Client{other, c}, true)
 }
 
 // 대기열은 게임, 타이머, 코드 버전이 같아야 만납니다.
@@ -205,9 +207,10 @@ func queueKey(game string, minutes *int, version string) string {
 	return fmt.Sprintf("%s|%s|%s", game, m, version)
 }
 
-// start는 두 사람의 대국을 시작합니다. 선후공은 랜덤입니다. h.mu를 잡고 부릅니다.
-func (h *Hub) start(id, game string, minutes *int, version string, players [2]*Client) {
-	if randUint32()%2 == 1 {
+// start는 두 사람의 대국을 시작합니다. shuffle이면 선후공을 랜덤으로 정하고, 아니면 players 순서대로 앉힙니다 (재대결).
+// h.mu를 잡고 부릅니다.
+func (h *Hub) start(id, game string, minutes *int, version string, players [2]*Client, shuffle bool) {
+	if shuffle && randUint32()%2 == 1 {
 		players[0], players[1] = players[1], players[0]
 	}
 	r := newRoom(h, id, game, version, randUint32(), minutes, players)
@@ -215,6 +218,7 @@ func (h *Hub) start(id, game string, minutes *int, version string, players [2]*C
 	for i, p := range players {
 		p.room = r
 		p.player = i
+		p.last = nil
 		opp := players[1-i].user
 		p.Send(protocol.Matched{
 			Type:     protocol.TypeMatched,
@@ -230,6 +234,7 @@ func (h *Hub) start(id, game string, minutes *int, version string, players [2]*C
 
 // leave는 연결이 끊긴 c를 정리합니다. 대기열이나 방 목록에 있었으면 바로 빼고,
 // 대국 중이었으면 ReconnectGrace만큼 돌아오기를 기다립니다 (Room.playerLeft).
+// 방금 끝낸 대국이 있으면 재대결을 할 수 없게 합니다.
 func (h *Hub) leave(c *Client) {
 	h.mu.Lock()
 	if c.queued != "" && h.queue[c.queued] == c {
@@ -241,16 +246,33 @@ func (h *Hub) leave(c *Client) {
 		c.hosting = ""
 	}
 	room, player := c.room, c.player
+	last := c.last
+	c.last = nil
 	h.mu.Unlock()
 
 	// r.mu는 h.mu를 놓은 뒤에 잡습니다 (락 순서).
 	if room != nil {
 		room.playerLeft(player, c)
 	}
+	if last != nil {
+		last.cancelRematch(c)
+	}
 	c.close()
 }
 
-// removeRoom은 끝난 방을 지우고, 두 플레이어가 다시 매칭할 수 있게 합니다. Room.end에서 부릅니다.
+// dropRematch는 c가 방금 끝낸 대국의 재대결을 할 수 없게 합니다. 다른 대국을 찾기 시작할 때 부릅니다.
+func (h *Hub) dropRematch(c *Client) {
+	h.mu.Lock()
+	r := c.last
+	c.last = nil
+	h.mu.Unlock()
+	if r != nil {
+		r.cancelRematch(c) // 락 순서
+	}
+}
+
+// removeRoom은 끝난 방을 지우고, 두 플레이어가 다시 매칭할 수 있게 합니다.
+// 두 사람의 last에 이 방을 남겨 재대결을 받을 수 있게 합니다. Room.end에서 r.mu를 잡고 부릅니다.
 func (h *Hub) removeRoom(r *Room) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -259,15 +281,18 @@ func (h *Hub) removeRoom(r *Room) {
 		if p.room == r {
 			p.room = nil
 		}
+		p.last = r
 	}
 }
 
-// seatClient는 돌아온 c를 방 r의 자리에 앉힙니다. 끝난 방이면 앉히지 않습니다 (바로 다시 join할 수 있게).
+// seatClient는 돌아온 c를 방 r의 자리에 앉힙니다. 끝난 방이면 앉히지 않고 재대결만 받을 수 있게 합니다 (바로 다시 join할 수 있게).
 // stillAway는 같은 신원의 다른 자리가 아직 끊겨 있는지입니다 (탭 두 개로 혼자 둔 경우). Room.resume에서 부릅니다.
 func (h *Hub) seatClient(c *Client, r *Room, seat int, ended, stillAway bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if !ended {
+	if ended {
+		c.last = r
+	} else {
 		c.room = r
 		c.player = seat
 	}

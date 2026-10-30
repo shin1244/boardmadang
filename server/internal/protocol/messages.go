@@ -8,14 +8,17 @@ import "encoding/json"
 
 // 클라이언트 → 서버
 const (
-	TypeJoin   = "join"
-	TypeCreate = "create"
-	TypeEnter  = "enter"
-	TypeBump   = "bump"
-	TypeAction = "action"
-	TypeHash   = "hash"
-	TypeResult = "result"
-	TypeResign = "resign"
+	TypeJoin    = "join"
+	TypeCreate  = "create"
+	TypeEnter   = "enter"
+	TypeBump    = "bump"
+	TypeAction  = "action"
+	TypeHash    = "hash"
+	TypeResult  = "result"
+	TypeResign  = "resign"
+	TypeDraw    = "draw"    // 무승부 제안. 상대가 제안해 둔 상태면 수락
+	TypeDecline = "decline" // 무승부 제안 거절 (제안한 쪽이 보내면 철회)
+	TypeRematch = "rematch" // 끝난 대국의 재대결 요청. 상대도 보내면 자리를 바꿔 시작
 )
 
 // 서버 → 클라이언트
@@ -32,6 +35,10 @@ const (
 	TypeDesync  = "desync"
 	TypeEnded   = "ended"
 	TypeError   = "error"
+
+	// TypeDraw: 누가 무승부를 제안했는지 (양쪽에게). TypeRematch: 누가 재대결을 원하는지 (양쪽에게)
+	TypeDrawOff    = "drawOff"    // 무승부 제안이 없어짐 (거절, 철회, 다음 행동)
+	TypeRematchOff = "rematchOff" // 재대결을 할 수 없게 됨 (상대가 나가거나 다른 대국을 찾음)
 )
 
 // Ended.Reason 값
@@ -44,6 +51,7 @@ const (
 	ReasonSpam     = "spam"     // 한쪽이 무시된 행동을 너무 많이 보냄 → 상대 승
 	ReasonLimit    = "limit"    // 행동 기록이 상한에 닿음 → 무효
 	ReasonTimeout  = "timeout"  // 한쪽이 시간을 다 씀 → 상대 승
+	ReasonAgreed   = "agreed"   // 무승부 합의
 )
 
 // Action은 플레이어의 행동 하나입니다. 서버는 내용을 해석하지 않고 그대로 전달합니다.
@@ -185,7 +193,29 @@ type Resumed struct {
 	Opponent PlayerInfo `json:"opponent"`
 	Minutes  *int       `json:"minutes"`
 	Clock    *Clock     `json:"clock,omitempty"` // 타이머가 있으면 지금 시계
+	Draw     *int       `json:"draw,omitempty"`  // 무승부를 제안해 둔 자리. 없으면 없음
 	Log      []Relay    `json:"log"`
+}
+
+// Draw는 Player가 무승부를 제안했다는 알림입니다. 제안한 쪽에게도 갑니다.
+// 제안은 상대가 수락(draw)하거나 거절(decline)하거나, 누가 행동을 하나 보내면 없어집니다 (DrawOff).
+type Draw struct {
+	Type   string `json:"type"`
+	Player int    `json:"player"`
+}
+
+type DrawOff struct {
+	Type string `json:"type"`
+}
+
+// Rematch는 Player가 재대결을 원한다는 알림입니다. 양쪽이 원하면 자리를 바꿔 새 대국이 시작되고 Matched가 갑니다.
+type Rematch struct {
+	Type   string `json:"type"`
+	Player int    `json:"player"`
+}
+
+type RematchOff struct {
+	Type string `json:"type"`
 }
 
 // Away는 상대의 연결이 끊겼다는 알림입니다. Seconds 안에 돌아오지 않으면 남은 쪽이 이깁니다.
