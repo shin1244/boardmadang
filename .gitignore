@@ -1,0 +1,28 @@
+# 비밀값 — 절대 커밋하지 않습니다. 예시는 .env.example에 둡니다.
+.env
+.env.*
+!.env.example
+
+# Go
+/server/bin/
+*.exe
+*.test
+*.out
+
+# trainer (Python, 학습 결과물)
+__pycache__/
+.venv/
+*.pt
+*.onnx
+/trainer/runs/
+/trainer/checkpoints/
+
+# web (나중에)
+node_modules/
+dist/
+
+# 편집기, OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

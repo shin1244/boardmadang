@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>보드마당 플레이그라운드</title>
+  <link rel="stylesheet" href="playground.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1 id="title">보드마당 플레이그라운드</h1>
+      <p id="meta" class="meta"></p>
+    </div>
+    <div class="controls">
+      <label>시드 <input id="seed" type="number" min="0" max="4294967295"></label>
+      <button id="restart">이 시드로 새 판</button>
+      <button id="newseed">새 시드로 새 판</button>
+      <button id="undo" class="secondary">한 수 무르기</button>
+      <button id="random" class="secondary">랜덤 대국 200판</button>
+    </div>
+  </header>
+
+  <div id="fatal" class="fatal" hidden></div>
+
+  <p id="status" class="status"></p>
+  <p id="counts" class="counts"></p>
+
+  <main id="boards" class="boards"></main>
+
+  <section class="panels">
+    <div class="card">
+      <h3>검사</h3>
+      <ul id="checks" class="checks"></ul>
+      <div id="random-result"></div>
+    </div>
+    <div class="card">
+      <h3>기록 <small>최신이 위</small></h3>
+      <ol id="log" class="log"></ol>
+    </div>
+    <div class="card">
+      <h3>state</h3>
+      <pre id="state"></pre>
+    </div>
+  </section>
+
+  <script type="module" src="playground.js"></script>
+</body>
+</html>
