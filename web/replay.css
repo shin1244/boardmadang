@@ -18,8 +18,4 @@
 }
 #position { font-variant-numeric: tabular-nums; }
 .replay-keys { margin: 0; color: var(--muted); font-size: 12px; }
-.who .winner { color: #2f8a52; font-weight: 700; }
-
-@media (prefers-color-scheme: dark) {
-  .who .winner { color: #6cc98f; }
-}
+.who .winner { color: var(--good); font-weight: 700; }

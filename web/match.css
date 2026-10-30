@@ -23,8 +23,8 @@
 .vs { color: var(--muted); font-size: 13px; }
 
 .match-status { min-height: 1.5em; margin: 0 0 14px; color: var(--muted); }
-.match-status.win { color: #2f8a52; font-size: 18px; font-weight: 700; }
-.match-status.lose { color: #c13f3f; font-size: 18px; font-weight: 700; }
+.match-status.win { color: var(--good); font-size: 18px; font-weight: 700; }
+.match-status.lose { color: var(--bad); font-size: 18px; font-weight: 700; }
 .match-status.even { color: var(--text); font-size: 18px; font-weight: 700; }
 .match-status.waiting::after {
   content: "";
@@ -65,7 +65,7 @@
 }
 .clock[hidden] { display: none; }
 .clock.running { border-color: var(--accent); color: var(--text); }
-.clock.low { border-color: #d94f4f; color: #c13f3f; }
+.clock.low { border-color: var(--bad); color: var(--bad); }
 
 .hosting { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px 14px; margin: 0 0 14px; }
 .hosting[hidden] { display: none; }
@@ -76,12 +76,6 @@
 .bump-wait { color: var(--muted); font-size: 13px; }
 
 .match-note { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
-
-@media (prefers-color-scheme: dark) {
-  .match-status.win { color: #6cc98f; }
-  .match-status.lose { color: #ee8080; }
-  .clock.low { color: #ee8080; }
-}
 
 @media (max-width: 760px) {
   .match { padding: 20px 16px 48px; }

@@ -1,29 +1,42 @@
+/* 색: 어두운 화면은 Night Owl, 밝은 화면은 Light Owl (VS Code 테마) 색을 따릅니다.
+   흐린 글자 색은 배경과 대비가 충분하도록 테마보다 조금 진하게/밝게 맞췄습니다. */
 :root {
-  --bg: #f4f3ef;
+  color-scheme: light dark; /* 스크롤바, 입력칸 같은 브라우저 기본 부품도 밝기에 맞춥니다 */
+  --bg: #f0f0f0;
   --surface: #ffffff;
-  --text: #1f2328;
-  --muted: #6a6f76;
-  --border: #e2ded6;
-  --accent: #2f6fd1;
+  --text: #403f53;
+  --muted: #5f6f7c;
+  --border: #d9d9d9;
+  --accent: #4876d6;
   --accent-text: #ffffff;
-  --topbar: #1c2027;
-  --topbar-text: #e9ebee;
-  --thumb: #ebe8e1;
-  --badge: #8a55c9;
+  --topbar: #011627;
+  --topbar-text: #d6deeb;
+  --topbar-muted: #8badc1;
+  --topbar-line: #1d3b53;
+  --thumb: #e4e9ee;
+  --badge: #994cc3;
+  --badge-text: #ffffff;
+  --good: #08916a;
+  --bad: #de3d3b;
+  --warn: #a8690a;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #15171a;
-    --surface: #1f2227;
-    --text: #e6e6e6;
-    --muted: #9aa0a6;
-    --border: #31353c;
-    --accent: #6ea2f0;
-    --accent-text: #0f1a2b;
-    --topbar: #0d0f12;
-    --thumb: #2a2e34;
-    --badge: #b08ae6;
+    --bg: #011627;
+    --surface: #0b2942;
+    --text: #d6deeb;
+    --muted: #8badc1;
+    --border: #1d3b53;
+    --accent: #82aaff;
+    --accent-text: #011627;
+    --topbar: #000c1d;
+    --thumb: #13344f;
+    --badge: #c792ea;
+    --badge-text: #011627;
+    --good: #addb67;
+    --bad: #ef5350;
+    --warn: #ecc48d;
   }
 }
 
@@ -72,32 +85,32 @@ body {
   grid-template-columns: repeat(2, 9px);
   gap: 2px;
 }
-.logo-mark i { width: 9px; height: 9px; border-radius: 2px; background: #d94f4f; }
-.logo-mark i:nth-child(2), .logo-mark i:nth-child(3) { background: #3f7fd9; }
+.logo-mark i { width: 9px; height: 9px; border-radius: 2px; background: #ef5350; }
+.logo-mark i:nth-child(2), .logo-mark i:nth-child(3) { background: #82aaff; }
 
 .menu { display: flex; gap: 20px; flex: 1; }
-.menu a, .menu .soon { color: #aab1bb; text-decoration: none; font-size: 15px; white-space: nowrap; }
+.menu a, .menu .soon { color: var(--topbar-muted); text-decoration: none; font-size: 15px; white-space: nowrap; }
 .menu a:hover { color: var(--topbar-text); }
 .menu a[aria-current="page"] { color: var(--topbar-text); font-weight: 600; }
 .menu .soon { opacity: 0.5; cursor: default; }
 
-.langs { display: flex; border: 1px solid #4a515c; border-radius: 6px; overflow: hidden; }
+.langs { display: flex; border: 1px solid var(--topbar-line); border-radius: 6px; overflow: hidden; }
 .langs button {
   padding: 5px 10px;
   border: 0;
   background: transparent;
-  color: #aab1bb;
+  color: var(--topbar-muted);
   font: inherit;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
 }
 .langs button:hover { color: var(--topbar-text); }
-.langs button[aria-pressed="true"] { background: #3a414c; color: var(--topbar-text); }
+.langs button[aria-pressed="true"] { background: var(--topbar-line); color: var(--topbar-text); }
 
 .login {
   padding: 6px 14px;
-  border: 1px solid #4a515c;
+  border: 1px solid var(--topbar-line);
   border-radius: 6px;
   background: transparent;
   color: var(--topbar-text);
@@ -106,7 +119,7 @@ body {
 .login:disabled { opacity: 0.5; }
 .login[hidden], .me[hidden] { display: none; }
 /* 지금 신원: "게스트 4821" 또는 계정 이름 */
-.me { color: #aab1bb; font-size: 14px; white-space: nowrap; text-decoration: none; }
+.me { color: var(--topbar-muted); font-size: 14px; white-space: nowrap; text-decoration: none; }
 .me:hover, .me[aria-current="page"] { color: var(--topbar-text); text-decoration: underline; }
 
 /* ---- 배너 ---- */
@@ -125,15 +138,15 @@ body {
 .slide[hidden], fieldset[hidden] { display: none; }
 .slide h2 { margin: 0 0 6px; font-size: 24px; }
 .slide p { margin: 0; opacity: 0.9; }
-.tone-a { background: linear-gradient(120deg, #c2410c, #d94f4f 55%, #a83279); }
-.tone-b { background: linear-gradient(120deg, #1e40af, #3f7fd9 55%, #0e7490); }
+.tone-a { background: linear-gradient(120deg, #4b2f99, #7e57c2 55%, #b0407f); }
+.tone-b { background: linear-gradient(120deg, #0b2942, #1f5f99 55%, #12756d); }
 
 .cta {
   flex: none;
   padding: 10px 18px;
   border-radius: 8px;
   background: #fff;
-  color: #1f2328;
+  color: #011627;
   font-weight: 600;
   text-decoration: none;
 }
@@ -203,7 +216,7 @@ fieldset label:has(input:disabled) { opacity: 0.5; cursor: default; }
   overflow: hidden;
 }
 .game-dialog[open] { display: grid; grid-template-columns: 280px minmax(0, 1fr); }
-.game-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+.game-dialog::backdrop { background: rgba(1, 22, 39, 0.7); }
 
 .gd-side {
   display: flex;
@@ -389,7 +402,7 @@ fieldset label:has(input:disabled) { opacity: 0.5; cursor: default; }
 }
 .card-open::after { content: ""; position: absolute; inset: 0; }
 .card-open:focus-visible { outline: none; }
-.card.broken { border-color: #d94f4f; }
+.card.broken { border-color: var(--bad); }
 
 .thumb {
   display: flex;
@@ -410,7 +423,7 @@ fieldset label:has(input:disabled) { opacity: 0.5; cursor: default; }
   padding: 1px 8px;
   border-radius: 999px;
   background: var(--badge);
-  color: #fff;
+  color: var(--badge-text);
   font-size: 12px;
   font-weight: 500;
 }
@@ -424,17 +437,12 @@ fieldset label:has(input:disabled) { opacity: 0.5; cursor: default; }
   font-size: 12px;
 }
 /* 난이도 태그는 하/중/상을 색으로도 구분합니다. */
-.tags li.diff-easy { border-color: #3c9a5f; color: #2f8a52; }
-.tags li.diff-normal { border-color: #c98a1b; color: #a87214; }
-.tags li.diff-hard { border-color: #d94f4f; color: #c13f3f; }
+.tags li.diff-easy { border-color: var(--good); color: var(--good); }
+.tags li.diff-normal { border-color: var(--warn); color: var(--warn); }
+.tags li.diff-hard { border-color: var(--bad); color: var(--bad); }
 .tags li.lang-tag { border-style: dashed; }
 .tags li.lang-tag.full { border-style: solid; color: var(--text); }
-.badge.warn { background: #c98a1b; }
-@media (prefers-color-scheme: dark) {
-  .tags li.diff-easy { color: #6cc98f; }
-  .tags li.diff-normal { color: #e3b04f; }
-  .tags li.diff-hard { color: #ee8080; }
-}
+.badge.warn { background: var(--warn); }
 
 .btn {
   flex: 1;

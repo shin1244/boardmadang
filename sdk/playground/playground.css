@@ -1,26 +1,30 @@
+/* 색은 web/lobby.css와 같습니다 (밝은 화면 Light Owl, 어두운 화면 Night Owl). --p0/--p1은 판의 플레이어 색입니다. */
 :root {
-  --bg: #f5f4f0;
+  color-scheme: light dark; /* 스크롤바, 입력칸 같은 브라우저 기본 부품도 밝기에 맞춥니다 */
+  --bg: #f0f0f0;
   --card: #ffffff;
-  --text: #1f2328;
-  --muted: #6a6f76;
-  --border: #dedad2;
-  --accent: #2f6fd1;
-  --ok: #2e8a52;
-  --bad: #c43d3d;
+  --text: #403f53;
+  --muted: #5f6f7c;
+  --border: #d9d9d9;
+  --accent: #4876d6;
+  --accent-text: #ffffff;
+  --ok: #08916a;
+  --bad: #de3d3b;
   --p0: #d94f4f;
   --p1: #3f7fd9;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #17191c;
-    --card: #212429;
-    --text: #e6e6e6;
-    --muted: #9aa0a6;
-    --border: #353a41;
-    --accent: #6ea2f0;
-    --ok: #5cc285;
-    --bad: #ef7a7a;
+    --bg: #011627;
+    --card: #0b2942;
+    --text: #d6deeb;
+    --muted: #8badc1;
+    --border: #1d3b53;
+    --accent: #82aaff;
+    --accent-text: #011627;
+    --ok: #addb67;
+    --bad: #ef5350;
   }
 }
 
@@ -67,7 +71,7 @@ button {
   border: 1px solid var(--accent);
   border-radius: 6px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-text);
   font: inherit;
   cursor: pointer;
 }
