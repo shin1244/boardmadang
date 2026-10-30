@@ -54,7 +54,6 @@ const STRINGS = {
 
     'card.failed': '불러오지 못했습니다: {msg}',
     'card.try': '혼자 둬보기',
-    'card.try.label': '{name} 둬보기',
     'card.match': '대전 찾기',
     'card.rulebook': '룰북',
     'card.private': '비공개',
@@ -71,10 +70,19 @@ const STRINGS = {
     'tag.lang.rulebook': '{lang} 일부 번역',
     'tag.rulebookOnly': '{code} 룰북',
 
-    'rulebook.title': '{name} 룰북',
     'rulebook.fallback': '{ui} 룰북이 없어 {lang} 룰북을 보여줍니다.',
     'rulebook.ingame': '게임 안 글자는 {lang}로 나옵니다.',
-    'rulebook.close': '닫기',
+    'dialog.close': '닫기',
+    'detail.open': '{name} 자세히 보기',
+    'detail.about': '소개',
+    'detail.description': '소개 글',
+    'detail.info': '정보',
+    'detail.timer': '타이머',
+    'detail.timer.custom': '방을 만들 때 바꿀 수 있음',
+    'detail.langs': '지원 언어',
+    'detail.fixed': '이 게임의 방은 제작자가 정한 시간으로 만듭니다: {timer}',
+    'detail.openRooms': '열린 방 보기',
+    'detail.back': '소개로 돌아가기',
 
     'match.title': '대전',
     'match.loading': '게임을 불러오는 중…',
@@ -170,9 +178,7 @@ const STRINGS = {
 
     'card.createRoom': '방 만들기',
     'tag.timer.custom': '방을 만들 때 시간을 바꿀 수 있습니다',
-    'create.title': '{name} 방 만들기',
     'create.lead': '방을 만들면 방 목록에 올라갑니다. 누가 들어오면 바로 시작합니다.',
-    'create.submit': '방 만들기',
 
     'rooms.title': '방 목록',
     'rooms.game': '게임',
@@ -291,7 +297,6 @@ const STRINGS = {
 
     'card.failed': "Couldn't load: {msg}",
     'card.try': 'Try solo',
-    'card.try.label': 'Try {name}',
     'card.match': 'Find a match',
     'card.rulebook': 'Rulebook',
     'card.private': 'Private',
@@ -308,10 +313,19 @@ const STRINGS = {
     'tag.lang.rulebook': 'Partial {lang} translation',
     'tag.rulebookOnly': '{code} rulebook',
 
-    'rulebook.title': '{name} rulebook',
     'rulebook.fallback': 'There is no {ui} rulebook, so this is the {lang} one.',
     'rulebook.ingame': 'In-game text appears in {lang}.',
-    'rulebook.close': 'Close',
+    'dialog.close': 'Close',
+    'detail.open': 'Open {name}',
+    'detail.about': 'About',
+    'detail.description': 'Description',
+    'detail.info': 'Details',
+    'detail.timer': 'Timer',
+    'detail.timer.custom': 'hosts can change it',
+    'detail.langs': 'Languages',
+    'detail.fixed': "Rooms for this game use the time its maker set: {timer}",
+    'detail.openRooms': 'See open rooms',
+    'detail.back': 'Back to about',
 
     'match.title': 'Match',
     'match.loading': 'Loading the game…',
@@ -407,9 +421,7 @@ const STRINGS = {
 
     'card.createRoom': 'Create room',
     'tag.timer.custom': 'Hosts can change the time when they create a room',
-    'create.title': 'Create a {name} room',
     'create.lead': 'Your room goes on the room list. The match starts as soon as someone joins.',
-    'create.submit': 'Create room',
 
     'rooms.title': 'Rooms',
     'rooms.game': 'Game',

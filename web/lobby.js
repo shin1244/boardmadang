@@ -119,81 +119,17 @@ async function loadGames() {
   }));
 }
 
-function addBadge(card, text, title, cls = '') {
+function addBadge(el, text, title, cls = '') {
   const b = document.createElement('span');
   b.className = `badge ${cls}`;
   b.textContent = text;
   if (title) b.title = title;
-  card.querySelector('h3').append(b);
+  el.append(b);
 }
 
-function renderCard(entry) {
-  const card = document.createElement('article');
-  card.className = 'card';
-
-  if (entry.error) {
-    card.classList.add('broken');
-    card.innerHTML = `<div class="card-body"><h3></h3><p class="desc"></p></div>`;
-    card.querySelector('h3').textContent = entry.id;
-    card.querySelector('.desc').textContent = t('card.failed', { msg: entry.error });
-    return card;
-  }
-
+/** 판, 난이도, 타이머, 언어 태그 [글, class, title]. 카드와 게임 창에서 같이 씁니다. */
+function tagsOf(entry) {
   const { game, listing } = entry;
-  const name = nameOf(entry);
-  const playLang = gameLang(listing, lang);
-  const play = `/sdk/playground/?game=${encodeURIComponent(entry.id)}&lang=${playLang}`;
-  card.innerHTML = `
-    <a class="thumb" href="${play}"><canvas></canvas></a>
-    <div class="card-body">
-      <h3><span class="name"></span></h3>
-      <p class="desc"></p>
-      <ul class="tags"></ul>
-    </div>
-    <div class="card-actions">
-      <a class="btn" href="${play}"></a>
-    </div>`;
-  card.querySelector('.thumb').setAttribute('aria-label', t('card.try.label', { name }));
-  card.querySelector('.name').textContent = name;
-  card.querySelector('.btn').textContent = t('card.try');
-  if (entry.private) addBadge(card, t('card.private'), t('card.private.title'));
-
-  const actions = card.querySelector('.card-actions');
-  const p = card.querySelector('.desc');
-  if (!listing) {
-    // 등록 정보가 없는 게임. 실제 사이트에서는 목록에 나오지 않고, 개발 서버에서만 보입니다.
-    addBadge(card, t('card.unregistered'), null, 'warn');
-    p.textContent = t('card.unregistered.desc');
-    const reg = document.createElement('a');
-    reg.className = 'btn ghost';
-    reg.href = `/web/register.html?game=${encodeURIComponent(entry.id)}`;
-    reg.textContent = t('card.register');
-    actions.append(reg);
-  } else {
-    // 화면 언어로 쓴 소개가 없으면 다른 언어 소개를 보여주고, 읽기 프로그램을 위해 lang을 붙입니다.
-    const desc = localize(listing.description, lang);
-    p.textContent = desc.text;
-    if (desc.lang !== lang) p.lang = desc.lang;
-
-    const rb = document.createElement('button');
-    rb.type = 'button';
-    rb.className = 'btn ghost';
-    rb.textContent = t('card.rulebook');
-    rb.addEventListener('click', () => openRulebook(entry));
-    actions.append(rb);
-  }
-  const match = document.createElement('a');
-  match.className = 'btn ghost';
-  match.href = `/web/match.html?game=${encodeURIComponent(entry.id)}`;
-  match.textContent = t('card.match');
-  actions.append(match);
-  const create = document.createElement('button');
-  create.type = 'button';
-  create.className = 'btn ghost';
-  create.textContent = t('card.createRoom');
-  create.addEventListener('click', () => createRoom(entry));
-  actions.append(create);
-
   const tags = [
     [`${game.board.rows}×${game.board.cols}`],
     [t(game.board.places === 'points' ? 'tag.points' : 'tag.cells')],
@@ -211,71 +147,210 @@ function renderCard(entry) {
     }
   }
   if (game.specialActions?.length) tags.push([t('tag.special', { n: game.specialActions.length })]);
-  for (const [text, cls, title] of tags) {
+  return tags;
+}
+
+function fillTags(ul, entry) {
+  ul.replaceChildren(...tagsOf(entry).map(([text, cls, title]) => {
     const li = document.createElement('li');
     li.textContent = text;
     if (cls) li.className = cls;
     if (title) li.title = title;
-    card.querySelector('.tags').append(li);
+    return li;
+  }));
+}
+
+/** 시작 화면 그림. 그리지 못하면 false */
+function drawThumb(canvas, entry, size) {
+  const { game } = entry;
+  try {
+    const board = new BoardView(canvas, game.board, game.pieces);
+    board.resize(size);
+    const view = game.view(game.setup(fixedRng()), 0, gameLang(entry.listing, lang));
+    board.draw({ ...view, marks: (view.marks ?? []).filter((m) => m.type !== 'last-move') });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 소개 글. 화면 언어로 쓴 소개가 없으면 다른 언어 소개를 보여주고, 읽기 프로그램을 위해 lang을 붙입니다. */
+function fillDescription(p, entry) {
+  p.removeAttribute('lang');
+  if (!entry.listing) {
+    // 등록 정보가 없는 게임. 실제 사이트에서는 목록에 나오지 않고, 개발 서버에서만 보입니다.
+    p.textContent = t('card.unregistered.desc');
+    return;
+  }
+  const desc = localize(entry.listing.description, lang);
+  p.textContent = desc.text;
+  if (desc.lang !== lang) p.lang = desc.lang;
+}
+
+function addBadges(el, entry) {
+  if (entry.private) addBadge(el, t('card.private'), t('card.private.title'));
+  if (!entry.listing) addBadge(el, t('card.unregistered'), null, 'warn');
+}
+
+/** 카드: 그림, 이름, 짧은 소개, 태그만. 누르면 게임 창이 뜹니다. */
+function renderCard(entry) {
+  const card = document.createElement('article');
+  card.className = 'card';
+
+  if (entry.error) {
+    card.classList.add('broken');
+    card.innerHTML = `<div class="card-body"><h3></h3><p class="desc"></p></div>`;
+    card.querySelector('h3').textContent = entry.id;
+    card.querySelector('.desc').textContent = t('card.failed', { msg: entry.error });
+    return card;
   }
 
-  // 시작 화면 썸네일
-  try {
-    const board = new BoardView(card.querySelector('canvas'), game.board, game.pieces);
-    board.resize(168);
-    const view = game.view(game.setup(fixedRng()), 0, playLang);
-    board.draw({ ...view, marks: (view.marks ?? []).filter((m) => m.type !== 'last-move') });
-  } catch {
-    card.querySelector('.thumb').classList.add('no-thumb');
-  }
+  const name = nameOf(entry);
+  card.innerHTML = `
+    <div class="thumb"><canvas></canvas></div>
+    <div class="card-body">
+      <h3><button type="button" class="card-open"></button></h3>
+      <p class="desc"></p>
+      <ul class="tags"></ul>
+    </div>`;
+  const open = card.querySelector('.card-open');
+  open.textContent = name;
+  open.setAttribute('aria-label', t('detail.open', { name }));
+  open.addEventListener('click', () => openGame(entry));
+  addBadges(card.querySelector('h3'), entry);
+  fillDescription(card.querySelector('.desc'), entry);
+  fillTags(card.querySelector('.tags'), entry);
+  if (!drawThumb(card.querySelector('canvas'), entry, 168)) card.querySelector('.thumb').classList.add('no-thumb');
   return card;
 }
 
-// ---- 룰북 ----
+// ---- 게임 창 ----
+// 왼쪽: 그림, 이름, 대전 찾기, 방 만들기, 혼자 둬보기. 오른쪽: 소개 (방 만들기를 누르면 방 만들기).
+// 열려 있는 동안 주소에 ?game=<id>&tab=<메뉴>를 붙여 두므로 링크로 바로 열 수 있습니다.
 
-function openRulebook(entry) {
+const TABS = { about: 'detail.about', create: 'card.createRoom' };
+let current = null; // 창에 띄운 게임
+let tab = 'about';
+
+function openGame(entry, startTab = 'about') {
+  current = entry;
+  tab = startTab in TABS ? startTab : 'about';
+  initCreate();
+  for (const d of document.querySelectorAll('.gd-fold')) d.open = false;
+  fillDialog();
+  const dlg = $('#game');
+  if (!dlg.open) dlg.showModal();
+  syncUrl();
+}
+
+function setTab(name) {
+  tab = name;
+  fillDialog();
+  syncUrl();
+  $('.gd-body').scrollTop = 0;
+  // 휴대폰에서는 오른쪽 칸이 아래에 있으므로 거기로 내려갑니다
+  if (name === 'create' && matchMedia('(max-width: 760px)').matches) $('.gd-main').scrollIntoView({ block: 'start' });
+}
+
+function syncUrl() {
+  const url = new URL(location.href);
+  url.searchParams.delete('game');
+  url.searchParams.delete('tab');
+  if (current) {
+    url.searchParams.set('game', current.id);
+    if (tab !== 'about') url.searchParams.set('tab', tab);
+  }
+  history.replaceState(null, '', url);
+}
+
+/** 지금 언어로 창을 채웁니다. 방 만들기에서 고르던 시간은 그대로 둡니다. */
+function fillDialog() {
+  const entry = current;
+  const { game, listing } = entry;
+  const id = encodeURIComponent(entry.id);
+
+  // 왼쪽
+  const name = $('#gd-name');
+  name.textContent = nameOf(entry);
+  addBadges(name, entry);
+  $('#gd-thumb').classList.toggle('no-thumb', !drawThumb($('#gd-thumb canvas'), entry, 220));
+  const meta = [`${game.board.rows}×${game.board.cols}`, t('tag.players')];
+  if (listing) meta.push(t('tag.difficulty', { d: t(`difficulty.${listing.difficulty}`) }));
+  $('#gd-meta').textContent = meta.join(' · ');
+  $('#gd-match').href = `/web/match.html?game=${id}`;
+  $('#gd-try').href = `/sdk/playground/?game=${id}&lang=${gameLang(listing, lang)}`;
+  $('#gd-create').setAttribute('aria-pressed', String(tab === 'create'));
+
+  // 오른쪽
+  $('#gd-title').textContent = t(TABS[tab]);
+  $('#gd-back').hidden = tab === 'about';
+  for (const panel of document.querySelectorAll('[data-panel]')) panel.hidden = panel.dataset.panel !== tab;
+  fillAbout(entry);
+  fillRulebook(entry);
+  fillCreate(entry);
+}
+
+function fillAbout(entry) {
   const { listing } = entry;
-  const dlg = $('#rulebook');
-  const book = localize(listing.rulebook, lang);
-  $('#rulebook-title').textContent = t('rulebook.title', { name: nameOf(entry) });
+  fillDescription($('#gd-desc'), entry);
+  $('#gd-register').hidden = !!listing;
+  $('#gd-register').href = `/web/register.html?game=${encodeURIComponent(entry.id)}`;
+  fillTags($('#gd-tags'), entry);
+  const timer = timerOfEntry(entry);
+  $('#gd-timer').textContent = timer.custom
+    ? `${timerText(timer.minutes)} · ${t('detail.timer.custom')}`
+    : timerText(timer.minutes);
+  $('#gd-langs-row').hidden = !listing;
+  if (listing) {
+    const levels = [...fullLangs(listing).map((l) => t('tag.lang.full', { lang: LANG_NAMES[l] })),
+      ...LANGS.filter((l) => listing.languages[l] === 'rulebook').map((l) => t('tag.lang.rulebook', { lang: LANG_NAMES[l] }))];
+    $('#gd-langs').textContent = levels.join(', ');
+  }
+}
 
+function fillRulebook(entry) {
+  const { listing } = entry;
+  const field = $('#gd-rulebook');
+  const text = field.querySelector('.rulebook-text');
+  field.hidden = !listing; // 등록 전이면 룰북이 없습니다
+  if (!listing) {
+    text.replaceChildren();
+    return;
+  }
+  const book = localize(listing.rulebook, lang);
   const notes = [];
   if (book.lang !== lang) notes.push(t('rulebook.fallback', { ui: LANG_NAMES[lang], lang: LANG_NAMES[book.lang] }));
   notes.push(t('rulebook.ingame', { lang: LANG_NAMES[gameLang(listing, lang)] }));
-  dlg.querySelector('.rulebook-notes').textContent = notes.join(' ');
+  field.querySelector('.rulebook-notes').textContent = notes.join(' ');
 
   // 빈 줄로 문단을 나눕니다. 글은 textContent로만 넣습니다 (제작자가 쓴 글을 HTML로 해석하지 않음).
-  const text = dlg.querySelector('.rulebook-text');
   text.lang = book.lang;
   text.replaceChildren(...book.text.split(/\n\s*\n/).map((para) => {
     const el = document.createElement('p');
     el.textContent = para.trim();
     return el;
   }));
-  dlg.showModal();
-  text.scrollTop = 0;
 }
 
 // ---- 방 만들기 ----
 
-let creating = null; // 방 만들기 창에서 고르는 게임
-
 const roomUrl = (entry, minutes) => `/web/match.html?game=${encodeURIComponent(entry.id)}&create=1&minutes=${minutes ?? 'none'}`;
 
-/** 제작자가 커스텀 타이머를 허용했으면 시간을 고르는 창을, 아니면 바로 기본 타이머로 방을 만듭니다. */
-function createRoom(entry) {
-  const timer = timerOfEntry(entry);
-  if (!timer.custom) {
-    location.href = roomUrl(entry, timer.minutes);
-    return;
-  }
-  creating = entry;
-  $('#create-title').textContent = t('create.title', { name: nameOf(entry) });
+/** 다른 게임을 열 때만 고르는 칸을 그 게임의 기본 타이머로 맞춥니다. */
+function initCreate() {
+  const timer = timerOfEntry(current);
   const on = timer.minutes !== null;
   for (const r of document.querySelectorAll('input[name=create-timer]')) r.checked = r.value === (on ? 'on' : 'none');
   $('#create-minutes').value = timer.minutes ?? 10;
+}
+
+/** 제작자가 커스텀 타이머를 허용했으면 시간을 고르고, 아니면 기본 타이머로 정해져 있다고 알려 줍니다. */
+function fillCreate(entry) {
+  const timer = timerOfEntry(entry);
+  $('#create-picks').hidden = !timer.custom;
+  $('#create-fixed').hidden = timer.custom;
+  $('#create-fixed').textContent = t('detail.fixed', { timer: timerText(timer.minutes) });
   syncCreateForm();
-  $('#create-room').showModal();
 }
 
 function syncCreateForm() {
@@ -283,16 +358,40 @@ function syncCreateForm() {
   $('#create-minutes').disabled = !on;
 }
 
-function setupCreateForm() {
+function setupDialog() {
+  const dlg = $('#game');
+  // 방 만들기를 다시 누르거나 ‹를 누르면 소개로 돌아갑니다
+  $('#gd-create').addEventListener('click', () => setTab(tab === 'create' ? 'about' : 'create'));
+  $('#gd-back').addEventListener('click', () => setTab('about'));
+  // 창 바깥(어두운 곳)을 누르면 닫습니다
+  dlg.addEventListener('click', (e) => {
+    if (e.target === dlg) dlg.close();
+  });
+  dlg.addEventListener('close', () => {
+    current = null;
+    syncUrl();
+  });
   $('#create-form').addEventListener('change', syncCreateForm);
   $('#create-form').addEventListener('submit', (e) => {
     e.preventDefault();
+    const timer = timerOfEntry(current);
+    if (!timer.custom) {
+      location.href = roomUrl(current, timer.minutes);
+      return;
+    }
     const on = document.querySelector('input[name=create-timer]:checked')?.value === 'on';
     const input = $('#create-minutes');
     // 범위는 input의 min/max로 브라우저가 먼저 막고, 서버도 다시 봅니다
     if (on && !input.reportValidity()) return;
-    location.href = roomUrl(creating, on ? Number(input.value) : null);
+    location.href = roomUrl(current, on ? Number(input.value) : null);
   });
+}
+
+/** 주소에 ?game=이 있으면 그 게임 창을 엽니다 (링크 공유, 새로고침). */
+function openFromUrl() {
+  const params = new URLSearchParams(location.search);
+  const entry = entries?.find((e) => e.id === params.get('game') && !e.error);
+  if (entry) openGame(entry, params.get('tab') ?? 'about');
 }
 
 // ---- 필터 ----
@@ -383,11 +482,12 @@ function render() {
   }
   if (entries) cards = new Map(entries.map((e) => [e, renderCard(e)]));
   apply();
+  if (current) fillDialog();
 }
 
 setupBanner();
 setupFilters();
-setupCreateForm();
+setupDialog();
 setLang(await detectLang());
 render();
 me = await loadMe();
@@ -398,3 +498,4 @@ try {
 }
 buildLangFilter();
 render();
+openFromUrl();

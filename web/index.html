@@ -84,29 +84,72 @@
     </div>
   </div>
 
-  <dialog id="rulebook" class="rulebook" aria-labelledby="rulebook-title">
-    <header>
-      <h2 id="rulebook-title"></h2>
-      <form method="dialog"><button class="close" data-i18n-attr="aria-label:rulebook.close" aria-label="닫기">×</button></form>
-    </header>
-    <p class="rulebook-notes"></p>
-    <div class="rulebook-text"></div>
-  </dialog>
+  <!-- 게임 창: 카드를 누르면 뜹니다. 왼쪽은 그림과 버튼들, 오른쪽은 소개 (방 만들기를 누르면 방 만들기) -->
+  <dialog id="game" class="game-dialog" aria-labelledby="gd-name">
+    <aside class="gd-side">
+      <div id="gd-thumb" class="gd-thumb"><canvas></canvas></div>
+      <h2 id="gd-name"></h2>
+      <p id="gd-meta" class="gd-meta"></p>
+      <a id="gd-match" class="btn" data-i18n="card.match">대전 찾기</a>
+      <button id="gd-create" class="btn ghost" type="button" aria-controls="create-form" aria-pressed="false" data-i18n="card.createRoom">방 만들기</button>
+      <a id="gd-try" class="btn ghost" data-i18n="card.try">혼자 둬보기</a>
+    </aside>
 
-  <!-- 방 만들기: 제작자가 커스텀 타이머를 허용한 게임만 이 창이 뜹니다. 아니면 바로 기본 타이머로 만듭니다. -->
-  <dialog id="create-room" class="rulebook create-room" aria-labelledby="create-title">
-    <header>
-      <h2 id="create-title"></h2>
-      <form method="dialog"><button class="close" data-i18n-attr="aria-label:rulebook.close" aria-label="닫기">×</button></form>
-    </header>
-    <form id="create-form" class="create-form">
-      <p class="hint" data-i18n="create.lead"></p>
-      <label class="pick"><input type="radio" name="create-timer" value="none"> <span data-i18n="timer.none">타이머 없음</span></label>
-      <label class="pick"><input type="radio" name="create-timer" value="on"> <span data-i18n="register.timer.each">각자</span>
-        <input id="create-minutes" type="number" min="1" max="180" step="1" inputmode="numeric" required>
-        <span data-i18n="timer.minutesUnit">분</span></label>
-      <button class="btn" type="submit" data-i18n="create.submit">방 만들기</button>
-    </form>
+    <section class="gd-main">
+      <header class="gd-head">
+        <button id="gd-back" class="back" type="button" hidden data-i18n-attr="aria-label:detail.back title:detail.back" aria-label="소개로 돌아가기">‹</button>
+        <h3 id="gd-title"></h3>
+        <form method="dialog"><button class="close" data-i18n-attr="aria-label:dialog.close title:dialog.close" aria-label="닫기">×</button></form>
+      </header>
+      <div class="gd-body">
+        <div id="gd-panel-about" class="gd-card" role="tabpanel" data-panel="about">
+          <div class="gd-field">
+            <h4 data-i18n="detail.description">소개 글</h4>
+            <p id="gd-desc" class="gd-desc"></p>
+            <a id="gd-register" class="btn ghost gd-register" data-i18n="card.register" hidden>등록하기</a>
+          </div>
+          <div class="gd-field">
+            <h4 data-i18n="detail.info">정보</h4>
+            <ul id="gd-tags" class="tags"></ul>
+          </div>
+          <div class="gd-field row">
+            <h4 data-i18n="detail.timer">타이머</h4>
+            <span id="gd-timer"></span>
+          </div>
+          <!-- 지원 언어와 룰북은 접어 두고, 제목을 누르면 펼칩니다 -->
+          <details id="gd-langs-row" class="gd-field gd-fold">
+            <summary><h4 data-i18n="detail.langs">지원 언어</h4></summary>
+            <p id="gd-langs" class="gd-desc"></p>
+          </details>
+          <details id="gd-rulebook" class="gd-field gd-fold" hidden>
+            <summary><h4 data-i18n="card.rulebook">룰북</h4></summary>
+            <p class="rulebook-notes"></p>
+            <div class="rulebook-text"></div>
+          </details>
+        </div>
+
+        <!-- 제작자가 커스텀 타이머를 허용했으면 시간을 고르고, 아니면 정해진 시간으로 만듭니다 -->
+        <form id="create-form" class="gd-card" role="tabpanel" data-panel="create" hidden>
+          <div class="gd-field">
+            <h4 data-i18n="detail.timer">타이머</h4>
+            <div id="create-picks" class="create-picks">
+              <label class="pick"><input type="radio" name="create-timer" value="none"> <span data-i18n="timer.none">타이머 없음</span></label>
+              <label class="pick"><input type="radio" name="create-timer" value="on"> <span data-i18n="register.timer.each">각자</span>
+                <input id="create-minutes" type="number" min="1" max="180" step="1" inputmode="numeric" required>
+                <span data-i18n="timer.minutesUnit">분</span></label>
+            </div>
+            <p id="create-fixed" class="gd-desc" hidden></p>
+          </div>
+          <div class="gd-field">
+            <p class="gd-desc muted" data-i18n="create.lead"></p>
+            <div class="gd-actions">
+              <button class="btn" type="submit" data-i18n="card.createRoom">방 만들기</button>
+              <a class="btn ghost" href="/web/rooms.html" data-i18n="detail.openRooms">열린 방 보기</a>
+            </div>
+          </div>
+        </form>
+      </div>
+    </section>
   </dialog>
 
   <script type="module" src="lobby.js"></script>
