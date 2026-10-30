@@ -359,6 +359,7 @@ const ERRORS = {
   'no session': 'comments.error.noSession',
   'too many reports': 'report.error.tooMany',
   'not found': 'report.error.gone',
+  'member only': 'comments.error.memberOnly',
 };
 
 let talk = null; // 창에 띄운 게임의 의견 { game, list, count, error }. list가 null이면 불러오는 중
@@ -421,6 +422,7 @@ function renderTalk() {
   // 의견은 계정만 남깁니다. 게스트에게는 남기는 칸 대신 로그인 안내를 보여줍니다
   $('#comment-form').hidden = !isMember(me);
   $('#comment-login').hidden = isMember(me);
+  $('.comments-foot').hidden = !isMember(me); // 게임 신고도 계정만
   $('#comment-as').textContent = me ? t('comments.as', { name: displayName(me) }) : '';
   syncCommentLength();
   const note = $('#comments-note');
@@ -460,7 +462,7 @@ function renderComment(c) {
   const actions = li.querySelector('.comment-actions');
   if (c.mine) {
     actions.append(textButton(t('comments.delete'), () => deleteComment(c)));
-  } else if (!c.hidden) {
+  } else if (!c.hidden && isMember(me)) { // 신고는 계정만
     const report = textButton(t(c.reported ? 'comments.reported' : 'comments.report'), () => openReport({ comment: c }));
     report.disabled = !!c.reported;
     actions.append(report);

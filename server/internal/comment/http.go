@@ -17,7 +17,8 @@ import (
 //	DELETE /api/games/{game}/comments/{id}   내 의견 지우기
 //	POST   /api/reports                      신고 {"game":"...","comment":"...","reason":"spam","detail":"..."}
 //
-// 남기기는 계정만 됩니다 (게스트면 403 {"error":"member only"}). 지우기와 신고는 세션 쿠키만 있으면 됩니다 (게스트도 됩니다).
+// 남기기와 신고는 계정만 됩니다 (게스트면 403 {"error":"member only"}).
+// 지우기는 세션 쿠키만 있으면 됩니다 (계정만 남기기 전에 게스트가 남긴 의견을 지울 수 있게).
 // POST는 JSON 본문만 받습니다. 다른 사이트의 폼은 JSON을 보낼 수 없고, fetch로 보내면 브라우저가 미리 확인(preflight)하는데
 // 이 서버가 CORS 허가를 주지 않아서 막힙니다. 쿠키도 SameSite=Lax라 다른 사이트의 POST에는 붙지 않습니다.
 type Handler struct {
@@ -41,12 +42,8 @@ func (h Handler) ServeList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h Handler) ServePost(w http.ResponseWriter, r *http.Request) {
-	u, ok := h.user(w, r)
+	u, ok := h.member(w, r)
 	if !ok {
-		return
-	}
-	if !u.IsMember() {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "member only"})
 		return
 	}
 	var body struct {
@@ -76,7 +73,7 @@ func (h Handler) ServeDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h Handler) ServeReport(w http.ResponseWriter, r *http.Request) {
-	u, ok := h.user(w, r)
+	u, ok := h.member(w, r)
 	if !ok {
 		return
 	}
@@ -96,6 +93,16 @@ func (h Handler) user(w http.ResponseWriter, r *http.Request) (identity.User, bo
 	u, ok := h.IDs.FromRequest(r)
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "no session"})
+	}
+	return u, ok
+}
+
+// member는 계정만 통과시킵니다. 쿠키가 없으면 401, 게스트면 403 {"error":"member only"}.
+func (h Handler) member(w http.ResponseWriter, r *http.Request) (identity.User, bool) {
+	u, ok := h.user(w, r)
+	if ok && !u.IsMember() {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "member only"})
+		return identity.User{}, false
 	}
 	return u, ok
 }

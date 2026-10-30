@@ -223,6 +223,9 @@ func TestHTTP(t *testing.T) {
 	if strings.Contains(rec.Body.String(), "m_web") {
 		t.Fatalf("내부 id를 보내면 안 됩니다: %s", rec.Body)
 	}
+	if rec := do("POST", "/api/reports", "application/json", `{"game":"tictactoe","reason":"copyright"}`, false, guestCookie); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "member only") {
+		t.Fatalf("게스트 신고: %d %s", rec.Code, rec.Body)
+	}
 	if rec := do("POST", "/api/reports", "application/json", `{"game":"tictactoe","reason":"copyright"}`, true); rec.Code != http.StatusOK {
 		t.Fatalf("게임 신고: %d %s", rec.Code, rec.Body)
 	}

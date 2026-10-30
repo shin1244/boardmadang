@@ -24,8 +24,9 @@ const STRINGS = {
     'logout': '로그아웃',
     'lang.label': '화면 언어',
     'guest.name': '게스트 {tag}',
-    'guest.hint': '게스트는 대전과 관전만 할 수 있습니다. 의견, 방 만들기, 게임 올리기는 로그인이 필요합니다.',
-    'comments.needLogin': '의견은 로그인한 계정만 남길 수 있습니다.',
+    'guest.hint': '게스트는 대전과 관전만 할 수 있습니다. 의견, 신고, 방 만들기, 게임 올리기는 로그인이 필요합니다.',
+    'comments.needLogin': '의견과 신고는 로그인한 계정만 할 수 있습니다.',
+    'comments.error.memberOnly': '로그인한 계정만 할 수 있습니다.',
     'create.needLogin': '방은 로그인한 계정만 만들 수 있습니다. 게스트는 빠른 매칭이나 열린 방에 들어가서 둘 수 있습니다.',
     'match.memberOnly': '방은 로그인한 계정만 만들 수 있습니다.',
 
@@ -351,8 +352,9 @@ const STRINGS = {
     'logout': 'Log out',
     'lang.label': 'Language',
     'guest.name': 'Guest {tag}',
-    'guest.hint': 'Guests can play and watch. Log in to comment, create rooms, or upload games.',
-    'comments.needLogin': 'Log in to leave a comment.',
+    'guest.hint': 'Guests can play and watch. Log in to comment, report, create rooms, or upload games.',
+    'comments.needLogin': 'Log in to comment or report.',
+    'comments.error.memberOnly': 'Only logged-in accounts can do this.',
     'create.needLogin': 'Log in to create a room. Guests can use quick match or join an open room.',
     'match.memberOnly': 'Log in to create a room.',
 
