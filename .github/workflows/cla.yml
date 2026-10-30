@@ -1,0 +1,51 @@
+# 기여자 라이선스 동의서(CLA.md) 서명 받기.
+#
+# 풀 리퀘스트를 열면 아직 서명하지 않은 커밋 작성자에게 댓글로 서명을 부탁하고, 모두 서명할 때까지 "CLA" 검사가 실패합니다.
+# 서명하려면 그 풀 리퀘스트에 "I have read the CLA Document and I hereby sign the CLA"를 그대로 댓글로 남깁니다.
+# 서명은 cla-signatures 브랜치의 signatures/v1/cla.json에 쌓입니다 (코드 브랜치와 섞이지 않게).
+#
+# 처음 한 번, 서명을 쌓을 브랜치를 만들어 둬야 합니다 (CONTRIBUTING.md의 "관리자 메모").
+#
+# 저장소 주인이 연 풀 리퀘스트는 검사하지 않습니다. 주인 커밋에는 GitHub 계정이 없는 작성자(예: AI 도구)가 섞일 수 있는데,
+# 그런 작성자는 이름으로만 구분돼서 허용 목록에 넣으면 누구나 그 이름으로 서명을 건너뛸 수 있기 때문입니다.
+# 남의 커밋을 주인의 풀 리퀘스트로 가져올 때는 그 사람의 서명을 먼저 받아 둡니다.
+name: CLA
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [opened, closed, synchronize]
+
+# pull_request_target은 기본 브랜치의 이 파일로 돌고, 풀 리퀘스트의 코드를 받아 실행하지 않습니다 (checkout이 없음).
+# 그래서 서명 파일을 쓰고 댓글을 달 권한을 줘도 풀 리퀘스트가 그 권한을 쓸 수 없습니다.
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  cla:
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'pull_request_target' && github.event.pull_request.user.login != github.repository_owner) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.issue.user.login != github.repository_owner &&
+       (github.event.comment.body == 'recheck' || github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'))
+    steps:
+      - uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          path-to-document: https://github.com/shin1244/boardmadang/blob/HEAD/CLA.md
+          path-to-signatures: signatures/v1/cla.json
+          branch: cla-signatures
+          allowlist: dependabot[bot]
+          custom-notsigned-prcomment: |
+            기여해 주셔서 고맙습니다! 보드마당은 기여를 받기 전에 [기여자 라이선스 동의서(CLA)](https://github.com/shin1244/boardmadang/blob/HEAD/CLA.md)에 서명을 받습니다. 저작권은 기여자에게 그대로 남습니다.
+            읽고 동의하시면 아래 문장을 **그대로** 이 풀 리퀘스트에 댓글로 남겨 주세요.
+
+            Thank you for your contribution! Before we can accept it, please read and sign our [Contributor License Agreement](https://github.com/shin1244/boardmadang/blob/HEAD/CLA.md). You keep your copyright. If you agree, post the sentence below **exactly** as a comment on this pull request.
+          custom-allsigned-prcomment: 모든 기여자가 CLA에 서명했습니다. / All contributors have signed the CLA.
+          signed-commit-message: "$contributorName 님이 #$pullRequestNo 에서 CLA에 서명"
+          create-file-commit-message: CLA 서명 기록 파일 만들기

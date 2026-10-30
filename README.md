@@ -97,3 +97,6 @@ GO_SERVER=http://localhost:8081 node sdk/playground/serve.js
 
 **올린 게임은 AGPL이 되지 않습니다.** 게임의 라이선스는 제작자가 정하며, 이를 AGPL 7조의
 추가 허가로 명시해 두었습니다. 자세한 내용은 [LICENSING.md](LICENSING.md)를 보세요.
+
+기여하기 전에 [기여자 라이선스 동의서(CLA)](CLA.md)에 서명을 받습니다. 저작권은 기여자에게 남습니다.
+자세한 내용은 [CONTRIBUTING.md](CONTRIBUTING.md)를 보세요.
