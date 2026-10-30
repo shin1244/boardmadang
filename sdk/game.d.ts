@@ -1,6 +1,7 @@
 // 보드마당 게임 API 타입 정의.
 // 게임은 JS로 만들어도 됩니다. JS 파일 위에 아래처럼 적으면 편집기 자동완성을 받을 수 있습니다.
-//   /** @type {import('../../sdk/game').Game<State>} */
+//   /** @type {import('boardmadang').Game<State>} */          npm 패키지 (npm i -D boardmadang)
+//   /** @type {import('../../sdk/game').Game<State>} */       이 레포의 games/ 안에서
 
 /** 0 = 선공, 1 = 후공 */
 export type Player = 0 | 1;
@@ -118,6 +119,21 @@ export interface Listing {
   description: Localized;
   /** 규칙 설명. 빈 줄로 문단을 나눕니다. */
   rulebook: Localized;
+}
+
+/**
+ * 썸네일 (thumbnail.json). 게임 목록에 보일 판입니다. 이미지가 아니라 플레이그라운드에서 혼자 두던 판을
+ * 「썸네일로」로 그대로 찍은 데이터이고, 사이트가 보드 렌더러로 다시 그립니다.
+ * 판 설정과 기물 세트까지 들어 있어서 게임 코드 없이 그릴 수 있습니다. 없으면 시작 판을 보여줍니다.
+ * 코드에서 board나 pieces를 바꾸면 다시 찍어야 합니다 (npx boardmadang check가 알려줍니다).
+ */
+export interface Thumbnail {
+  board: BoardConfig;
+  pieces: Game<unknown>['pieces'];
+  /** 찍은 플레이어 화면 (flipForPlayer면 뒤집어 그립니다) */
+  player: Player;
+  /** 그 순간의 view(). 언어마다 다른 message는 넣지 않습니다. */
+  view: Omit<View, 'message'>;
 }
 
 export interface Game<S> {

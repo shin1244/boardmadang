@@ -1,7 +1,52 @@
 {
-  "private": true,
+  "name": "boardmadang",
+  "version": "0.1.0",
+  "description": "보드마당(boardmadang.com)에 올릴 1대1 격자 보드게임을 만드는 도구: 게임 API 타입, 플레이그라운드, 업로드 검사, 올릴 파일 묶기",
+  "license": "MIT",
   "type": "module",
+  "bin": {
+    "boardmadang": "bin/boardmadang.js"
+  },
+  "types": "./game.d.ts",
+  "exports": {
+    ".": {
+      "types": "./game.d.ts",
+      "default": "./check.js"
+    },
+    "./check": "./check.js",
+    "./listing": "./playground/listing.js",
+    "./platform": "./playground/platform.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "template/",
+    "check.js",
+    "game.d.ts",
+    "playground/index.html",
+    "playground/playground.js",
+    "playground/playground.css",
+    "playground/board.js",
+    "playground/listing.js",
+    "playground/platform.js"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shin1244/boardmadang.git",
+    "directory": "sdk"
+  },
+  "homepage": "https://boardmadang.com",
+  "keywords": [
+    "boardgame",
+    "board-game",
+    "game",
+    "boardmadang"
+  ],
   "scripts": {
-    "playground": "node playground/serve.js"
+    "playground": "node playground/serve.js",
+    "test": "node --test"
   }
 }

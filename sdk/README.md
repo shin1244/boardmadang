@@ -3,6 +3,35 @@
 보드마당에 올리는 게임은 **JS 모듈 하나**입니다. 규칙만 쓰고, 그리기·네트워크·AI는 플랫폼이 합니다.
 정확한 타입은 [game.d.ts](game.d.ts)에 있습니다.
 
+## 시작하기
+
+Node 18 이상만 있으면 됩니다. 이 폴더가 npm 패키지 [`boardmadang`](https://www.npmjs.com/package/boardmadang)입니다 (MIT).
+
+```bash
+npx boardmadang new my-game
+cd my-game
+npx boardmadang dev
+```
+
+| 명령 | 하는 일 |
+|---|---|
+| `npx boardmadang new <폴더>` | 새 게임 틀을 만듭니다 (틱택토에서 시작). 폴더 이름이 게임 id가 됩니다 |
+| `npx boardmadang dev` | [플레이그라운드](#내-컴퓨터에서-돌려보기-플레이그라운드)를 띄웁니다. 혼자 양쪽을 두고, 「썸네일로」로 [썸네일](#썸네일)을 찍습니다 |
+| `npx boardmadang check` | 업로드할 때와 같은 검사를 합니다 ([제한값](#제한값-초안)) |
+| `npx boardmadang pack` | 검사를 통과하면 사이트에 올릴 `<id>.zip`을 만듭니다 |
+
+게임 폴더는 이렇게 생겼고, `pack`은 이 파일들만 묶습니다 (테스트, `node_modules`, 점으로 시작하는 파일은 뺍니다).
+
+```
+my-game/
+├─ index.js        게임 모듈 (필수)
+├─ *.js, *.mjs     index.js가 import하는 다른 파일 (선택)
+├─ listing.json    등록 정보: 이름, 소개, 룰북, 난이도, 언어, 타이머 (선택, 사이트 등록창에서도 고칠 수 있음)
+└─ thumbnail.json  썸네일: 플레이그라운드에서 찍은 판 (선택, 없으면 시작 판)
+```
+
+`index.js`가 `export`를 쓰므로 폴더에 `{"type": "module"}`이 든 `package.json`이 있어야 Node가 읽습니다 (`new`가 만들어 줍니다).
+
 ## 모양
 
 ```js
@@ -177,12 +206,14 @@ view(state, player, lang) {
 
 ## 내 컴퓨터에서 돌려보기 (플레이그라운드)
 
+게임 폴더에서 `npx boardmadang dev`를 실행하고 나오는 주소(`http://localhost:5173/`)를 엽니다.
+
+이 레포 안에서 작업한다면 레포 루트에서 개발 서버를 켜고 `http://localhost:5173/sdk/playground/?game=tictactoe`를 엽니다.
+`game=` 뒤에 `games/` 아래 폴더 이름을 넣으면 그 게임이 열립니다.
+
 ```bash
 node sdk/playground/serve.js
 ```
-
-브라우저에서 `http://localhost:5173/sdk/playground/?game=tictactoe`를 엽니다.
-`game=` 뒤에 `games/` 아래 폴더 이름을 넣으면 그 게임이 열립니다. 설치할 것은 Node뿐입니다.
 
 - 두 플레이어 화면이 나란히 나와서 혼자 양쪽을 둘 수 있습니다. 시드, 한 수 무르기, 기권도 됩니다.
 - 플랫폼과 같은 방식으로 상태를 바꾼 행동과 무시된 행동을 세고, `maxActions`에 이르면 무승부로 끝냅니다.
@@ -192,10 +223,24 @@ node sdk/playground/serve.js
   - `state`에 `Set`, `Map`, 클래스 같은 JSON이 아닌 값이 있음
   - 결정적이지 않음: 같은 시드와 같은 행동으로 다시 뒀더니 상태가 다름
   - `legal()`이 준 행동을 `play()`가 무시함, `play()`가 느림
-- "랜덤 대국 200판"은 끝나지 않는 판이 있는지, 선공 승률이 어떤지 보여줍니다.
+- "랜덤 대국 200판"은 `npx boardmadang check`와 같은 검사를 하고, 선공 승률과 평균 길이를 보여줍니다.
+- 판 아래 「썸네일로」를 누르면 그 화면을 그대로 [썸네일](#썸네일)로 찍습니다.
 
 실제 사이트와 달리 게임 코드를 Web Worker가 아니라 페이지에서 바로 실행합니다.
 
+## 썸네일
+
+게임 목록에 보일 그림은 **이미지를 올리지 않고 판을 찍어서** 만듭니다. 플레이그라운드에서 원하는 장면까지 혼자 둔 뒤
+판 아래 「썸네일로」를 누르면, 그 플레이어 화면이 게임 폴더의 `thumbnail.json`에 그대로 저장됩니다.
+
+- 저장하는 것은 판 설정(`board`), 기물 세트(`pieces`), 찍은 플레이어, 그 순간의 `view()`입니다. 언어마다 다른 `message`는 넣지 않습니다.
+- 사이트는 이 데이터를 대국 화면과 같은 보드 렌더러로 다시 그립니다. 그래서 그림이 늘 게임 화면과 똑같이 보이고,
+  게임 코드 없이도 그릴 수 있습니다. 모양은 [game.d.ts](game.d.ts)의 `Thumbnail`입니다.
+- 썸네일이 없으면 시작 판을 보여줍니다.
+- 코드에서 `board`나 `pieces`를 바꾸면 다시 찍어야 합니다. `npx boardmadang check`가 알려줍니다.
+
 ## 예정
 
-- 같은 검사를 명령줄에서 돌리는 실행기 (업로드 검사, AI 학습 환경과 같은 코드)
+- 사이트에서 zip 올리기, 그리고 **클리어 체크**: 등록하기 전에 혼자 한 판을 끝까지 둬서 승자가 나와야 합니다 (무승부, 기권은 안 됨).
+  그 판은 "제작자 클리어 기보"로 같이 남습니다
+- 같은 검사 코드(`check.js`)로 하는 서버 쪽 업로드 검사와 AI 학습 환경

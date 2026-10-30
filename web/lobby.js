@@ -160,9 +160,22 @@ function fillTags(ul, entry) {
   }));
 }
 
-/** 시작 화면 그림. 그리지 못하면 false */
+/**
+ * 게임 그림. 제작자가 혼자 두던 판을 그대로 찍은 썸네일(thumbnail.json)이 있으면 그 판을, 없으면 시작 판을 그립니다.
+ * 썸네일은 이미지가 아니라 판 설정, 기물 세트, 화면 데이터라서 같은 보드 렌더러로 그립니다. 그리지 못하면 false
+ */
 function drawThumb(canvas, entry, size) {
-  const { game } = entry;
+  const { game, thumbnail: shot } = entry;
+  if (shot) {
+    try {
+      const board = new BoardView(canvas, shot.board, shot.pieces);
+      board.resize(size);
+      board.draw(shot.view, { flip: shot.board.flipForPlayer === shot.player });
+      return true;
+    } catch {
+      // 깨진 썸네일이면 시작 판을 그립니다
+    }
+  }
   try {
     const board = new BoardView(canvas, game.board, game.pieces);
     board.resize(size);

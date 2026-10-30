@@ -143,6 +143,10 @@ type Game struct {
 	Private      bool            `json:"private"`
 	Listing      json.RawMessage `json:"listing"`                // listing.json. 등록 전이거나 깨졌으면 null
 	ListingError string          `json:"listingError,omitempty"` // listing.json이 깨졌으면 그 이유
+	// thumbnail.json. 혼자 두던 판을 그대로 찍은 데이터(판 설정, 기물 세트, 화면)로, 이미지가 아닙니다.
+	// 화면이 보드 렌더러로 다시 그립니다. 없거나 깨졌으면 null이고, 화면은 시작 판을 그립니다.
+	// 모양 검사는 찍을 때와 업로드할 때 합니다 (sdk/check.js의 validateThumbnail).
+	Thumbnail json.RawMessage `json:"thumbnail"`
 }
 
 // Games는 games/<id>/index.js 와 games/private/<id>/index.js 를 찾아 목록으로 만듭니다.
@@ -174,28 +178,33 @@ func (s *Site) Games() ([]Game, error) {
 			}
 			g := Game{ID: d.Name(), Module: "/" + folder + "/index.js", Version: version, Private: base.private}
 			g.Listing, g.ListingError = readListing(s.fsys, folder)
+			if data, err := fs.ReadFile(s.fsys, folder+"/thumbnail.json"); err == nil && json.Valid(data) {
+				g.Thumbnail = data
+			}
 			list = append(list, g)
 		}
 	}
 	return list, nil
 }
 
-// codeVersion은 게임 코드의 버전입니다. 폴더 안 .js, .mjs 파일(테스트와 node_modules 제외)을
+// codeVersion은 게임 코드의 버전입니다. 폴더 안 .js, .mjs 파일(테스트, node_modules, 점으로 시작하는 이름 제외)을
 // /로 구분한 상대 경로 순으로 "경로\0내용\0"씩 이어 SHA-256을 구한 앞 16글자.
-// 등록 정보(listing.json)는 판에 영향이 없어 넣지 않습니다. serve.js의 codeVersion과 같아야 합니다.
+// 등록 정보와 썸네일은 판에 영향이 없어 넣지 않습니다. sdk/lib/games.js의 codeVersion과 같아야 합니다.
 func codeVersion(fsys fs.FS, folder string) (string, error) {
 	var files []string
 	err := fs.WalkDir(fsys, folder, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
+		// 점으로 시작하는 이름은 내보내지 않으므로 버전에도 넣지 않습니다
+		hidden := p != folder && strings.HasPrefix(d.Name(), ".")
 		if d.IsDir() {
-			if d.Name() == "node_modules" {
+			if d.Name() == "node_modules" || hidden {
 				return fs.SkipDir
 			}
 			return nil
 		}
-		if isCode(d.Name()) {
+		if isCode(d.Name()) && !hidden {
 			files = append(files, strings.TrimPrefix(p, folder+"/"))
 		}
 		return nil

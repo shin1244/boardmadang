@@ -1,0 +1,112 @@
+// 새 게임 틀. 틱택토에서 시작합니다. 규칙을 바꿔 나만의 게임으로 만드세요.
+// 게임 API: https://github.com/shin1244/boardmadang/blob/main/sdk/README.md
+//   npx boardmadang dev     혼자 양쪽을 둬보고, 「썸네일로」로 게임 목록에 보일 판을 찍습니다
+//   npx boardmadang check   업로드할 때와 같은 검사
+//   npx boardmadang pack    올릴 zip 만들기
+// 판은 칸 9개짜리 배열입니다. board[row * 3 + col] = null(빈칸) | 0 | 1
+
+const LINES = [
+  [0, 1, 2], [3, 4, 5], [6, 7, 8], // 가로
+  [0, 3, 6], [1, 4, 7], [2, 5, 8], // 세로
+  [0, 4, 8], [2, 4, 6],            // 대각선
+];
+
+const PIECE = ['x', 'o'];
+
+// 게임 안 글자. 등록창에서 '완전 번역'으로 고른 언어마다 직접 번역해 둡니다.
+// 플랫폼은 그 언어 중 하나를 lang으로 넘겨줍니다.
+const TEXT = {
+  ko: { line: '세 줄 완성', full: '판이 가득 참', myTurn: '당신 차례', theirTurn: '상대 차례', draw: '무승부', won: '이겼습니다!', lost: '졌습니다' },
+  en: { line: 'Three in a row', full: 'Board is full', myTurn: 'Your turn', theirTurn: "Opponent's turn", draw: 'Draw', won: 'You won!', lost: 'You lost' },
+};
+
+/** @typedef {{ board: (0 | 1 | null)[], turn: 0 | 1, last: number | null }} State */
+
+/** 세 개가 이어진 줄. 없으면 null */
+function winningLine(board) {
+  return LINES.find(([a, b, c]) =>
+    board[a] !== null && board[a] === board[b] && board[a] === board[c]) ?? null;
+}
+
+function setup() {
+  return { board: Array(9).fill(null), turn: 0, last: null };
+}
+
+function result(state, lang = 'ko') {
+  const line = winningLine(state.board);
+  if (line) return { winner: state.board[line[0]], reason: TEXT[lang].line };
+  if (state.board.every((c) => c !== null)) return { winner: null, reason: TEXT[lang].full };
+  return null;
+}
+
+function play(state, player, action) {
+  // 둘 수 없는 행동은 전부 무시합니다. 상대 화면에서도 똑같이 무시되므로 판이 어긋나지 않습니다.
+  if (result(state)) return state;
+  if (player !== state.turn) return state;
+  if (action.kind !== 'click') return state;
+  const { row, col } = action;
+  if (!Number.isInteger(row) || !Number.isInteger(col)) return state;
+  if (row < 0 || row > 2 || col < 0 || col > 2) return state;
+  const i = row * 3 + col;
+  if (state.board[i] !== null) return state;
+
+  // 받은 state는 고치지 않고 새로 만듭니다.
+  const board = state.board.slice();
+  board[i] = player;
+  return { board, turn: 1 - player, last: i };
+}
+
+/** 누구 차례인지. 끝났으면 null (대국 시계가 멈춥니다) */
+function turn(state) {
+  return result(state) ? null : state.turn;
+}
+
+function legal(state, player) {
+  if (result(state) || player !== state.turn) return [];
+  const actions = [];
+  state.board.forEach((c, i) => {
+    if (c === null) actions.push({ kind: 'click', row: Math.floor(i / 3), col: i % 3 });
+  });
+  return actions;
+}
+
+function view(state, player, lang = 'ko') {
+  const pieces = [];
+  state.board.forEach((c, i) => {
+    if (c !== null) pieces.push({ row: Math.floor(i / 3), col: i % 3, piece: PIECE[c] });
+  });
+
+  const marks = [];
+  if (state.last !== null) {
+    marks.push({ row: Math.floor(state.last / 3), col: state.last % 3, type: 'last-move' });
+  }
+
+  const tint = [];
+  const line = winningLine(state.board);
+  if (line) {
+    for (const i of line) tint.push({ row: Math.floor(i / 3), col: i % 3, color: state.board[i] });
+  }
+
+  const r = result(state);
+  const text = TEXT[lang];
+  let message;
+  if (!r) message = state.turn === player ? text.myTurn : text.theirTurn;
+  else if (r.winner === null) message = text.draw;
+  else message = r.winner === player ? text.won : text.lost;
+
+  return { pieces, marks, tint, message };
+}
+
+/** @type {import('boardmadang').Game<State>} */
+export default {
+  id: '__ID__',
+  board: { places: 'cells', rows: 3, cols: 3, look: 'plain' },
+  pieces: 'xo',
+  maxActions: 9,
+  setup,
+  play,
+  result,
+  view,
+  legal,
+  turn,
+};

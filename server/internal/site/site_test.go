@@ -57,6 +57,28 @@ func TestCodeVersionMatchesServeJS(t *testing.T) {
 	}
 }
 
+// 점으로 시작하는 파일과 폴더는 내보내지 않으므로 버전에도 넣지 않습니다 (sdk/lib/games.js와 같음).
+func TestCodeVersionSkipsHidden(t *testing.T) {
+	plain := openSite(t, map[string]string{"web/index.html": "", "games/x/index.js": "x"})
+	hidden := openSite(t, map[string]string{
+		"web/index.html":          "",
+		"games/x/index.js":        "x",
+		"games/x/.draft.js":       "draft",
+		"games/x/.cache/index.js": "cache",
+	})
+	a, err := codeVersion(plain.fsys, "games/x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := codeVersion(hidden.fsys, "games/x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a != b {
+		t.Errorf("version with hidden files = %s, want %s", b, a)
+	}
+}
+
 func TestGames(t *testing.T) {
 	s := openSite(t, map[string]string{
 		"web/index.html":             "",
@@ -64,6 +86,8 @@ func TestGames(t *testing.T) {
 		"games/b/listing.json":       `{"name": {"ko": "비"}}`,
 		"games/a/index.js":           "a",
 		"games/a/listing.json":       "{broken",
+		"games/a/thumbnail.json":     "{broken",
+		"games/b/thumbnail.json":     `{"player": 0}`,
 		"games/no-code/listing.json": "{}",
 		"games/Bad/index.js":         "x",
 		"games/README.md":            "",
@@ -101,6 +125,16 @@ func TestGames(t *testing.T) {
 	}
 	if _, ok := back[1]["listingError"]; ok {
 		t.Error("b has listingError")
+	}
+	// 썸네일: 깨졌거나 없으면 null, 있으면 그대로
+	if v, ok := back[0]["thumbnail"]; !ok || v != nil {
+		t.Errorf("a thumbnail = %v (present %v), want null", v, ok)
+	}
+	if v, ok := back[2]["thumbnail"]; !ok || v != nil {
+		t.Errorf("p thumbnail = %v (present %v), want null", v, ok)
+	}
+	if th, _ := back[1]["thumbnail"].(map[string]any); th["player"] != 0.0 {
+		t.Errorf("b thumbnail = %v", back[1]["thumbnail"])
 	}
 	if name := back[1]["listing"].(map[string]any)["name"].(map[string]any)["ko"]; name != "비" {
 		t.Errorf("b name = %v", name)
