@@ -135,7 +135,7 @@ type Handler struct {
 	IDs       *identity.Issuer
 	Accounts  *account.Store
 	Records   *record.Store // 있으면 로그인할 때 게스트의 대국을 계정으로 옮깁니다
-	// PublicURL은 브라우저가 보는 사이트 주소입니다 (https://boardmadang.example). 돌아올 주소를 만들 때 씁니다.
+	// PublicURL은 브라우저가 보는 사이트 주소입니다 (https://boardmadang.com). 돌아올 주소를 만들 때 씁니다.
 	// 비어 있으면 요청의 Host로 만듭니다 (개발용).
 	PublicURL string
 	Client    *http.Client // 비어 있으면 10초 타임아웃의 기본 클라이언트

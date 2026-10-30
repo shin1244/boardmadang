@@ -26,6 +26,41 @@
   긴 대국마다 한 번씩 끊겼다 붙는 게 보이고, 그 순간 새 인스턴스로 붙으면 방이 없어 집니다.
 - 구성: `e2-small` VM 1대 (서울) + 컨테이너로 서버 실행 + Caddy로 HTTPS 자동 발급.
 
+## 도메인과 HTTPS (boardmadang.com)
+
+> **아직 Go 서버만으로는 사이트가 뜨지 않습니다.** 화면(`web/`), 게임 코드(`games/`), `/api/games`, `/api/locale`은
+> 지금 개발 서버(`sdk/playground/serve.js`)에만 있습니다. 운영 전에 Go 서버가 이것들도 맡아야 합니다 (TODO).
+
+1. **고정 IP**: VM에 고정 외부 IP를 예약해 붙입니다 (VPC 네트워크 → IP 주소 → 외부 고정 주소 예약).
+2. **DNS**: 도메인을 산 곳(또는 Cloud DNS)에서 레코드를 넣습니다.
+
+   | 이름 | 종류 | 값 |
+   |---|---|---|
+   | `boardmadang.com` (`@`) | A | VM의 고정 IP |
+   | `www` | CNAME | `boardmadang.com` |
+
+3. **HTTPS**: VM에서 Caddy가 인증서를 자동으로 받고 갱신합니다. 방화벽에서 80, 443을 열어 둡니다 (80은 인증서 발급에 씁니다).
+
+   ```
+   # /etc/caddy/Caddyfile
+   boardmadang.com {
+       reverse_proxy localhost:8080
+   }
+   www.boardmadang.com {
+       redir https://boardmadang.com{uri} permanent
+   }
+   ```
+
+   Caddy는 웹소켓을 그대로 넘기고, `X-Forwarded-Proto: https`를 붙여 줍니다. 서버는 이것을 보고 쿠키에 `Secure`를 붙입니다.
+   Host도 그대로 넘기므로 웹소켓의 같은 출처 확인이 통과합니다 (`ALLOWED_ORIGINS`는 비워 둡니다).
+4. **서버 환경변수**: `PUBLIC_URL=https://boardmadang.com`, `SESSION_SECRET`(32자 이상), `DATA_DIR`(영구 디스크),
+   소셜 로그인 ID와 비밀값. `DEV_LOGIN`은 넣지 않습니다.
+5. **소셜 로그인**: 운영용 OAuth 앱은 개발용과 따로 둡니다.
+   - GitHub: 새 OAuth App. Homepage `https://boardmadang.com`, callback `https://boardmadang.com/auth/github/callback`
+   - Google: 웹 클라이언트에 리디렉션 URI `https://boardmadang.com/auth/google/callback`을 더합니다.
+     동의 화면(브랜딩)에 홈페이지, 개인정보처리방침 주소, 승인된 도메인 `boardmadang.com`을 넣고 앱을 게시해야
+     테스트 사용자가 아닌 사람도 로그인할 수 있습니다. 도메인 소유 확인은 Google Search Console에서 합니다.
+
 ## 단일 인스턴스의 한계와 다음 단계
 
 - **서버가 재시작되면 진행 중인 대국이 사라집니다.** MVP에서는 감수합니다.

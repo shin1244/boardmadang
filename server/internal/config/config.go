@@ -17,7 +17,7 @@ type Config struct {
 	// 기보를 저장할 폴더 (internal/record). 운영에서는 VM의 영구 디스크에 둡니다.
 	DataDir string
 
-	// 브라우저가 보는 사이트 주소 (https://boardmadang.example). 소셜 로그인에서 돌아올 주소를 만듭니다.
+	// 브라우저가 보는 사이트 주소 (https://boardmadang.com). 소셜 로그인에서 돌아올 주소를 만듭니다.
 	// 비어 있으면 요청의 Host로 만듭니다.
 	PublicURL string
 	// 소셜 로그인 (internal/auth). ID와 비밀값이 둘 다 있는 곳만 켭니다.

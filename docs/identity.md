@@ -112,7 +112,7 @@ ID와 비밀값이 둘 다 있는 곳만 켜집니다 (`.env.example`). 하나�
 | GitHub | [GitHub → Settings → Developer settings → OAuth Apps](https://github.com/settings/developers) → New OAuth App | `<PUBLIC_URL>/auth/github/callback` |
 
 ```bash
-PUBLIC_URL=https://boardmadang.example \
+PUBLIC_URL=https://boardmadang.com \
 GOOGLE_CLIENT_ID=… GOOGLE_CLIENT_SECRET=… \
 GITHUB_CLIENT_ID=… GITHUB_CLIENT_SECRET=… \
 go run ./cmd/server
