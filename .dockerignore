@@ -7,9 +7,16 @@
 # 공개하지 않는 게임. 이미지에 넣으면 사이트에서 누구나 코드를 받아 갈 수 있습니다.
 games/private/
 
-# 개발 중에 저장된 기보, 계정, 의견
+# 개발 중에 쌓인 데이터와 빌드 결과물, 학습 결과물
 server/data/
-
-.git/
-**/node_modules/
+server/bin/
 trainer/
+
+# 운영에 필요 없는 것
+.git/
+.github/
+docs/
+**/node_modules/
+**/*.test.js
+**/*.test.mjs
+**/*_test.go

@@ -54,6 +54,8 @@ GCP 프로젝트 `boardmadang`에 이렇게 놓았습니다. gcloud의 기본 �
 
 ## 도메인과 HTTPS (boardmadang.com)
 
+등록창의 저장(`PUT /api/games/<id>/listing`)만 아직 개발 서버에 있어서, 운영에서는 저장이 404입니다.
+
 1. **고정 IP**: `setup-gcp.sh`가 예약해 VM에 붙였습니다 (`34.64.41.206`).
 2. **DNS**: 도메인을 산 곳(또는 Cloud DNS)에서 레코드를 넣습니다.
 
@@ -121,11 +123,11 @@ GPU가 있고 싼 리전에서 **Spot VM**으로 돌리면 비용을 크게 줄�
 
 ```bash
 docker build -t boardmadang .
-docker run --rm -p 8080:8080 -v boardmadang-data:/data boardmadang
+docker run --rm -p 8080:8080 -v boardmadang-data:/data --env-file .env boardmadang
 ```
 
-http://localhost:8080 에서 로비가 뜹니다.
-
-- 기보는 컨테이너 안의 `/data`에 씁니다. 볼륨(`-v boardmadang-data:/data`)을 붙이지 않으면 컨테이너를 지울 때 같이 사라집니다.
+- http://localhost:8080 을 열면 로비가 보입니다.
+- 기보와 계정은 컨테이너 안의 `/data`에 씁니다. 볼륨(`-v boardmadang-data:/data`)을 붙이지 않으면 컨테이너를 지울 때 같이 사라집니다.
+- 게임을 더하거나 고치면 이미지를 다시 빌드합니다.
 - 비공개 게임(`games/private/`), `.env`, 개발 중에 쌓인 `server/data/`는 `.dockerignore`로 빼서 이미지에 들어가지 않습니다.
-  비공개 게임을 이미지에 넣으면 사이트에서 누구나 그 코드를 받아 갈 수 있습니다.
+  비공개 게임을 이미지에 넣으면 사이트에서 누구나 그 코드를 받아 갈 수 있습니다. 비밀값은 실행할 때 `--env-file`이나 환경변수로 넘깁니다.
