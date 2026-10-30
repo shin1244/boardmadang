@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -41,10 +40,10 @@ func main() {
 	ids.Members = accounts
 	login := &auth.Handler{Providers: providers(cfg), IDs: ids, Accounts: accounts, Records: records, PublicURL: cfg.PublicURL}
 	h := hub.New(cfg, ids, records)
-
-	pages := site.Site{Root: cfg.SiteDir}
-	if _, err := os.Stat(filepath.Join(cfg.SiteDir, "web", "index.html")); err != nil {
-		log.Printf("경고: 화면 폴더가 없습니다 (SITE_DIR=%s). API만 답하고 사이트는 보이지 않습니다.", cfg.SiteDir)
+	pages, err := site.Open(cfg.SiteDir)
+	if err != nil {
+		// 개발 서버(serve.js)를 앞에 두고 API만 쓸 때는 화면이 없어도 됩니다
+		log.Printf("경고: 화면 폴더를 열지 못해 화면과 게임 목록은 내보내지 않습니다 (SITE_DIR=%s): %v", cfg.SiteDir, err)
 	}
 
 	srv := &http.Server{
@@ -54,7 +53,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("서버 시작: http://localhost:%s/web/ (기보: %s, 화면: %s)", cfg.Port, cfg.DataDir, cfg.SiteDir)
+		log.Printf("서버 시작: http://localhost:%s (기보: %s)", cfg.Port, cfg.DataDir)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal(err)
 		}
@@ -112,16 +111,18 @@ func providers(cfg config.Config) []*auth.Provider {
 	return list
 }
 
-func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *comment.Store, login *auth.Handler, pages site.Site) http.Handler {
+// pages가 nil이면 화면과 게임 목록 없이 API만 엽니다.
+func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *comment.Store, login *auth.Handler, pages *site.Site) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
-	// 화면과 게임 코드 (internal/site). 아래의 /api/… 와 겹치지 않습니다.
-	mux.HandleFunc("GET /{$}", pages.ServeRoot)
-	mux.HandleFunc("GET /web/", pages.ServeFile)
-	mux.HandleFunc("GET /sdk/", pages.ServeFile)
-	mux.HandleFunc("GET /games/", pages.ServeFile)
-	mux.HandleFunc("GET /api/games", pages.ServeGames)
-	mux.HandleFunc("GET /api/locale", pages.ServeLocale)
+	mux.HandleFunc("GET /api/locale", site.ServeLocale)
+	if pages != nil {
+		mux.HandleFunc("GET /{$}", site.ServeHome)
+		mux.HandleFunc("GET /web/", pages.ServeFile)
+		mux.HandleFunc("GET /sdk/playground/", pages.ServeFile)
+		mux.HandleFunc("GET /games/", pages.ServeFile)
+		mux.HandleFunc("GET /api/games", pages.ServeGames)
+	}
 	mux.HandleFunc("GET /api/me", ids.HandleMe)
 	mux.HandleFunc("GET /api/auth/providers", login.ServeProviders)
 	mux.HandleFunc("GET /auth/{provider}", login.ServeLogin)
@@ -141,7 +142,6 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 	mux.HandleFunc("DELETE /api/games/{game}/comments/{id}", talk.ServeDelete)
 	mux.HandleFunc("POST /api/reports", talk.ServeReport)
 	// TODO: 업로드와 등록 정보 저장은 계정만 됩니다. 붙일 때 ids.RequireMember로 감쌉니다.
-	//   지금 등록 정보 저장은 개발 서버(sdk/playground/serve.js)에만 있어서, 이 서버에서는 등록창의 저장이 404입니다.
 	//   mux.Handle("PUT /api/games/{id}/listing", ids.RequireMember(...))
 	return mux
 }

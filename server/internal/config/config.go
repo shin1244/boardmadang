@@ -16,8 +16,7 @@ type Config struct {
 	SessionSecret string
 	// 기보를 저장할 폴더 (internal/record). 운영에서는 VM의 영구 디스크에 둡니다.
 	DataDir string
-	// 화면과 게임 코드가 있는 폴더 (internal/site). web/, sdk/, games/가 들어 있는 레포 루트입니다.
-	// 기본값 ".."은 server/ 폴더에서 go run 할 때의 레포 루트입니다. 도커 이미지는 /site.
+	// 화면(web/)과 게임 코드(games/)가 있는 폴더, 곧 레포 루트 (internal/site). 비어 있으면 ..(server 폴더에서 켠 기준).
 	SiteDir string
 
 	// 브라우저가 보는 사이트 주소 (https://boardmadang.com). 소셜 로그인에서 돌아올 주소를 만듭니다.

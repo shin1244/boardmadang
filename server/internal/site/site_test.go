@@ -10,210 +10,237 @@ import (
 	"testing"
 )
 
-// write는 root 아래에 파일을 만듭니다.
-func write(t *testing.T, root, rel, content string) {
+// writeTree는 dir 아래에 files(슬래시 경로 → 내용)를 씁니다.
+func writeTree(t *testing.T, dir string, files map[string]string) {
 	t.Helper()
-	p := filepath.Join(root, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+	for name, body := range files {
+		p := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func openSite(t *testing.T, files map[string]string) *Site {
+	t.Helper()
+	dir := t.TempDir()
+	writeTree(t, dir, files)
+	s, err := Open(dir)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+	return s
+}
+
+// 같은 폴더를 serve.js의 codeVersion으로 구한 값과 같아야 합니다.
+// lib0.js와 lib/rules.mjs는 /로 정렬할 때와 \로 정렬할 때 순서가 바뀝니다.
+func TestCodeVersionMatchesServeJS(t *testing.T) {
+	s := openSite(t, map[string]string{
+		"web/index.html":                        "",
+		"games/fixture/index.js":                "export default {};\n",
+		"games/fixture/lib.js":                  "export const a = 1;\n",
+		"games/fixture/lib/rules.mjs":           "export const b = 2;\n",
+		"games/fixture/lib0.js":                 "export const c = 3;\n",
+		"games/fixture/index.test.js":           "excluded\n",
+		"games/fixture/node_modules/x/index.js": "excluded\n",
+		"games/fixture/listing.json":            "{}\n",
+	})
+	got, err := codeVersion(s.fsys, "games/fixture")
+	if err != nil {
 		t.Fatal(err)
 	}
-}
-
-func newMux(root string) *http.ServeMux {
-	s := Site{Root: root}
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", s.ServeRoot)
-	mux.HandleFunc("GET /web/", s.ServeFile)
-	mux.HandleFunc("GET /sdk/", s.ServeFile)
-	mux.HandleFunc("GET /games/", s.ServeFile)
-	mux.HandleFunc("GET /api/games", s.ServeGames)
-	mux.HandleFunc("GET /api/locale", s.ServeLocale)
-	return mux
-}
-
-func get(mux http.Handler, target string) *httptest.ResponseRecorder {
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest("GET", target, nil))
-	return rec
-}
-
-func TestServeFile(t *testing.T) {
-	root := t.TempDir()
-	write(t, root, "web/index.html", "<h1>lobby</h1>")
-	write(t, root, "web/lobby.js", "export {}")
-	write(t, root, "web/.secret", "no")
-	write(t, root, "sdk/playground/index.html", "playground")
-	write(t, root, "games/tictactoe/index.js", "export default {}")
-	write(t, root, "games/private/mine/index.js", "export default {}")
-	write(t, root, "games/empty/readme.txt", "x")
-	write(t, root, ".env", "SESSION_SECRET=x")
-	write(t, root, "server/go.mod", "module x")
-	mux := newMux(root)
-
-	for target, want := range map[string]struct {
-		code int
-		body string
-	}{
-		"/web/":                        {200, "<h1>lobby</h1>"},
-		"/web/index.html":              {200, "<h1>lobby</h1>"},
-		"/web/lobby.js":                {200, "export {}"},
-		"/sdk/playground/":             {200, "playground"},
-		"/games/tictactoe/index.js":    {200, "export default {}"},
-		"/games/private/mine/index.js": {200, "export default {}"},
-		"/games/empty/":                {404, ""}, // 폴더 목록은 보여주지 않습니다
-		"/web/.secret":                 {404, ""},
-		"/web/nope.js":                 {404, ""},
-	} {
-		rec := get(mux, target)
-		if rec.Code != want.code || (want.body != "" && rec.Body.String() != want.body) {
-			t.Errorf("%s: %d %q, want %d %q", target, rec.Code, rec.Body.String(), want.code, want.body)
-		}
-	}
-
-	// 폴더 밖으로 나가는 경로는 어떤 모양이든 내용을 보여주지 않습니다 (먹스가 경로를 정리해 다른 곳으로 보내거나 404)
-	for _, target := range []string{"/web/../.env", "/web/%2e%2e/.env", "/web/..%2f..%2f.env", "/games/../server/go.mod", "/web/..%2fserver/go.mod"} {
-		rec := get(mux, target)
-		if rec.Code == http.StatusOK || strings.Contains(rec.Body.String(), "SESSION_SECRET") || strings.Contains(rec.Body.String(), "module x") {
-			t.Errorf("%s leaked: %d %q", target, rec.Code, rec.Body)
-		}
-		if loc := rec.Header().Get("Location"); loc != "" {
-			if rec := get(mux, loc); rec.Code == http.StatusOK {
-				t.Errorf("%s → %s: %d", target, loc, rec.Code)
-			}
-		}
-	}
-	// 먹스를 거치지 않고 정리되지 않은 경로가 와도 마찬가지입니다
-	for _, p := range []string{"/web/../.env", "/web/../../etc/passwd", "/games/../server/go.mod"} {
-		r := httptest.NewRequest("GET", "/web/", nil)
-		r.URL.Path = p
-		rec := httptest.NewRecorder()
-		Site{Root: root}.ServeFile(rec, r)
-		if rec.Code != http.StatusNotFound {
-			t.Errorf("direct %s: %d %q", p, rec.Code, rec.Body)
-		}
-	}
-
-	rec := get(mux, "/web/lobby.js")
-	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/javascript") {
-		t.Errorf("js content type = %q", ct)
-	}
-	if rec.Header().Get("Cache-Control") != "no-cache" {
-		t.Errorf("cache-control = %q", rec.Header().Get("Cache-Control"))
-	}
-	if rec := get(mux, "/"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/web/" {
-		t.Errorf("/: %d → %q", rec.Code, rec.Header().Get("Location"))
-	}
-}
-
-// ServeFile을 다른 경로에 잘못 붙여도 세 폴더 밖은 보이지 않습니다.
-func TestServeFileOnlyServedDirs(t *testing.T) {
-	root := t.TempDir()
-	write(t, root, "server/go.mod", "module x")
-	s := Site{Root: root}
-	rec := httptest.NewRecorder()
-	s.ServeFile(rec, httptest.NewRequest("GET", "/server/go.mod", nil))
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("server/go.mod: %d", rec.Code)
+	if want := "27440701b9ad088b"; got != want {
+		t.Errorf("version = %s, want %s (serve.js)", got, want)
 	}
 }
 
 func TestGames(t *testing.T) {
-	root := t.TempDir()
-	write(t, root, "games/b-game/index.js", "b")
-	write(t, root, "games/b-game/listing.json", `{"name":{"ko":"비"}}`)
-	write(t, root, "games/a-game/index.js", "a")
-	write(t, root, "games/broken/index.js", "x")
-	write(t, root, "games/broken/listing.json", `{"name":`)
-	write(t, root, "games/no-code/listing.json", `{}`)
-	write(t, root, "games/Bad_Name/index.js", "x")
-	write(t, root, "games/private/secret/index.js", "s")
-
-	rec := get(newMux(root), "/api/games")
-	var list []struct {
-		ID           string          `json:"id"`
-		Module       string          `json:"module"`
-		Version      string          `json:"version"`
-		Private      bool            `json:"private"`
-		Listing      json.RawMessage `json:"listing"`
-		ListingError string          `json:"listingError"`
+	s := openSite(t, map[string]string{
+		"web/index.html":             "",
+		"games/b/index.js":           "b",
+		"games/b/listing.json":       `{"name": {"ko": "비"}}`,
+		"games/a/index.js":           "a",
+		"games/a/listing.json":       "{broken",
+		"games/no-code/listing.json": "{}",
+		"games/Bad/index.js":         "x",
+		"games/README.md":            "",
+		"games/private/p/index.js":   "p",
+	})
+	list, err := s.Games()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
-		t.Fatalf("%v: %s", err, rec.Body)
-	}
-	var ids []string
+	var got []string
 	for _, g := range list {
-		ids = append(ids, g.ID)
+		got = append(got, g.ID)
 	}
-	if strings.Join(ids, ",") != "a-game,b-game,broken,secret" {
-		t.Fatalf("ids = %v", ids)
+	if strings.Join(got, ",") != "a,b,p" {
+		t.Fatalf("ids = %v, want [a b p]", got)
 	}
-	if list[0].Module != "/games/a-game/index.js" || string(list[0].Listing) != "null" || len(list[0].Version) != 16 {
-		t.Errorf("a-game = %+v", list[0])
+
+	a, b, p := list[0], list[1], list[2]
+	if a.Listing != nil || a.ListingError == "" {
+		t.Errorf("broken listing: listing = %s, error = %q", a.Listing, a.ListingError)
 	}
-	if !strings.Contains(string(list[1].Listing), `"비"`) {
-		t.Errorf("b-game listing = %s", list[1].Listing)
+	if b.Module != "/games/b/index.js" || b.Private || len(b.Version) != 16 {
+		t.Errorf("b = %+v", b)
 	}
-	if string(list[2].Listing) != "null" || list[2].ListingError == "" {
-		t.Errorf("broken = %+v", list[2])
+	if p.Module != "/games/private/p/index.js" || !p.Private {
+		t.Errorf("p = %+v", p)
 	}
-	if !list[3].Private || list[3].Module != "/games/private/secret/index.js" {
-		t.Errorf("secret = %+v", list[3])
+
+	// 브라우저가 받는 모양: 등록 전이면 listing은 null, 오류가 없으면 listingError는 없음
+	raw, _ := json.Marshal(list)
+	var back []map[string]any
+	json.Unmarshal(raw, &back)
+	if v, ok := back[2]["listing"]; !ok || v != nil {
+		t.Errorf("p listing = %v (present %v), want null", v, ok)
+	}
+	if _, ok := back[1]["listingError"]; ok {
+		t.Error("b has listingError")
+	}
+	if name := back[1]["listing"].(map[string]any)["name"].(map[string]any)["ko"]; name != "비" {
+		t.Errorf("b name = %v", name)
 	}
 }
 
-// 개발 서버(sdk/playground/serve.js)의 codeVersion()이 같은 폴더에 낸 값과 같아야 합니다.
-// 값은 node로 한 번 계산해 적어 둔 것입니다. 다르면 같은 게임인데 개발 서버와 운영 서버가 서로 매칭되지 않습니다.
-func TestCodeVersionMatchesDevServer(t *testing.T) {
-	root := t.TempDir()
-	write(t, root, "index.js", "export default {};\n")
-	write(t, root, "lib/rules.mjs", "export const n = 1;\n")
-	write(t, root, "lib/b.js", "// b\n")
-	write(t, root, "index.test.js", "test")          // 테스트는 빼고
-	write(t, root, "node_modules/x/index.js", "dep") // 의존성도 빼고
-	write(t, root, "listing.json", `{"name":"x"}`)   // 등록 정보도 빼고
-	write(t, root, "README.md", "# x")
-	if got, want := CodeVersion(root), "cd6d5b5752ca2c0d"; got != want {
-		t.Errorf("CodeVersion = %s, want %s (node의 codeVersion)", got, want)
+func TestOpenNeedsWeb(t *testing.T) {
+	if _, err := Open(t.TempDir()); err == nil {
+		t.Fatal("Open without web/index.html: no error")
 	}
-
 }
 
-func TestDetectLocale(t *testing.T) {
-	for _, tc := range []struct {
-		region, accept string
-		country, lang  string
+func TestServeFile(t *testing.T) {
+	s := openSite(t, map[string]string{
+		"web/index.html":               "<h1>lobby</h1>",
+		"web/lobby.js":                 "lobby",
+		"web/lobby.css":                "css",
+		"web/.secret.js":               "x",
+		"web/notes.txt":                "x",
+		"sdk/playground/index.html":    "playground",
+		"sdk/playground/board.js":      "board",
+		"sdk/playground/serve.js":      "dev server",
+		"sdk/playground/a.test.js":     "test",
+		"sdk/README.md":                "x",
+		"games/tictactoe/index.js":     "game",
+		"games/tictactoe/sub/x.mjs":    "mjs",
+		"games/tictactoe/listing.json": "{}",
+		"server/go.mod":                "x",
+		".env":                         "SECRET",
+	})
+	cases := []struct {
+		path   string
+		status int
+		ctype  string
+		body   string
 	}{
-		{"KR", "", "KR", "ko"},
-		{"kr", "en-US", "KR", "ko"},
-		{"US", "ko-KR", "US", "en"},
-		{"", "ko-KR,ko;q=0.9", "", "ko"},
-		{"", "KO", "", "ko"},
-		{"", "kok", "", "en"}, // 다른 언어 (콘칸어)
-		{"", "en-US", "", "en"},
-		{"XYZ", "ko", "", "ko"}, // 나라 코드 모양이 아니면 무시
-		{"", "", "", "en"},
-	} {
-		r := httptest.NewRequest("GET", "/api/locale", nil)
-		if tc.region != "" {
-			r.Header.Set("X-Client-Region", tc.region)
+		{"/web/", 200, "text/html; charset=utf-8", "<h1>lobby</h1>"},
+		{"/web/lobby.js", 200, "text/javascript; charset=utf-8", "lobby"},
+		{"/web/lobby.css", 200, "text/css; charset=utf-8", "css"},
+		{"/sdk/playground/", 200, "text/html; charset=utf-8", "playground"},
+		{"/sdk/playground/board.js", 200, "text/javascript; charset=utf-8", "board"},
+		{"/games/tictactoe/index.js", 200, "text/javascript; charset=utf-8", "game"},
+		{"/games/tictactoe/sub/x.mjs", 200, "text/javascript; charset=utf-8", "mjs"},
+		{"/games/tictactoe/listing.json", 200, "application/json; charset=utf-8", "{}"},
+		{"/games/tictactoe", 301, "", ""},  // 폴더는 /로 끝나는 주소로
+		{"/games/tictactoe/", 404, "", ""}, // index.html이 없는 폴더는 목록을 보여주지 않습니다
+		{"/web/lobby.js/", 404, "", ""},
+		{"/web/missing.js", 404, "", ""},
+		{"/web/.secret.js", 404, "", ""},
+		{"/web/notes.txt", 404, "", ""}, // types에 없는 종류
+		{"/sdk/playground/serve.js", 404, "", ""},
+		{"/sdk/playground/a.test.js", 404, "", ""},
+		{"/sdk/README.md", 404, "", ""},
+		{"/server/go.mod", 404, "", ""},
+		{"/.env", 404, "", ""},
+		{"/web/../.env", 404, "", ""},
+		{"/web//lobby.js", 404, "", ""},
+	}
+	for _, c := range cases {
+		req := httptest.NewRequest("GET", "/", nil)
+		req.URL.Path = c.path // 그대로 넣어 ..와 //가 손대지 않고 핸들러까지 오게 합니다
+		rec := httptest.NewRecorder()
+		s.ServeFile(rec, req)
+		if rec.Code != c.status {
+			t.Errorf("%s: status = %d, want %d", c.path, rec.Code, c.status)
+			continue
 		}
-		if tc.accept != "" {
-			r.Header.Set("Accept-Language", tc.accept)
+		if c.status != 200 {
+			continue
 		}
-		got := DetectLocale(r)
+		if got := rec.Header().Get("Content-Type"); got != c.ctype {
+			t.Errorf("%s: Content-Type = %q, want %q", c.path, got, c.ctype)
+		}
+		if got := rec.Body.String(); got != c.body {
+			t.Errorf("%s: body = %q, want %q", c.path, got, c.body)
+		}
+		if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+			t.Errorf("%s: Cache-Control = %q, want no-cache", c.path, got)
+		}
+		if rec.Header().Get("Last-Modified") == "" {
+			t.Errorf("%s: no Last-Modified", c.path)
+		}
+	}
+}
+
+// 폴더로 보낼 때 쿼리(?game=)를 지키지 않으면 플레이그라운드가 어떤 게임인지 잃습니다.
+func TestServeFileRedirectKeepsQuery(t *testing.T) {
+	s := openSite(t, map[string]string{"web/index.html": "", "games/x/index.js": ""})
+	rec := httptest.NewRecorder()
+	s.ServeFile(rec, httptest.NewRequest("GET", "/games/x?lang=en", nil))
+	if got := rec.Header().Get("Location"); got != "/games/x/?lang=en" {
+		t.Errorf("Location = %q, want /games/x/?lang=en", got)
+	}
+}
+
+func TestLocale(t *testing.T) {
+	cases := []struct {
+		headers map[string]string
+		country string // ""면 null
+		lang    string
+	}{
+		{map[string]string{"X-Client-Region": "KR"}, "KR", "ko"},
+		{map[string]string{"X-Client-Region": "us", "Accept-Language": "ko-KR"}, "US", "en"},
+		{map[string]string{"CF-IPCountry": "KR"}, "KR", "ko"},
+		{map[string]string{"X-Client-Region": "JP", "CF-IPCountry": "KR"}, "JP", "en"},
+		{map[string]string{"CF-IPCountry": "XX", "Accept-Language": "ko-KR,ko;q=0.9"}, "", "ko"}, // Cloudflare가 모르는 나라
+		{map[string]string{"CF-IPCountry": "T1", "Accept-Language": "en-US"}, "", "en"},          // Tor
+		{map[string]string{"X-Client-Region": "Korea", "Accept-Language": "KO"}, "", "ko"},
+		{map[string]string{"Accept-Language": "kok-IN"}, "", "en"}, // 콘칸어는 ko가 아님
+		{map[string]string{}, "", "en"},
+	}
+	for _, c := range cases {
+		req := httptest.NewRequest("GET", "/api/locale", nil)
+		for k, v := range c.headers {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		ServeLocale(rec, req)
+		var got struct {
+			Country *string `json:"country"`
+			Lang    string  `json:"lang"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
 		country := ""
 		if got.Country != nil {
 			country = *got.Country
 		}
-		if country != tc.country || got.Lang != tc.lang {
-			t.Errorf("%q/%q = %s/%s, want %s/%s", tc.region, tc.accept, country, got.Lang, tc.country, tc.lang)
+		if country != c.country || got.Lang != c.lang {
+			t.Errorf("%v: country = %q, lang = %q; want %q, %q", c.headers, country, got.Lang, c.country, c.lang)
 		}
 	}
-	rec := get(newMux(t.TempDir()), "/api/locale")
-	if rec.Body.String() != "{\"country\":null,\"lang\":\"en\"}\n" {
-		t.Errorf("body = %q", rec.Body)
+}
+
+func TestServeGamesJSON(t *testing.T) {
+	s := openSite(t, map[string]string{"web/index.html": ""})
+	rec := httptest.NewRecorder()
+	s.ServeGames(rec, httptest.NewRequest("GET", "/api/games", nil))
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Errorf("no games: %d %q, want 200 []", rec.Code, rec.Body.String())
 	}
 }

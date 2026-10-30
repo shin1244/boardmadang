@@ -1,206 +1,275 @@
-// Package site는 사이트의 화면과 게임 코드를 보여줍니다. 운영에서 Go 서버 하나가 boardmadang.com 전체를 맡게 하려는 것입니다.
+// Package site는 화면(web/), 게임 코드(games/), 화면이 import하는 SDK 모듈(sdk/playground/)을 내보내고,
+// 게임 목록(/api/games)과 화면 언어(/api/locale)를 알려 줍니다.
 //
-//	GET /                 /web/ 로 보냅니다
-//	GET /web/…, /sdk/…, /games/…   SITE_DIR(레포 루트) 아래의 파일
-//	GET /api/games        게임 목록 (games/<id>/, games/private/<id>/)
-//	GET /api/locale       접속한 나라로 고른 화면 언어
+// 개발 서버(sdk/playground/serve.js)가 하던 일을 운영에서는 Go 서버가 맡습니다. 두 곳의 응답 모양은 같아야 합니다.
+// 특히 게임 코드 버전(codeVersion)은 매칭 키와 기보에 들어가므로 계산법이 serve.js와 한 글자도 달라선 안 됩니다.
 //
-// 개발 서버(sdk/playground/serve.js)와 같은 모양으로 답합니다. 등록 정보 저장(PUT /api/games/<id>/listing)은
-// 아직 개발 서버에만 있습니다 (계정과 게임 주인을 확인하는 업로드를 붙일 때 옮깁니다).
+// SITE_DIR(레포 루트) 아래에서 이것만 내보냅니다.
+//
+//	web/              화면
+//	sdk/playground/   화면이 import하는 모듈과 플레이그라운드 (serve.js 제외)
+//	games/            게임 코드. games/private/가 있으면 같이 (운영 이미지에는 넣지 않습니다)
+//
+// 테스트 파일(*.test.js)과 점으로 시작하는 파일, types에 없는 종류는 내보내지 않습니다.
 package site
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io/fs"
-	"mime"
+	"log"
 	"net/http"
 	"os"
 	"path"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 )
 
-func init() {
-	// 시스템의 mime 표가 없거나 다른 값을 줘도 ES 모듈로 읽히게 합니다.
-	mime.AddExtensionType(".js", "text/javascript; charset=utf-8")
-	mime.AddExtensionType(".mjs", "text/javascript; charset=utf-8")
+// types는 내보낼 파일의 종류입니다 (serve.js의 TYPES와 같음). 여기에 없는 확장자는 404입니다.
+// 운영체제의 MIME 표를 쓰지 않습니다. 윈도우에서는 .js가 text/plain으로 나와 모듈을 못 불러올 수 있습니다.
+var types = map[string]string{
+	".html": "text/html; charset=utf-8",
+	".js":   "text/javascript; charset=utf-8",
+	".mjs":  "text/javascript; charset=utf-8",
+	".css":  "text/css; charset=utf-8",
+	".json": "application/json; charset=utf-8",
+	".svg":  "image/svg+xml",
 }
 
-// 보여주는 폴더. 이 밖의 파일(server/, docs/, .env 같은 것)은 보이지 않습니다.
-var servedDirs = []string{"web", "sdk", "games"}
+// roots는 내보내는 폴더입니다 (SITE_DIR 기준).
+var roots = []string{"web/", "sdk/playground/", "games/"}
 
 var gameIDPattern = regexp.MustCompile(`^[a-z0-9-]+$`)
 
-// Site는 Root(레포 루트)의 파일로 답합니다.
 type Site struct {
-	Root string
+	fsys fs.FS
 }
 
-// ServeRoot는 GET / 입니다. 로비로 보냅니다.
-func (s Site) ServeRoot(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
+// Open은 dir(레포 루트)을 엽니다. dir/web/index.html이 없으면 에러입니다.
+func Open(dir string) (*Site, error) {
+	fsys := os.DirFS(dir)
+	if _, err := fs.Stat(fsys, "web/index.html"); err != nil {
+		return nil, err
 	}
+	return &Site{fsys: fsys}, nil
+}
+
+// ServeHome은 첫 화면(로비)으로 보냅니다.
+func ServeHome(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/web/", http.StatusFound)
 }
 
-// ServeFile은 GET /web/…, /sdk/…, /games/… 입니다.
-//   - 점(.)으로 시작하는 이름이 경로에 있으면 404 (.env, .git 같은 것)
-//   - 폴더면 그 안의 index.html, 없으면 404 (폴더 목록은 보여주지 않습니다)
-//   - 게임 코드를 고치면 바로 보이게 매번 확인하도록(no-cache) 합니다. 바뀌지 않았으면 304로 답합니다.
-func (s Site) ServeFile(w http.ResponseWriter, r *http.Request) {
-	clean := path.Clean("/" + r.URL.Path)
-	parts := strings.Split(strings.TrimPrefix(clean, "/"), "/")
-	if !slices.Contains(servedDirs, parts[0]) {
+// ServeFile은 web/, sdk/playground/, games/ 아래의 파일을 내보냅니다.
+// 폴더면 그 안의 index.html입니다. 폴더 목록은 보여주지 않습니다.
+//
+// 브라우저가 매번 바뀌었는지 묻게 합니다 (no-cache + Last-Modified).
+// 옛 게임 코드가 캐시에 남으면 상대와 버전이 달라 매칭되지 않습니다.
+func (s *Site) ServeFile(w http.ResponseWriter, r *http.Request) {
+	name, wantDir := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	if !public(name + "/") {
 		http.NotFound(w, r)
 		return
 	}
-	for _, p := range parts {
-		if strings.HasPrefix(p, ".") {
-			http.NotFound(w, r)
+	info, err := fs.Stat(s.fsys, name)
+	if err == nil && info.IsDir() {
+		if !wantDir {
+			// 화면이 상대 경로(lobby.css)로 부르므로 폴더 주소는 /로 끝나야 합니다
+			u := *r.URL
+			u.Path += "/"
+			http.Redirect(w, r, u.String(), http.StatusMovedPermanently)
 			return
 		}
+		name = path.Join(name, "index.html")
+		info, err = fs.Stat(s.fsys, name)
+	} else if wantDir {
+		err = fs.ErrNotExist
 	}
-	file := filepath.Join(s.Root, filepath.FromSlash(clean))
-	info, err := os.Stat(file)
-	if err == nil && info.IsDir() {
-		file = filepath.Join(file, "index.html")
-		info, err = os.Stat(file)
-	}
-	if err != nil || info.IsDir() {
+	ctype, ok := types[path.Ext(name)]
+	if err != nil || info.IsDir() || !ok {
 		http.NotFound(w, r)
 		return
 	}
-	f, err := os.Open(file)
+	data, err := fs.ReadFile(s.fsys, name)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	defer f.Close()
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	// ServeContent는 Range와 If-Modified-Since를 처리합니다. 폴더 목록이나 index.html 이동은 하지 않습니다.
-	http.ServeContent(w, r, info.Name(), info.ModTime(), f)
+	h := w.Header()
+	h.Set("Content-Type", ctype)
+	h.Set("Cache-Control", "no-cache")
+	h.Set("X-Content-Type-Options", "nosniff")
+	http.ServeContent(w, r, name, info.ModTime(), bytes.NewReader(data))
 }
 
-// Game은 /api/games의 항목 하나입니다.
+// public은 내보내도 되는 경로인지 봅니다. name은 앞의 /를 뗀 URL 경로입니다.
+func public(name string) bool {
+	if !slices.ContainsFunc(roots, func(root string) bool { return strings.HasPrefix(name, root) }) {
+		return false
+	}
+	name = strings.TrimSuffix(name, "/")
+	if name == "sdk/playground/serve.js" { // 개발 서버 자신
+		return false
+	}
+	for _, part := range strings.Split(name, "/") {
+		if part == "" || strings.HasPrefix(part, ".") { // .., 숨김 파일, 빈 칸(//)
+			return false
+		}
+	}
+	return !isTest(path.Base(name))
+}
+
+func isTest(name string) bool {
+	return strings.HasSuffix(name, ".test.js") || strings.HasSuffix(name, ".test.mjs")
+}
+
+// isCode는 게임 코드 버전에 들어가는 파일인지입니다.
+func isCode(name string) bool {
+	return (strings.HasSuffix(name, ".js") || strings.HasSuffix(name, ".mjs")) && !isTest(name)
+}
+
+// Game은 /api/games의 게임 하나입니다.
 type Game struct {
 	ID           string          `json:"id"`
 	Module       string          `json:"module"`
 	Version      string          `json:"version"`
 	Private      bool            `json:"private"`
-	Listing      json.RawMessage `json:"listing"`                // 등록 정보. 등록 전이면 null
+	Listing      json.RawMessage `json:"listing"`                // listing.json. 등록 전이거나 깨졌으면 null
 	ListingError string          `json:"listingError,omitempty"` // listing.json이 깨졌으면 그 이유
 }
 
 // Games는 games/<id>/index.js 와 games/private/<id>/index.js 를 찾아 목록으로 만듭니다.
-func (s Site) Games() []Game {
+// 부를 때마다 새로 읽습니다. 게임 코드는 작고, 매번 읽어야 코드를 고친 게 버전에 바로 반영됩니다.
+func (s *Site) Games() ([]Game, error) {
 	list := []Game{}
-	for _, d := range []struct {
+	for _, base := range []struct {
 		dir     string
 		private bool
 	}{{"games", false}, {"games/private", true}} {
-		base := filepath.Join(s.Root, filepath.FromSlash(d.dir))
-		entries, err := os.ReadDir(base)
-		if err != nil {
+		entries, err := fs.ReadDir(s.fsys, base.dir)
+		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
-		for _, e := range entries {
-			if !e.IsDir() || !gameIDPattern.MatchString(e.Name()) {
+		if err != nil {
+			return nil, err
+		}
+		for _, d := range entries {
+			if !d.IsDir() || !gameIDPattern.MatchString(d.Name()) {
 				continue
 			}
-			folder := filepath.Join(base, e.Name())
-			if _, err := os.Stat(filepath.Join(folder, "index.js")); err != nil {
+			folder := base.dir + "/" + d.Name()
+			if _, err := fs.Stat(s.fsys, folder+"/index.js"); err != nil {
 				continue
 			}
-			g := Game{
-				ID:      e.Name(),
-				Module:  "/" + d.dir + "/" + e.Name() + "/index.js",
-				Version: CodeVersion(folder),
-				Private: d.private,
-				Listing: json.RawMessage("null"),
+			version, err := codeVersion(s.fsys, folder)
+			if err != nil {
+				return nil, err
 			}
-			if data, err := os.ReadFile(filepath.Join(folder, "listing.json")); err == nil {
-				if json.Valid(data) {
-					g.Listing = data
-				} else {
-					g.ListingError = "listing.json is not valid JSON"
-				}
-			}
+			g := Game{ID: d.Name(), Module: "/" + folder + "/index.js", Version: version, Private: base.private}
+			g.Listing, g.ListingError = readListing(s.fsys, folder)
 			list = append(list, g)
 		}
 	}
-	return list
+	return list, nil
 }
 
-// CodeVersion은 게임 코드의 버전입니다: 폴더 안 .js, .mjs 파일(테스트와 node_modules 제외)의
-// 상대 경로와 내용을 이은 SHA-256 앞 16글자. 개발 서버의 codeVersion()과 같아야 합니다 (같은 버전끼리만 매칭하므로).
-func CodeVersion(folder string) string {
+// codeVersion은 게임 코드의 버전입니다. 폴더 안 .js, .mjs 파일(테스트와 node_modules 제외)을
+// /로 구분한 상대 경로 순으로 "경로\0내용\0"씩 이어 SHA-256을 구한 앞 16글자.
+// 등록 정보(listing.json)는 판에 영향이 없어 넣지 않습니다. serve.js의 codeVersion과 같아야 합니다.
+func codeVersion(fsys fs.FS, folder string) (string, error) {
 	var files []string
-	filepath.WalkDir(folder, func(p string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(fsys, folder, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return err
 		}
 		if d.IsDir() {
-			if d.Name() == "node_modules" && p != folder {
-				return filepath.SkipDir
+			if d.Name() == "node_modules" {
+				return fs.SkipDir
 			}
 			return nil
 		}
-		name := d.Name()
-		if (strings.HasSuffix(name, ".js") || strings.HasSuffix(name, ".mjs")) &&
-			!strings.HasSuffix(name, ".test.js") && !strings.HasSuffix(name, ".test.mjs") {
-			rel, _ := filepath.Rel(folder, p)
-			files = append(files, filepath.ToSlash(rel))
+		if isCode(d.Name()) {
+			files = append(files, strings.TrimPrefix(p, folder+"/"))
 		}
 		return nil
 	})
-	// 개발 서버는 전체 경로를 문자열로 정렬합니다. 같은 폴더 아래라 상대 경로의 정렬과 같습니다.
-	slices.Sort(files)
-	h := sha256.New()
-	for _, rel := range files {
-		data, err := os.ReadFile(filepath.Join(folder, filepath.FromSlash(rel)))
-		if err != nil {
-			continue
-		}
-		h.Write([]byte(rel))
-		h.Write([]byte{0})
-		h.Write(data)
-		h.Write([]byte{0})
+	if err != nil {
+		return "", err
 	}
-	return hex.EncodeToString(h.Sum(nil))[:16]
+	slices.Sort(files)
+	hash := sha256.New()
+	for _, f := range files {
+		data, err := fs.ReadFile(fsys, folder+"/"+f)
+		if err != nil {
+			return "", err
+		}
+		hash.Write([]byte(f))
+		hash.Write([]byte{0})
+		hash.Write(data)
+		hash.Write([]byte{0})
+	}
+	return hex.EncodeToString(hash.Sum(nil))[:16], nil
 }
 
-// ServeGames는 GET /api/games 입니다. 매번 폴더를 읽으므로 게임을 넣거나 고치면 바로 보입니다.
-func (s Site) ServeGames(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, s.Games())
+// readListing은 listing.json을 읽습니다. 없으면 null (등록 전), 깨졌으면 null과 그 이유.
+func readListing(fsys fs.FS, folder string) (json.RawMessage, string) {
+	data, err := fs.ReadFile(fsys, folder+"/listing.json")
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, ""
+	}
+	if err != nil {
+		return nil, err.Error()
+	}
+	var v any
+	if err := json.Unmarshal(data, &v); err != nil {
+		return nil, err.Error()
+	}
+	return data, ""
 }
 
-// Locale은 /api/locale의 답입니다. Country는 모르면 null입니다.
+func (s *Site) ServeGames(w http.ResponseWriter, r *http.Request) {
+	list, err := s.Games()
+	if err != nil {
+		log.Printf("게임 목록 실패: %v", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// Locale은 /api/locale의 응답입니다.
 type Locale struct {
-	Country *string `json:"country"`
+	Country *string `json:"country"` // 나라 코드 (KR). 모르면 null
 	Lang    string  `json:"lang"`
 }
 
-var countryPattern = regexp.MustCompile(`^[A-Z]{2}$`)
-var koPattern = regexp.MustCompile(`(?i)^ko\b`)
+var (
+	countryPattern = regexp.MustCompile(`^[A-Z]{2}$`)
+	koPattern      = regexp.MustCompile(`(?i)^ko\b`)
+)
 
-// DetectLocale은 접속한 나라로 화면 언어를 고릅니다. 한국이면 ko, 그 밖의 나라는 en.
-// 운영에서는 GCP 부하 분산기가 커스텀 요청 헤더 `X-Client-Region: {client_region}`로 나라 코드를 넣어 줍니다.
-// 나라를 모르면 브라우저의 Accept-Language를 봅니다.
-func DetectLocale(r *http.Request) Locale {
-	raw := strings.ToUpper(r.Header.Get("X-Client-Region"))
-	if countryPattern.MatchString(raw) {
-		lang := "en"
-		if raw == "KR" {
-			lang = "ko"
+// ServeLocale은 접속한 나라로 화면 언어를 고릅니다. 한국이면 ko, 그 밖의 나라는 en.
+// 나라는 앞에 선 프록시가 넣어 주는 헤더로 압니다. GCP 부하 분산기면 커스텀 요청 헤더
+// X-Client-Region: {client_region}, Cloudflare면 CF-IPCountry입니다. 나라를 모르면 브라우저의 Accept-Language를 봅니다.
+// 화면 언어 고르기에만 쓰므로 헤더를 위조해도 문제 없습니다.
+func ServeLocale(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, localeOf(r))
+}
+
+func localeOf(r *http.Request) Locale {
+	for _, h := range []string{"X-Client-Region", "CF-IPCountry"} {
+		c := strings.ToUpper(r.Header.Get(h))
+		// Cloudflare는 나라를 모르면 XX를 보냅니다
+		if countryPattern.MatchString(c) && c != "XX" {
+			lang := "en"
+			if c == "KR" {
+				lang = "ko"
+			}
+			return Locale{Country: &c, Lang: lang}
 		}
-		return Locale{Country: &raw, Lang: lang}
 	}
 	if koPattern.MatchString(r.Header.Get("Accept-Language")) {
 		return Locale{Lang: "ko"}
@@ -208,13 +277,9 @@ func DetectLocale(r *http.Request) Locale {
 	return Locale{Lang: "en"}
 }
 
-// ServeLocale은 GET /api/locale 입니다.
-func (s Site) ServeLocale(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, DetectLocale(r))
-}
-
-func writeJSON(w http.ResponseWriter, v any) {
+func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
 }
