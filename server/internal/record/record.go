@@ -129,7 +129,8 @@ func (s *Store) path(id string) string {
 	return filepath.Join(s.dir, "matches", id[:2], id+".json")
 }
 
-func (s *Store) write(m *Match) error {
+// writeMatch는 기보 파일 하나를 씁니다 (목록 파일은 건드리지 않습니다).
+func (s *Store) writeMatch(m *Match) error {
 	data, err := json.Marshal(m)
 	if err != nil {
 		return err
@@ -138,12 +139,20 @@ func (s *Store) write(m *Match) error {
 	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 		return err
 	}
-	// 반쯤 쓴 파일이 보이지 않게 임시 파일에 쓰고 이름을 바꿉니다.
+	return writeAtomic(file, data)
+}
+
+// writeAtomic은 반쯤 쓴 파일이 보이지 않게 임시 파일에 쓰고 이름을 바꿉니다.
+func writeAtomic(file string, data []byte) error {
 	tmp := file + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, file); err != nil {
+	return os.Rename(tmp, file)
+}
+
+func (s *Store) write(m *Match) error {
+	if err := s.writeMatch(m); err != nil {
 		return err
 	}
 
@@ -229,4 +238,61 @@ func (s *Store) ListByUser(userID string, limit int) ([]*Match, error) {
 		out = append(out, m)
 	}
 	return out, nil
+}
+
+// Adopt는 게스트가 둔 대국을 계정으로 옮깁니다. 게스트가 로그인할 때 부릅니다.
+// 기보의 자리(Players)를 계정으로 바꾸고, 게스트의 목록 파일을 계정의 목록 파일에 끝난 순서대로 합칩니다.
+// 옮긴 대국 수를 돌려줍니다. 아직 쓰는 중인 대국(방금 끝난 판)은 옮기지 못하고 게스트에 남습니다.
+func (s *Store) Adopt(guestID string, to Player) (int, error) {
+	if !userPattern.MatchString(guestID) || !userPattern.MatchString(to.ID) || guestID == to.ID {
+		return 0, nil
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
+	guestLog := filepath.Join(s.dir, "users", guestID+".log")
+	data, err := os.ReadFile(guestLog)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	var moved []*Match
+	for _, id := range strings.Fields(string(data)) {
+		m, err := s.Get(id)
+		if err != nil {
+			continue // 지워졌거나 깨진 파일은 건너뜁니다
+		}
+		for i := range m.Players {
+			if m.Players[i].ID == guestID {
+				m.Players[i] = to
+			}
+		}
+		if err := s.writeMatch(m); err != nil {
+			return 0, err
+		}
+		moved = append(moved, m)
+	}
+
+	memberLog := filepath.Join(s.dir, "users", to.ID+".log")
+	data, err = os.ReadFile(memberLog)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return 0, err
+	}
+	all := moved
+	for _, id := range strings.Fields(string(data)) {
+		if m, err := s.Get(id); err == nil && !slices.ContainsFunc(all, func(o *Match) bool { return o.ID == id }) {
+			all = append(all, m)
+		}
+	}
+	slices.SortStableFunc(all, func(a, b *Match) int { return a.Ended.Compare(b.Ended) })
+	var b strings.Builder
+	for _, m := range all {
+		b.WriteString(m.ID + "\n")
+	}
+	if err := writeAtomic(memberLog, []byte(b.String())); err != nil {
+		return 0, err
+	}
+	return len(moved), os.Remove(guestLog)
 }

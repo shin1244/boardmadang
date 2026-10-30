@@ -40,7 +40,7 @@ func shortBump(t *testing.T, d time.Duration) {
 
 func TestCreateAndEnter(t *testing.T) {
 	srv := newServer(t)
-	host, guest := connect(t, srv), connect(t, srv)
+	host, guest := connectMember(t, srv, "host"), connect(t, srv)
 	c := host.create(minutes(7))
 	if c.Room == "" || c.Minutes == nil || *c.Minutes != 7 || c.BumpEvery != 60 {
 		t.Fatalf("created = %+v", c)
@@ -72,9 +72,29 @@ func TestCreateAndEnter(t *testing.T) {
 	}
 }
 
+func TestGuestCannotCreate(t *testing.T) {
+	srv := newServer(t)
+	guest := connect(t, srv)
+	guest.send(protocol.Create{Type: protocol.TypeCreate, Game: "tictactoe"})
+	var e protocol.Error
+	guest.expect(protocol.TypeError, &e)
+	if e.Message != "member only" {
+		t.Fatalf("error = %q, want member only", e.Message)
+	}
+	if rooms := listRooms(t, srv); len(rooms) != 0 {
+		t.Fatalf("guest room listed: %+v", rooms)
+	}
+	// 거절당한 뒤에도 빠른 매칭은 됩니다
+	other := connect(t, srv)
+	guest.send(protocol.Join{Type: protocol.TypeJoin, Game: "tictactoe"})
+	other.send(protocol.Join{Type: protocol.TypeJoin, Game: "tictactoe"})
+	var m protocol.Matched
+	other.expect(protocol.TypeMatched, &m)
+}
+
 func TestRoomWithoutTimer(t *testing.T) {
 	srv := newServer(t)
-	host, guest := connect(t, srv), connect(t, srv)
+	host, guest := connectMember(t, srv, "host"), connect(t, srv)
 	c := host.create(nil)
 	if c.Minutes != nil || listRooms(t, srv)[0].Minutes != nil {
 		t.Fatalf("timer-less room has minutes: %+v", c)
@@ -89,7 +109,7 @@ func TestRoomWithoutTimer(t *testing.T) {
 
 func TestHostLeavingRemovesRoom(t *testing.T) {
 	srv := newServer(t)
-	host := connect(t, srv)
+	host := connectMember(t, srv, "host")
 	host.create(nil)
 	host.conn.Close()
 	time.Sleep(50 * time.Millisecond)
@@ -100,7 +120,7 @@ func TestHostLeavingRemovesRoom(t *testing.T) {
 
 func TestHostCannotJoinOrCreateTwice(t *testing.T) {
 	srv := newServer(t)
-	host := connect(t, srv)
+	host := connectMember(t, srv, "host")
 	host.create(nil)
 	for _, msg := range []any{
 		protocol.Create{Type: protocol.TypeCreate, Game: "tictactoe"},
@@ -118,7 +138,7 @@ func TestHostCannotJoinOrCreateTwice(t *testing.T) {
 func TestBump(t *testing.T) {
 	shortBump(t, 150*time.Millisecond)
 	srv := newServer(t)
-	a, b := connect(t, srv), connect(t, srv)
+	a, b := connectMember(t, srv, "a"), connectMember(t, srv, "b")
 	ca := a.create(nil)
 	time.Sleep(10 * time.Millisecond)
 	cb := b.create(nil)

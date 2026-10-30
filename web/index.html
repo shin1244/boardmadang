@@ -26,7 +26,11 @@
         <button type="button" data-lang="en" lang="en">EN</button>
       </div>
       <a class="me" href="/web/history.html" hidden></a>
-      <button class="login" type="button" disabled data-i18n="login" data-i18n-attr="title:soon" title="준비 중">로그인</button>
+      <button class="logout" type="button" data-i18n="logout" hidden>로그아웃</button>
+      <div class="login-box">
+        <button class="login" type="button" aria-haspopup="menu" aria-expanded="false" disabled data-i18n="login">로그인</button>
+        <div class="login-menu" role="menu" hidden></div>
+      </div>
     </header>
 
     <section class="banner" data-i18n-attr="aria-label:banner.label" aria-label="이벤트">
@@ -147,8 +151,12 @@
           </div>
           <div class="gd-field">
             <p class="gd-desc muted" data-i18n="create.lead"></p>
+            <div id="create-login" class="need-login" hidden>
+              <p data-i18n="create.needLogin">방은 로그인한 계정만 만들 수 있습니다. 게스트는 빠른 매칭과 열린 방에 들어가기로 둘 수 있습니다.</p>
+              <div class="login-links"></div>
+            </div>
             <div class="gd-actions">
-              <button class="btn" type="submit" data-i18n="card.createRoom">방 만들기</button>
+              <button id="create-submit" class="btn" type="submit" data-i18n="card.createRoom">방 만들기</button>
               <a class="btn ghost" href="/web/rooms.html" data-i18n="detail.openRooms">열린 방 보기</a>
             </div>
           </div>
@@ -156,6 +164,10 @@
 
         <!-- 의견: 위에서 남기고, 아래에 최근 것부터. 의견마다 신고, 내 의견은 삭제 -->
         <div id="comments-panel" class="gd-card" role="tabpanel" data-panel="comments" hidden>
+          <div id="comment-login" class="gd-field need-login" hidden>
+            <p data-i18n="comments.needLogin">의견과 신고는 로그인한 계정만 할 수 있습니다.</p>
+            <div class="login-links"></div>
+          </div>
           <form id="comment-form" class="gd-field comment-form">
             <textarea id="comment-text" rows="3" maxlength="500" data-i18n-attr="placeholder:comments.placeholder aria-label:comments.placeholder"></textarea>
             <div class="comment-form-row">

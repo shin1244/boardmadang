@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/shin1244/boardmadang/server/internal/auth"
 	"github.com/shin1244/boardmadang/server/internal/config"
 	"github.com/shin1244/boardmadang/server/internal/hub"
 	"github.com/shin1244/boardmadang/server/internal/identity"
@@ -12,7 +13,8 @@ import (
 
 func newTestServer() *httptest.Server {
 	ids := identity.NewIssuer([]byte("test-secret-test-secret-test-secret"))
-	return httptest.NewServer(routes(hub.New(config.Config{Port: "0"}, ids, nil), ids, nil, nil))
+	login := &auth.Handler{IDs: ids}
+	return httptest.NewServer(routes(hub.New(config.Config{Port: "0"}, ids, nil), ids, nil, nil, login))
 }
 
 func TestHealthz(t *testing.T) {

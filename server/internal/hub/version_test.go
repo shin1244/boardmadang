@@ -21,7 +21,7 @@ func TestDifferentVersionsDoNotMatch(t *testing.T) {
 
 func TestEnterNeedsSameVersion(t *testing.T) {
 	srv := newServer(t)
-	host, guest := connect(t, srv), connect(t, srv)
+	host, guest := connectMember(t, srv, "host"), connect(t, srv)
 	host.send(protocol.Create{Type: protocol.TypeCreate, Game: "tictactoe", Version: "aaaa"})
 	var c protocol.Created
 	host.expect(protocol.TypeCreated, &c)

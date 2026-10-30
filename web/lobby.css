@@ -108,16 +108,53 @@ body {
 .langs button:hover { color: var(--topbar-text); }
 .langs button[aria-pressed="true"] { background: var(--topbar-line); color: var(--topbar-text); }
 
-.login {
+.login, .logout {
   padding: 6px 14px;
   border: 1px solid var(--topbar-line);
   border-radius: 6px;
   background: transparent;
   color: var(--topbar-text);
   font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
 }
-.login:disabled { opacity: 0.5; }
-.login[hidden], .me[hidden] { display: none; }
+.logout { padding: 4px 10px; color: var(--topbar-muted); font-size: 13px; }
+.login:hover:not(:disabled), .logout:hover { border-color: var(--topbar-muted); color: var(--topbar-text); }
+.login:disabled { opacity: 0.5; cursor: default; }
+.login[hidden], .logout[hidden], .me[hidden], .login-menu[hidden] { display: none; }
+
+/* 로그인 방법 고르기: 로그인 버튼 아래로 펼칩니다 */
+.login-box { position: relative; }
+.login-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  width: 240px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+}
+.login-menu a {
+  display: block;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  text-align: center;
+  text-decoration: none;
+  font-weight: 600;
+}
+.login-menu a:hover, .login-menu a:focus-visible { border-color: var(--accent); color: var(--accent); }
+.login-hint { margin: 0; color: var(--muted); font-size: 12px; }
+.login-error { margin: 0; color: var(--bad); font-size: 13px; }
 /* 지금 신원: "게스트 4821" 또는 계정 이름 */
 .me { color: var(--topbar-muted); font-size: 14px; white-space: nowrap; text-decoration: none; }
 .me:hover, .me[aria-current="page"] { color: var(--topbar-text); text-decoration: underline; }
@@ -372,6 +409,21 @@ fieldset label:has(input:disabled) { opacity: 0.5; cursor: default; }
   line-height: 1.6;
   resize: vertical;
 }
+/* 계정만 되는 곳(의견, 방 만들기)에서 게스트에게 보여주는 로그인 안내 */
+.need-login p { margin: 0 0 10px; color: var(--muted); font-size: 14px; }
+#create-login { margin: 12px 0; }
+.need-login[hidden], .login-links[hidden], .comment-form[hidden] { display: none; }
+.login-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.login-links a {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+}
+.login-links a:hover, .login-links a:focus-visible { border-color: var(--accent); color: var(--accent); }
 .comment-form-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
 .comment-as { color: var(--muted); font-size: 13px; }
 .comment-len { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -564,6 +616,10 @@ fieldset label:has(input:disabled) { opacity: 0.5; cursor: default; }
   .app { display: block; height: auto; }
   /* 메뉴는 둘째 줄로: 로고 · 언어 · 로그인 / 메뉴 */
   .topbar { flex-wrap: wrap; height: auto; gap: 8px 12px; padding: 10px 16px; }
+  /* 로그인 버튼이 어느 줄에 오든 메뉴는 상단 바 아래에 화면 폭으로 펼칩니다 */
+  .topbar { position: relative; }
+  .login-box { position: static; }
+  .login-menu { top: 100%; left: 16px; right: 16px; width: auto; max-width: none; }
   .logo { white-space: nowrap; }
   .langs { margin-left: auto; }
   /* 메뉴가 화면보다 길면 페이지 전체가 넓어지지 않게 메뉴 안에서 옆으로 밉니다 */

@@ -10,9 +10,12 @@
 // 대전(/ws)과 신원(/api/me)은 Go 서버에 넘깁니다 (GO_SERVER, 기본 http://localhost:8080).
 // 한 주소에서 로비와 대전을 같이 쓰려는 것입니다. 운영에서는 Go 서버가 전부 맡습니다.
 //   cd server && go run ./cmd/server          → Go 서버를 같이 켜 두면 대전 찾기가 됩니다
-// /api/me 는 Go 서버가 준 게스트 쿠키를 그대로 넘기되, 화면에는 계정으로 보이게 바꿉니다 (등록창을 쓰려고).
-// Go 서버가 꺼져 있으면 가짜 신원만 돌려줍니다.
-//   DEV_AS=guest node sdk/playground/serve.js    → 게스트로 보이게 (등록창이 막히는지 확인)
+// /api/me 는 Go 서버가 켜져 있으면 Go 서버의 신원을 그대로 넘깁니다. 의견, 방 만들기는 Go 서버가 계정인지 확인하므로
+// 화면만 계정으로 꾸미지 않습니다. 계정으로 시험하려면 Go 서버를 DEV_LOGIN=1로 켜고 상단의 "개발용 로그인"을 누릅니다.
+// Go 서버가 꺼져 있으면 가짜 신원(DEV_ME)만 돌려줍니다 (로비와 등록창은 됩니다).
+// 소셜 로그인(/auth/..., /api/auth/providers)도 Go 서버로 넘깁니다. Host를 그대로 넘기므로
+// 돌아올 주소는 http://localhost:5173/auth/<google|github>/callback 입니다 (docs/identity.md).
+//   DEV_AS=guest node sdk/playground/serve.js    → Go 서버가 꺼져 있을 때 게스트로 보이게 (등록창이 막히는지 확인)
 
 import crypto from 'node:crypto';
 import http from 'node:http';
@@ -88,15 +91,12 @@ function readListing(dir) {
   }
 }
 
-/** 개발용 가짜 신원. 기본은 계정이라 등록창을 쓸 수 있습니다. */
+/** 개발용 가짜 신원 (Go 서버가 꺼져 있을 때). 기본은 계정이라 등록창을 쓸 수 있습니다. */
 const DEV_ME = process.env.DEV_AS === 'guest'
   ? { id: 'g_dev', kind: 'guest', tag: '0000' }
   : { id: 'm_dev', kind: 'member', name: 'dev', tag: '0000' };
 
-/**
- * GET /api/me: Go 서버에 물어 세션 쿠키를 받아 넘깁니다. 신원 종류만 DEV_ME로 바꿉니다.
- * 그래서 대전 상대에게는 진짜 게스트(태그)로 보이고, 이 화면에서는 등록창을 쓸 수 있습니다.
- */
+/** GET /api/me: Go 서버에 물어 세션 쿠키와 신원을 그대로 넘깁니다. Go 서버가 꺼져 있으면 DEV_ME. */
 function proxyMe(req, res) {
   const up = http.get(new URL('/api/me', GO), { headers: { cookie: req.headers.cookie ?? '' }, timeout: 1000 }, (r) => {
     let body = '';
@@ -110,8 +110,7 @@ function proxyMe(req, res) {
         return json(res, 200, DEV_ME);
       }
       if (r.headers['set-cookie']) res.setHeader('Set-Cookie', r.headers['set-cookie']);
-      const shown = DEV_ME.kind === 'member' ? { ...real, kind: 'member', name: DEV_ME.name } : real;
-      json(res, 200, shown);
+      json(res, 200, real);
     });
   });
   // Go 서버가 꺼져 있으면 가짜 신원만 (대전은 안 되지만 로비와 등록창은 됩니다)
@@ -140,6 +139,26 @@ function proxyGo(req, res, url) {
         fail();
       }
     });
+  });
+  up.on('error', fail);
+  up.on('timeout', () => up.destroy());
+  req.pipe(up);
+}
+
+/**
+ * 소셜 로그인은 응답을 고치지 않고 그대로 넘깁니다 (리다이렉트, 쿠키).
+ * Host를 그대로 보내서 Go 서버가 이 주소(localhost:5173)로 돌아올 주소를 만들게 합니다.
+ * Go 서버가 꺼져 있으면 로그인 방법은 빈 목록(버튼이 "준비 중"), 나머지는 503입니다.
+ */
+function proxyRaw(req, res, url) {
+  const fail = () => (url.pathname === '/api/auth/providers' ? json(res, 200, { providers: [] }) : json(res, 503, { error: 'no game server' }));
+  const headers = { host: req.headers.host ?? '', cookie: req.headers.cookie ?? '' };
+  if (req.headers['sec-fetch-site']) headers['sec-fetch-site'] = req.headers['sec-fetch-site'];
+  const up = http.request(new URL(url.pathname + url.search, GO), { method: req.method, headers, timeout: 15000 }, (r) => {
+    const out = {};
+    for (const h of ['content-type', 'location', 'set-cookie', 'cache-control']) if (r.headers[h]) out[h] = r.headers[h];
+    res.writeHead(r.statusCode, out);
+    r.pipe(res);
   });
   up.on('error', fail);
   up.on('timeout', () => up.destroy());
@@ -239,6 +258,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/games') return json(res, 200, listGames());
   if (url.pathname === '/api/locale') return json(res, 200, detectLocale(req));
   if (url.pathname === '/api/me') return proxyMe(req, res);
+  if (url.pathname === '/api/auth/providers' || url.pathname.startsWith('/auth/')) return proxyRaw(req, res, url);
   if (url.pathname === '/api/rooms' || url.pathname === '/api/live' || /^\/api\/matches(\/[A-Z0-9]+)?$/.test(url.pathname)) return proxyGo(req, res, url);
   if (/^\/api\/games\/[a-z0-9-]+\/comments(\/[A-Z0-9]+)?$/.test(url.pathname) || url.pathname === '/api/reports') return proxyGo(req, res, url);
   const m = url.pathname.match(/^\/api\/games\/([a-z0-9-]+)\/listing$/);
@@ -273,6 +293,7 @@ server.on('upgrade', (req, socket, head) => {
 server.listen(PORT, () => {
   console.log(`로비: http://localhost:${PORT}/web/`);
   console.log(`플레이그라운드: http://localhost:${PORT}/sdk/playground/?game=tictactoe`);
-  console.log(`신원: ${DEV_ME.kind}${DEV_ME.kind === 'guest' ? ' (DEV_AS=guest)' : ' (게스트로 보려면 DEV_AS=guest)'}`);
+  console.log(`신원: Go 서버의 신원. Go 서버가 꺼져 있으면 ${DEV_ME.kind}${DEV_ME.kind === 'guest' ? ' (DEV_AS=guest)' : ' (게스트로 보려면 DEV_AS=guest)'}`);
+  console.log('계정으로 시험하려면 Go 서버를 DEV_LOGIN=1로 켜고 상단의 "개발용 로그인"을 누릅니다');
   console.log(`대전: ${GO.origin} 의 Go 서버로 넘깁니다 (cd server && go run ./cmd/server)`);
 });
