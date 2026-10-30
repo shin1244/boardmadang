@@ -1,14 +1,15 @@
 // 관전 화면: 진행 중인 대국을 실시간으로 봅니다 (watch.html?room=CODE, 방 목록의 관전 버튼).
 // 서버에 watch를 보내면 시드와 지금까지의 행동 기록(watching)이 오고, 그 뒤로는 두 사람과 같은 relay, clock, ended를 받습니다.
 // 플레이어처럼 게임 로직으로 판을 계산하지만, 해시나 결과는 보고하지 않습니다. 결과는 서버가 보낸 ended를 그대로 보여줍니다.
+// 게임 코드는 이 페이지가 아니라 게임 실행기(engine.js)의 샌드박스 Worker에서 돌립니다.
 //
 // 연결이 끊기면 다시 붙어 처음부터 받아 옵니다 (관전자 자리는 서버가 기다려 주지 않습니다).
 
 import { BoardView, PLAYER_COLORS } from '/sdk/playground/board.js';
 import { gameLang, localize } from '/sdk/playground/listing.js';
-import { makeRng } from '/sdk/playground/platform.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { popEmote } from './emotes.js';
+import { loadGame } from './engine.js';
 import { displayName, loadMe, renderMe } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -18,10 +19,10 @@ const RETRY_MS = 3_000;
 let me = null;
 let games = null; // /api/games
 let entry = null;
-let game = null;
+let runner = null; // 게임 실행기 (engine.js)
 let board = null;
 let info = null; // 서버가 보낸 watching (players, minutes, version)
-let state = null;
+let snap = null; // 지금 판: 실행기가 돌려준 { result, views } (두 자리 모두)
 let applied = 0;
 let viewAs = 0;
 let clock = null; // { remaining: [ms, ms], running, at }
@@ -35,7 +36,9 @@ let queue = Promise.resolve(); // 메시지를 받은 순서대로 하나씩 처
 
 const playLang = () => gameLang(entry?.listing, lang);
 const nameOfGame = () => localize(entry?.listing?.name, lang).text || info?.game || '';
-const flip = () => game.board.flipForPlayer === viewAs;
+const flip = () => runner.info.board.flipForPlayer === viewAs;
+/** 두 자리 화면을 다 받아 두면 보는 자리를 바꿀 때 다시 묻지 않아도 됩니다 */
+const lookOpts = () => ({ players: [0, 1], lang: playLang() });
 const secondsLeft = (until) => Math.max(0, Math.ceil((until - Date.now()) / 1000));
 
 // ---- 서버 ----
@@ -48,7 +51,7 @@ function connect() {
   sock.addEventListener('open', () => sock.send(JSON.stringify({ type: 'watch', room: roomId })));
   sock.addEventListener('message', (e) => {
     const m = JSON.parse(e.data);
-    queue = queue.then(() => onMessage(m)).catch((err) => fail(t('match.loadFailed', { msg: err.message })));
+    queue = queue.then(() => onMessage(m)).catch((err) => fail(t(runner ? 'match.codeFailed' : 'match.loadFailed', { msg: err.message })));
   });
   sock.addEventListener('close', () => {
     if (ws !== sock) return;
@@ -65,7 +68,7 @@ async function onMessage(m) {
       await begin(m);
       break;
     case 'relay':
-      apply(m);
+      await applyLog([m]);
       break;
     case 'clock':
       clock = { remaining: m.remaining, running: m.running, at: Date.now() };
@@ -102,31 +105,32 @@ async function onMessage(m) {
 /** 관전 시작: 게임 코드를 불러와 시드로 시작하고 지금까지의 기록을 재생합니다. 다시 붙을 때도 처음부터 합니다. */
 async function begin(m) {
   info = m;
-  if (!game) {
+  if (!runner) {
     entry = games.find((g) => g.id === m.game) ?? null;
     if (!entry) return fail(t('replay.noGame', { id: m.game }));
-    game = (await import(entry.module)).default;
-    board = new BoardView($('#board'), game.board, game.pieces);
+    runner = await loadGame(entry);
+    board = new BoardView($('#board'), runner.info.board, runner.info.pieces);
     fit();
   }
-  state = game.setup(makeRng(m.seed));
+  snap = (await runner.start(m.seed, lookOpts())).look;
   applied = 0;
   clock = m.clock ? { remaining: m.clock.remaining, running: m.clock.running, at: Date.now() } : null;
   drawBy = m.draw ?? null;
   away = [null, null];
   phase = 'watching';
-  for (const r of m.log) apply(r);
+  await applyLog(m.log);
 }
 
-function apply(m) {
-  if (!game || m.seq !== applied) return;
-  applied++;
-  try {
-    state = game.play(state, m.player, m.action);
-  } catch (e) {
-    // 플레이어 화면에서도 같은 오류가 났고 상태가 그대로입니다
-    console.error('play()에서 오류:', e);
+/** 순번대로 행동을 넣습니다. play()가 오류를 던지면 플레이어 화면에서처럼 상태가 그대로입니다. */
+async function applyLog(list) {
+  if (!runner) return;
+  const todo = [];
+  for (const m of list) {
+    if (m.seq === applied + todo.length) todo.push(m);
   }
+  if (!todo.length) return;
+  applied += todo.length;
+  snap = (await runner.play(todo.map((m) => ({ player: m.player, action: m.action })), lookOpts())).look;
 }
 
 function fail(msg) {
@@ -149,13 +153,8 @@ function reasonText() {
   const { winner, reason } = ended;
   const loser = winner === null ? null : info.players[1 - winner];
   switch (reason) {
-    case 'result': {
-      try {
-        return game.result(state, playLang())?.reason ?? '';
-      } catch {
-        return '';
-      }
-    }
+    case 'result':
+      return snap?.result?.reason ?? '';
     case 'resign':
     case 'left':
     case 'timeout':
@@ -215,7 +214,7 @@ function formatClock(ms) {
 }
 
 function renderPlayers() {
-  $('#players').hidden = !info || !game;
+  $('#players').hidden = !info || !runner;
   if ($('#players').hidden) return;
   for (const p of [0, 1]) {
     $(`#p${p}-dot`).style.background = PLAYER_COLORS[p];
@@ -235,14 +234,9 @@ function renderPlayers() {
 }
 
 function renderBoard() {
-  $('#board-wrap').hidden = !state;
-  if (!state) return;
-  let view = { pieces: [] };
-  try {
-    view = game.view(state, viewAs, playLang()) ?? view;
-  } catch (e) {
-    console.error('view()에서 오류:', e);
-  }
+  $('#board-wrap').hidden = !snap;
+  if (!snap) return;
+  const view = snap.views[viewAs] ?? { pieces: [] };
   board.draw(view, { flip: flip() });
   // 게임이 쓴 안내("당신 차례" 등)는 진행 중에만 보여줍니다
   $('#message').textContent = phase === 'watching' ? view.message ?? '' : '';
@@ -250,9 +244,9 @@ function renderBoard() {
 
 function render() {
   applyStatic('watch.title');
-  if (info && game) document.title = `${nameOfGame()} · ${t('watch.title')} · ${t('site.name')}`;
+  if (info && runner) document.title = `${nameOfGame()} · ${t('watch.title')} · ${t('site.name')}`;
   renderMe(me);
-  $('#title').textContent = game ? nameOfGame() : '';
+  $('#title').textContent = runner ? nameOfGame() : '';
   const timer = $('#timer-info');
   timer.hidden = !info;
   if (info) timer.textContent = info.minutes === null ? t('timer.none') : t('timer.each', { m: info.minutes });
@@ -260,8 +254,8 @@ function render() {
   renderStatus();
   // 내 브라우저의 게임 코드가 대국과 다르면 판이 다르게 보일 수 있습니다
   $('#version-note').hidden = !info || !entry?.version || info.version === entry.version;
-  if (game) renderBoard();
-  $('#controls').hidden = !state;
+  if (runner) renderBoard();
+  $('#controls').hidden = !snap;
   $('#position').textContent = t('history.moves', { n: applied });
   $('#view-as').value = String(viewAs);
   $('#replay').hidden = !ended?.record;
@@ -273,7 +267,15 @@ function fit() {
 }
 
 async function main() {
-  setupLangButtons(render);
+  // 언어를 바꾸면 게임 안 글자(message, 결과 이유)를 그 언어로 다시 받아 옵니다
+  setupLangButtons(() => {
+    render();
+    queue = queue.then(async () => {
+      if (!snap) return;
+      snap = await runner.look(lookOpts());
+      render();
+    }).catch((err) => fail(t('match.codeFailed', { msg: err.message })));
+  });
   setLang(await detectLang());
   render();
   // 웹소켓은 세션 쿠키가 있어야 붙습니다

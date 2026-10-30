@@ -194,6 +194,7 @@ const STRINGS = {
     'match.oppAway': '상대의 연결이 끊겼습니다. {s}초 안에 돌아오지 않으면 이깁니다.',
     'match.noGame': '게임을 찾지 못했습니다: {id}',
     'match.loadFailed': '게임을 불러오지 못했습니다: {msg}',
+    'match.codeFailed': '게임 코드가 멈추거나 오류를 내서 더 둘 수 없습니다: {msg}',
     'match.serverError': '서버가 요청을 거절했습니다: {msg}',
 
     'register.title': '게임 등록',
@@ -541,6 +542,7 @@ const STRINGS = {
     'match.oppAway': "Your opponent disconnected. You win if they aren't back in {s}s.",
     'match.noGame': "Couldn't find the game: {id}",
     'match.loadFailed': "Couldn't load the game: {msg}",
+    'match.codeFailed': "The game's code stopped or failed, so play can't go on: {msg}",
     'match.serverError': 'The server rejected the request: {msg}',
 
     'register.title': 'Register a game',

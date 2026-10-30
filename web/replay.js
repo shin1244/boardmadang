@@ -3,11 +3,14 @@
 //
 // 제작자가 게임 코드를 고쳤으면 예전 기보가 다르게 재생될 수 있습니다.
 // 기보에 남은 코드 버전이 지금 코드(/api/games의 version)와 다르면 알려 줍니다. 옛 코드는 아직 보관하지 않습니다.
+//
+// 게임 코드는 이 페이지가 아니라 게임 실행기(engine.js)의 샌드박스 Worker에서 돌립니다.
+// 모든 수의 상태는 Worker에 남기고, 이 페이지는 보고 있는 수의 판만 받아 와 그립니다.
 
 import { BoardView, PLAYER_COLORS } from '/sdk/playground/board.js';
 import { gameLang, localize } from '/sdk/playground/listing.js';
-import { makeRng, hashOf } from '/sdk/playground/platform.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
+import { loadGame } from './engine.js';
 import { displayName, loadMe, renderMe } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -17,9 +20,11 @@ const STEP_MS = 700;
 let me = null;
 let rec = null; // GET /api/matches/{id}
 let entry = null; // /api/games의 항목
-let game = null;
+let runner = null; // 게임 실행기 (engine.js). 모든 수의 상태를 Worker에 남겨 둡니다
 let board = null;
-let states = []; // states[i] = i수를 둔 뒤의 상태. states[0]은 시작 상태
+let shown = null; // 그리고 있는 판 { pos, lang, look }. look.views는 두 자리 모두
+let loading = null; // 받아 오는 중인 판 { pos, lang }
+let final = null; // 마지막 수 뒤의 판 (끝난 이유를 쓰려고)
 let effective = 0; // 상태를 바꾼 행동 수 (maxActions 무승부를 알아보려고)
 let pos = 0;
 let viewAs = 0;
@@ -28,26 +33,34 @@ let problem = '';
 
 const playLang = () => gameLang(entry?.listing, lang);
 const nameOfGame = () => localize(entry?.listing?.name, lang).text || rec?.game || '';
-const flip = () => game.board.flipForPlayer === viewAs;
+const flip = () => runner.info.board.flipForPlayer === viewAs;
 
-/** 시작부터 끝까지 모든 상태를 미리 만들어 둡니다. 기록은 최대 3,000수라 금방입니다. */
-function replayAll() {
-  let state = game.setup(makeRng(rec.seed));
-  let hash = hashOf(state);
-  states = [state];
-  effective = 0;
-  for (const m of rec.moves) {
-    try {
-      state = game.play(state, m.player, m.action);
-    } catch (e) {
-      // 대국 때도 같은 오류가 났고 상태가 그대로였습니다
-      console.error('play()에서 오류:', e);
-    }
-    const h = hashOf(state);
-    if (h !== hash) effective++;
-    hash = h;
-    states.push(state);
-  }
+/**
+ * 시작부터 끝까지 Worker에서 모두 둬 두고(keep), 상태를 바꾼 행동 수를 셉니다. 기록은 최대 3,000수라 금방입니다.
+ * play()가 오류를 던진 수는 대국 때처럼 상태가 그대로입니다.
+ */
+async function replayAll() {
+  await runner.start(rec.seed, { players: [] }, true);
+  const { steps } = await runner.play(rec.moves.map((m) => ({ player: m.player, action: m.action })), { players: [] });
+  effective = steps.filter((s) => s.changed).length;
+  await loadFinal();
+}
+
+async function loadFinal() {
+  final = await runner.look({ players: [], lang: playLang() }, rec.moves.length);
+}
+
+/** pos번째 수 뒤의 판을 받아 옵니다. 그사이 다른 수로 옮겼으면 받은 것을 버립니다. */
+function loadView(at) {
+  const want = playLang();
+  if (loading?.pos === at && loading.lang === want) return;
+  loading = { pos: at, lang: want };
+  runner.look({ players: [0, 1], lang: want }, at).then((look) => {
+    if (loading?.pos !== at || loading.lang !== want) return;
+    shown = { pos: at, lang: want, look };
+    loading = null;
+    renderBoard();
+  }).catch((err) => fail(t('match.codeFailed', { msg: err.message })));
 }
 
 // ---- 화면 ----
@@ -66,14 +79,9 @@ function reasonText() {
   const loser = winner === null ? null : rec.players[1 - winner];
   switch (reason) {
     case 'result': {
-      let r = null;
-      try {
-        r = game.result(states.at(-1), playLang());
-      } catch (e) {
-        console.error('result()에서 오류:', e);
-      }
+      const r = final?.result;
       if (r) return r.reason ?? '';
-      return effective >= game.maxActions ? t('match.reason.maxActions') : '';
+      return effective >= runner.info.maxActions ? t('match.reason.maxActions') : '';
     }
     case 'resign':
     case 'left':
@@ -93,7 +101,7 @@ function renderStatus() {
     el.textContent = problem;
     return;
   }
-  if (!game) {
+  if (!runner || !final) {
     el.textContent = t('match.loading');
     return;
   }
@@ -120,7 +128,7 @@ function renderHead() {
 }
 
 function renderPlayers() {
-  $('#players').hidden = !rec || !game;
+  $('#players').hidden = !rec || !runner;
   if ($('#players').hidden) return;
   for (const p of [0, 1]) {
     $(`#p${p}-dot`).style.background = PLAYER_COLORS[p];
@@ -132,21 +140,18 @@ function renderPlayers() {
 }
 
 function renderBoard() {
-  $('#board-wrap').hidden = !game;
-  if (!game) return;
-  let view = { pieces: [] };
-  try {
-    view = game.view(states[pos], viewAs, playLang()) ?? view;
-  } catch (e) {
-    console.error('view()에서 오류:', e);
-  }
+  $('#board-wrap').hidden = !runner || !final;
+  if ($('#board-wrap').hidden) return;
+  // 받아 오는 동안은 앞서 그리던 판을 그대로 둡니다
+  if (shown?.pos !== pos || shown.lang !== playLang()) loadView(pos);
+  const view = shown?.look.views[viewAs] ?? { pieces: [] };
   board.draw(view, { flip: flip() });
   $('#message').textContent = view.message ?? '';
 }
 
 function renderControls() {
-  $('#controls').hidden = !game;
-  if (!game) return;
+  $('#controls').hidden = !runner || !final;
+  if ($('#controls').hidden) return;
   const n = rec.moves.length;
   $('#seek').max = String(n);
   $('#seek').value = String(pos);
@@ -166,7 +171,7 @@ function render() {
   renderPlayers();
   renderStatus();
   // 버전을 모르던 때의 기보(version 없음)는 비교하지 않습니다
-  $('#version-note').hidden = !game || !rec.version || rec.version === entry.version;
+  $('#version-note').hidden = !runner || !rec.version || rec.version === entry.version;
   renderBoard();
   renderControls();
 }
@@ -210,7 +215,7 @@ function setupControls() {
     render();
   });
   document.addEventListener('keydown', (e) => {
-    if (!game || e.target.closest('input, select, button') || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (!final || e.target.closest('input, select, button') || e.altKey || e.ctrlKey || e.metaKey) return;
     const keys = { ArrowLeft: () => go(pos - 1), ArrowRight: () => go(pos + 1), Home: () => go(0), End: () => go(rec.moves.length), ' ': togglePlay };
     if (!keys[e.key]) return;
     e.preventDefault();
@@ -229,7 +234,11 @@ function fail(msg) {
 }
 
 async function main() {
-  setupLangButtons(render);
+  // 언어를 바꾸면 게임 안 글자(message, 끝난 이유)를 그 언어로 다시 받아 옵니다
+  setupLangButtons(() => {
+    render();
+    if (final) loadFinal().then(render).catch((err) => fail(t('match.codeFailed', { msg: err.message })));
+  });
   setLang(await detectLang());
   render();
   me = await loadMe();
@@ -242,9 +251,9 @@ async function main() {
 
   entry = (await (await fetch('/api/games')).json()).find((g) => g.id === rec.game) ?? null;
   if (!entry) return fail(t('replay.noGame', { id: rec.game }));
-  game = (await import(entry.module)).default;
-  board = new BoardView($('#board'), game.board, game.pieces);
-  replayAll();
+  runner = await loadGame(entry);
+  board = new BoardView($('#board'), runner.info.board, runner.info.pieces);
+  await replayAll();
   setupControls();
   fit();
   window.addEventListener('resize', () => {

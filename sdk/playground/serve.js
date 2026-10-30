@@ -216,6 +216,16 @@ function detectLocale(req) {
   return { country, lang };
 }
 
+/**
+ * 게임 실행기 문서의 보안 정책. 출처를 없애고(sandbox), 네트워크를 막고, 이 서버의 스크립트만 불러오게 합니다.
+ * Go 서버의 runnerCSP와 같아야 합니다.
+ */
+function runnerCSP(req) {
+  const host = /^[A-Za-z0-9.-]+(:[0-9]+)?$/.test(req.headers.host ?? '') ? ` http://${req.headers.host}` : '';
+  const self = `'self'${host}`;
+  return `sandbox allow-scripts; default-src 'none'; script-src ${self}; worker-src data: ${self}; connect-src 'none'; base-uri 'none'; form-action 'none'`;
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/') {
@@ -249,10 +259,14 @@ const server = http.createServer((req, res) => {
       res.writeHead(404);
       return res.end('not found');
     }
-    res.writeHead(200, {
+    const headers = {
       'Content-Type': TYPES[path.extname(file)] ?? 'application/octet-stream',
       'Cache-Control': 'no-store', // 게임 코드를 고치고 새로고침하면 바로 반영되게
-    });
+    };
+    // 게임 실행기 (web/engine.js): Go 서버(server/internal/site의 runnerCSP)와 같은 헤더
+    if (/\.(m?js|json)$/.test(file)) headers['Access-Control-Allow-Origin'] = '*';
+    if (url.pathname === '/web/runner/frame.html') headers['Content-Security-Policy'] = runnerCSP(req);
+    res.writeHead(200, headers);
     res.end(data);
   });
 });

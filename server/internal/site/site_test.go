@@ -223,6 +223,54 @@ func TestServeFile(t *testing.T) {
 	}
 }
 
+// 게임 실행기 문서는 출처를 없애고(sandbox) 네트워크를 막는 CSP로 내보내고,
+// 실행기 Worker가 출처 없이 불러오는 모듈(게임 코드, SDK, 실행기)에는 CORS를 엽니다.
+func TestRunnerHeaders(t *testing.T) {
+	s := openSite(t, map[string]string{
+		"web/index.html":          "",
+		"web/runner/frame.html":   "<script src=frame.js></script>",
+		"web/runner/worker.js":    "w",
+		"games/x/index.js":        "g",
+		"sdk/playground/board.js": "b",
+	})
+	get := func(path, host string) http.Header {
+		req := httptest.NewRequest("GET", path, nil)
+		req.Host = host
+		rec := httptest.NewRecorder()
+		s.ServeFile(rec, req)
+		if rec.Code != 200 {
+			t.Fatalf("%s: status %d", path, rec.Code)
+		}
+		return rec.Header()
+	}
+
+	csp := get("/web/runner/frame.html", "boardmadang.com").Get("Content-Security-Policy")
+	for _, want := range []string{"sandbox allow-scripts", "default-src 'none'", "connect-src 'none'",
+		"script-src 'self' http://boardmadang.com", "worker-src data: 'self' http://boardmadang.com"} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("runner CSP %q: missing %q", csp, want)
+		}
+	}
+	if strings.Contains(csp, "unsafe") || strings.Contains(csp, "*") {
+		t.Errorf("runner CSP allows too much: %q", csp)
+	}
+	// 이상한 Host는 CSP에 넣지 않습니다
+	if csp := get("/web/runner/frame.html", "evil;script-src").Get("Content-Security-Policy"); strings.Contains(csp, "evil") {
+		t.Errorf("Host leaked into CSP: %q", csp)
+	}
+	if got := get("/web/index.html", "boardmadang.com").Get("Content-Security-Policy"); got != "" {
+		t.Errorf("CSP on a normal page: %q", got)
+	}
+	for _, path := range []string{"/web/runner/worker.js", "/games/x/index.js", "/sdk/playground/board.js"} {
+		if got := get(path, "boardmadang.com").Get("Access-Control-Allow-Origin"); got != "*" {
+			t.Errorf("%s: Access-Control-Allow-Origin = %q, want *", path, got)
+		}
+	}
+	if got := get("/web/index.html", "boardmadang.com").Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("CORS on a page: %q", got)
+	}
+}
+
 // 폴더로 보낼 때 쿼리(?game=)를 지키지 않으면 플레이그라운드가 어떤 게임인지 잃습니다.
 func TestServeFileRedirectKeepsQuery(t *testing.T) {
 	s := openSite(t, map[string]string{"web/index.html": "", "games/x/index.js": ""})

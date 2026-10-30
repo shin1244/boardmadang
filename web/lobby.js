@@ -3,6 +3,7 @@
 // 썸네일은 게임의 setup()이 만든 시작 화면을 플랫폼 렌더러로 그린 것입니다.
 
 import { BoardView } from '/sdk/playground/board.js';
+import { loadGame } from './engine.js';
 import { DIFFICULTIES, LANGS, LANG_NAMES, NO_TIMER, fullLangs, gameLang, localize, timerOf } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { displayName, isMember, loadMe, renderMe } from './me.js';
@@ -77,15 +78,8 @@ function renderBanner() {
 
 // ---- 게임 목록 ----
 
-/** 썸네일에 쓸 고정 시드. 랜덤이 있는 게임도 매번 같은 그림이 나옵니다. */
-function fixedRng() {
-  let a = 1;
-  const next = () => {
-    a = (a * 1103515245 + 12345) % 2 ** 31;
-    return a / 2 ** 31;
-  };
-  return { next, int: (n) => Math.floor(next() * n) };
-}
+/** 썸네일이 없는 게임의 시작 판에 쓸 고정 시드. 랜덤이 있는 게임도 매번 같은 그림이 나옵니다. */
+const THUMB_SEED = 1;
 
 function sizeClass(board) {
   const n = Math.max(board.rows, board.cols);
@@ -106,15 +100,24 @@ function searchText(e) {
   return [e.id, ...all(e.listing?.name), ...all(e.listing?.description)].join(' ').toLowerCase();
 }
 
+/**
+ * 게임 목록을 받고, 게임마다 실행기(engine.js)의 샌드박스에서 코드를 불러와 판 정보와 시작 판만 받은 뒤 닫습니다.
+ * 남이 올린 게임 코드를 이 페이지(사이트 권한)에서 돌리지 않기 위해서입니다.
+ * e.game은 실행기가 알려 준 정보 { board, pieces, specialActions, maxActions, turn: turn()이 있는지 }입니다.
+ */
 async function loadGames() {
   const res = await fetch('/api/games');
   const list = await res.json();
   return Promise.all(list.map(async (entry) => {
+    let runner = null;
     try {
-      const game = (await import(entry.module)).default;
-      return { ...entry, game };
+      runner = await loadGame(entry);
+      const { look } = await runner.start(THUMB_SEED, { players: [0], lang: gameLang(entry.listing, lang) });
+      return { ...entry, game: runner.info, startView: look.views[0] };
     } catch (e) {
       return { ...entry, error: e.message };
+    } finally {
+      runner?.close();
     }
   }));
 }
@@ -179,7 +182,7 @@ function drawThumb(canvas, entry, size) {
   try {
     const board = new BoardView(canvas, game.board, game.pieces);
     board.resize(size);
-    const view = game.view(game.setup(fixedRng()), 0, gameLang(entry.listing, lang));
+    const view = entry.startView ?? { pieces: [] };
     board.draw({ ...view, marks: (view.marks ?? []).filter((m) => m.type !== 'last-move') });
     return true;
   } catch {

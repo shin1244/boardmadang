@@ -106,7 +106,41 @@ func (s *Site) ServeFile(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Type", ctype)
 	h.Set("Cache-Control", "no-cache")
 	h.Set("X-Content-Type-Options", "nosniff")
+	if strings.HasPrefix(ctype, "text/javascript") || strings.HasPrefix(ctype, "application/json") {
+		// 게임 실행기의 Worker는 출처가 없어서(opaque origin) 모듈을 CORS로만 불러올 수 있습니다.
+		// 모두 공개된 코드라 누구에게나 열어도 됩니다.
+		h.Set("Access-Control-Allow-Origin", "*")
+	}
+	if name == runnerFrame {
+		h.Set("Content-Security-Policy", runnerCSP(r))
+	}
 	http.ServeContent(w, r, name, info.ModTime(), bytes.NewReader(data))
+}
+
+// runnerFrame은 게임 코드를 가두는 실행기 문서입니다 (web/engine.js, web/runner/).
+const runnerFrame = "web/runner/frame.html"
+
+var hostPattern = regexp.MustCompile(`^[A-Za-z0-9.-]+(:[0-9]+)?$`)
+
+// runnerCSP는 실행기 문서의 보안 정책입니다. 화면이 sandbox iframe으로 띄우지만, 이 주소를 직접 열어도 갇히도록 헤더로도 겁니다.
+//   - sandbox allow-scripts: 출처가 없어서 사이트의 쿠키, 저장소, 부모 화면에 손댈 수 없습니다
+//   - connect-src 'none': fetch, 웹소켓 같은 네트워크를 못 씁니다 (data: Worker도 이 정책을 물려받습니다)
+//   - script-src: 이 사이트의 스크립트만 (게임 코드, SDK 모듈). 다른 곳의 코드나 eval은 막습니다
+//   - worker-src: frame.js가 data: 주소로 Worker를 만들고, 그 Worker가 이 사이트의 worker.js를 불러옵니다
+//     (Chromium은 Worker가 처음 불러오는 모듈도 worker-src로 봅니다)
+//
+// 'self'는 출처가 없는 문서에서 브라우저마다 다르게 풀릴 수 있어 이 사이트의 주소도 같이 적습니다.
+func runnerCSP(r *http.Request) string {
+	self := "'self'"
+	if hostPattern.MatchString(r.Host) {
+		scheme := "http"
+		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+			scheme = "https"
+		}
+		self += " " + scheme + "://" + r.Host
+	}
+	return "sandbox allow-scripts; default-src 'none'; script-src " + self +
+		"; worker-src data: " + self + "; connect-src 'none'; base-uri 'none'; form-action 'none'"
 }
 
 // public은 내보내도 되는 경로인지 봅니다. name은 앞의 /를 뗀 URL 경로입니다.
