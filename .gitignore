@@ -8,6 +8,8 @@
 
 # Go
 /server/bin/
+# 개발 서버가 저장한 기보 (DATA_DIR 기본값)
+/server/data/
 *.exe
 *.test
 *.out

@@ -106,7 +106,8 @@ body {
 .login:disabled { opacity: 0.5; }
 .login[hidden], .me[hidden] { display: none; }
 /* 지금 신원: "게스트 4821" 또는 계정 이름 */
-.me { color: #aab1bb; font-size: 14px; white-space: nowrap; }
+.me { color: #aab1bb; font-size: 14px; white-space: nowrap; text-decoration: none; }
+.me:hover, .me[aria-current="page"] { color: var(--topbar-text); text-decoration: underline; }
 
 /* ---- 배너 ---- */
 

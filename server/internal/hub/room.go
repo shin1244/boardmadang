@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/shin1244/boardmadang/server/internal/protocol"
+	"github.com/shin1244/boardmadang/server/internal/record"
 )
 
 // Room은 매칭된 두 플레이어의 대국 하나입니다.
@@ -36,6 +37,9 @@ type Room struct {
 
 	clock    *clock // 대국 시계 (clock.go). 타이머가 없으면 nil
 	clockSeq int    // 시계에 반영한 가장 최근 순번
+
+	started time.Time
+	at      []int64 // Log[i]가 시작부터 몇 ms 뒤에 왔는지. 기보에 남깁니다
 }
 
 // report는 한 플레이어가 보고한 상태 해시와 그 상태에서 누구 차례인지입니다.
@@ -55,6 +59,7 @@ func newRoom(h *Hub, id, game string, seed uint32, minutes *int, players [2]*Cli
 		hashes:   make(map[int][2]*report),
 		agreed:   make(map[int]string),
 		clockSeq: -2,
+		started:  time.Now(),
 	}
 	if minutes != nil {
 		r.clock = newClock(time.Duration(*minutes) * MinuteUnit)
@@ -75,6 +80,7 @@ func (r *Room) relay(player int, a protocol.Action) {
 	}
 	msg := protocol.Relay{Type: protocol.TypeRelay, Seq: len(r.Log), Player: player, Action: a}
 	r.Log = append(r.Log, msg)
+	r.at = append(r.at, time.Since(r.started).Milliseconds())
 	r.broadcast(msg)
 	if len(r.Log) >= MaxLog {
 		r.end(nil, protocol.ReasonLimit)
@@ -233,9 +239,7 @@ func (r *Room) resume(c *Client) bool {
 	return true
 }
 
-// end는 대국을 끝내고 양쪽에 Ended를 보냅니다. 두 번 불려도 한 번만 처리합니다. r.mu를 잡고 부릅니다.
-//
-// TODO: 결과와 Log를 저장소에 남기기 (기보, 랭킹, 나중에 AI 학습 데이터). 플레이어는 user.ID로 남깁니다.
+// end는 대국을 끝내고 기보를 저장한 뒤 양쪽에 Ended를 보냅니다. 두 번 불려도 한 번만 처리합니다. r.mu를 잡고 부릅니다.
 func (r *Room) end(winner *int, reason string) {
 	if r.ended {
 		return
@@ -243,8 +247,40 @@ func (r *Room) end(winner *int, reason string) {
 	r.ended = true
 	r.stopClock()
 	r.final = &protocol.Ended{Type: protocol.TypeEnded, Winner: winner, Reason: reason}
+	if r.hub.records != nil {
+		m := r.record(winner, reason)
+		r.hub.records.Save(m)
+		r.final.Record = m.ID
+	}
 	r.broadcast(*r.final)
 	r.hub.removeRoom(r) // 락 순서 r.mu → h.mu
+}
+
+// record는 끝난 대국의 기보입니다. 무효가 된 대국(desync 등)도 남깁니다. 분쟁을 확인할 때 씁니다.
+func (r *Room) record(winner *int, reason string) *record.Match {
+	m := &record.Match{
+		ID:      record.NewID(),
+		Game:    r.Game,
+		Seed:    r.Seed,
+		Minutes: r.Minutes,
+		Moves:   make([]record.Move, len(r.Log)),
+		Winner:  winner,
+		Reason:  reason,
+		Started: r.started,
+		Ended:   time.Now(),
+	}
+	for i, p := range r.Players {
+		u := p.user
+		m.Players[i] = record.Player{ID: u.ID, Kind: u.Kind, Tag: u.Tag, Name: u.Name}
+	}
+	for i, l := range r.Log {
+		m.Moves[i] = record.Move{Player: l.Player, Action: l.Action, At: r.at[i]}
+	}
+	if r.clock != nil {
+		rem := r.clock.remaining // stopClock이 끝난 시각으로 맞춰 둡니다
+		m.Clock = &[2]int64{rem[0].Milliseconds(), rem[1].Milliseconds()}
+	}
+	return m
 }
 
 func (r *Room) broadcast(msg any) {

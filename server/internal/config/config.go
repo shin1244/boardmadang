@@ -14,15 +14,21 @@ type Config struct {
 	AllowedOrigins []string
 	// 세션 토큰 서명 비밀값 (docs/identity.md). 비어 있으면 서버가 시작할 때 임시 값을 만듭니다.
 	SessionSecret string
+	// 기보를 저장할 폴더 (internal/record). 운영에서는 VM의 영구 디스크에 둡니다.
+	DataDir string
 }
 
 func Load() Config {
 	cfg := Config{
 		Port:          os.Getenv("PORT"),
 		SessionSecret: os.Getenv("SESSION_SECRET"),
+		DataDir:       os.Getenv("DATA_DIR"),
 	}
 	if cfg.Port == "" {
 		cfg.Port = "8080"
+	}
+	if cfg.DataDir == "" {
+		cfg.DataDir = "data"
 	}
 
 	for _, origin := range strings.Split(os.Getenv("ALLOWED_ORIGINS"), ",") {

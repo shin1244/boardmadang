@@ -30,7 +30,9 @@
 
 - **서버가 재시작되면 진행 중인 대국이 사라집니다.** MVP에서는 감수합니다.
   방이 메모리에만 있어서 15초 유예로도 이어지지 않습니다. 배포는 대국이 적은 시간에 합니다.
-- 다음 단계: 끝난 방의 `시드 + 행동 기록`과 결과를 DB(Firestore, Cloud SQL 중 하나)에 저장합니다 (기보, 랭킹).
+- 끝난 대국의 기보는 `DATA_DIR`(기본 `data`) 아래에 파일로 저장합니다. 한 판에 1KB 안팎이라 디스크 걱정은 거의 없습니다.
+  VM의 영구 디스크에 두면 서버를 다시 켜도 남습니다. 백업은 디스크 스냅샷 일정으로 합니다.
+- 서버를 여러 대로 늘리면 파일로는 안 됩니다. 그때 기보를 DB(Firestore, Cloud SQL 중 하나)나 Cloud Storage로 옮깁니다.
 - 인스턴스를 여러 개 띄우려면 같은 게임의 대기열이 한곳에 모여야 합니다. 그때 매칭만 Redis 같은 공용 저장소로 옮깁니다.
 
 ## AI 학습 서버는 따로
@@ -43,5 +45,7 @@ GPU가 있고 싼 리전에서 **Spot VM**으로 돌리면 비용을 크게 줄�
 ```bash
 cd server
 docker build -t boardmadang-server .
-docker run --rm -p 8080:8080 boardmadang-server
+docker run --rm -p 8080:8080 -v boardmadang-data:/data boardmadang-server
 ```
+
+- 기보는 컨테이너 안의 `/data`에 씁니다. 볼륨(`-v boardmadang-data:/data`)을 붙이지 않으면 컨테이너를 지울 때 같이 사라집니다.

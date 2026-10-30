@@ -209,10 +209,12 @@ type Desync struct {
 }
 
 // Ended의 Winner가 nil이면 무승부이거나 무효입니다.
+// Ended의 Record는 저장한 기보의 id입니다 (GET /api/matches/{id}). 저장하지 않는 서버면 없습니다.
 type Ended struct {
 	Type   string `json:"type"`
 	Winner *int   `json:"winner"`
 	Reason string `json:"reason"`
+	Record string `json:"record,omitempty"`
 }
 
 type Error struct {

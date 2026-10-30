@@ -25,7 +25,7 @@ export function displayName(me) {
   return isMember(me) ? me.name : t('guest.name', { tag: me.tag });
 }
 
-/** 상단 메뉴의 신원 표시. 계정이면 로그인 버튼을 숨깁니다. */
+/** 상단 메뉴의 신원 표시 (누르면 내 대국 목록). 계정이면 로그인 버튼을 숨깁니다. */
 export function renderMe(me) {
   const el = document.querySelector('.me');
   el.hidden = !me;

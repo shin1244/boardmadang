@@ -1,0 +1,25 @@
+/* 기보 다시보기. 판과 플레이어 줄은 match.css를 같이 씁니다. */
+
+.replay-controls { display: grid; gap: 10px; max-width: 480px; margin: 14px auto 0; }
+.replay-controls[hidden] { display: none; }
+.replay-buttons { display: flex; justify-content: center; gap: 6px; }
+.replay-buttons .btn { flex: none; min-width: 44px; padding: 8px 12px; }
+.replay-buttons #play { min-width: 88px; }
+#seek { width: 100%; accent-color: var(--accent); }
+.replay-meta { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--muted); font-size: 14px; }
+.replay-meta select {
+  margin-left: 6px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+#position { font-variant-numeric: tabular-nums; }
+.replay-keys { margin: 0; color: var(--muted); font-size: 12px; }
+.who .winner { color: #2f8a52; font-weight: 700; }
+
+@media (prefers-color-scheme: dark) {
+  .who .winner { color: #6cc98f; }
+}

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>내 대국 · 보드마당</title>
+  <link rel="stylesheet" href="lobby.css">
+  <link rel="stylesheet" href="rooms.css">
+</head>
+<body class="page">
+  <!-- 글자는 web/i18n.js에 언어별로 있습니다. 여기 적힌 한국어는 스크립트가 돌기 전 잠깐 보이는 기본값입니다. -->
+  <header class="topbar">
+    <a class="logo" href="/web/">
+      <span class="logo-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span data-i18n="site.name">보드마당</span>
+    </a>
+    <nav class="menu" data-i18n-attr="aria-label:menu.label" aria-label="메뉴">
+      <a href="/web/" data-i18n="menu.games">게임</a>
+      <a href="/web/rooms.html" data-i18n="menu.rooms">방 목록</a>
+      <span class="soon" data-i18n="menu.ranking" data-i18n-attr="title:soon" title="준비 중">랭킹</span>
+      <a href="/web/register.html" data-i18n="menu.register">게임 등록</a>
+      <a href="/sdk/playground/" data-i18n="menu.playground">플레이그라운드</a>
+    </nav>
+    <div class="langs" role="group" data-i18n-attr="aria-label:lang.label" aria-label="화면 언어">
+      <button type="button" data-lang="ko" lang="ko">KR</button>
+      <button type="button" data-lang="en" lang="en">EN</button>
+    </div>
+    <a class="me" href="/web/history.html" aria-current="page" hidden></a>
+    <button class="login" type="button" disabled data-i18n="login" data-i18n-attr="title:soon" title="준비 중">로그인</button>
+  </header>
+
+  <!-- 방 목록과 같은 줄 모양을 씁니다 (rooms.css) -->
+  <main class="rooms">
+    <div class="list-head">
+      <h1><span data-i18n="history.title">내 대국</span> <span id="count" class="count"></span></h1>
+    </div>
+    <p class="rooms-lead" data-i18n="history.lead"></p>
+
+    <ul id="list" class="room-list"></ul>
+    <p id="empty" class="empty" hidden></p>
+  </main>
+
+  <script type="module" src="history.js"></script>
+</body>
+</html>

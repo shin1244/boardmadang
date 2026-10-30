@@ -35,6 +35,16 @@
 .room-timer.none { color: var(--muted); border-style: dashed; }
 .room .btn { flex: none; padding: 8px 18px; text-decoration: none; }
 
+/* 내 대국: 결과 표시 */
+.result-tag { flex: none; width: 3.2em; font-weight: 700; text-align: center; }
+.result-tag.win { color: #2f8a52; }
+.result-tag.lose { color: #c13f3f; }
+.result-tag.draw, .result-tag.void { color: var(--muted); }
+@media (prefers-color-scheme: dark) {
+  .result-tag.win { color: #6cc98f; }
+  .result-tag.lose { color: #ee8080; }
+}
+
 @media (max-width: 760px) {
   .rooms { padding: 20px 16px 48px; }
   .room { flex-wrap: wrap; }

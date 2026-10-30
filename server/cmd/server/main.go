@@ -15,21 +15,26 @@ import (
 	"github.com/shin1244/boardmadang/server/internal/config"
 	"github.com/shin1244/boardmadang/server/internal/hub"
 	"github.com/shin1244/boardmadang/server/internal/identity"
+	"github.com/shin1244/boardmadang/server/internal/record"
 )
 
 func main() {
 	cfg := config.Load()
 	ids := identity.NewIssuer(sessionSecret(cfg))
-	h := hub.New(cfg, ids)
+	records, err := record.Open(cfg.DataDir)
+	if err != nil {
+		log.Fatalf("기보 폴더를 열지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
+	}
+	h := hub.New(cfg, ids, records)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           routes(h, ids),
+		Handler:           routes(h, ids, records),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	go func() {
-		log.Printf("서버 시작: http://localhost:%s", cfg.Port)
+		log.Printf("서버 시작: http://localhost:%s (기보: %s)", cfg.Port, cfg.DataDir)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal(err)
 		}
@@ -47,7 +52,8 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Println("종료 실패:", err)
 	}
-	// TODO: 진행 중인 방에 종료를 알리고, 기록을 저장소에 남기기 (docs/deploy-gcp.md 참고)
+	records.Close() // 쓰는 중인 기보를 마저 씁니다
+	// TODO: 진행 중인 방에 종료를 알리고 기보로 남기기 (docs/deploy-gcp.md 참고)
 }
 
 // sessionSecret은 세션 토큰 서명 비밀값입니다. 없으면 임시 값을 만듭니다 (개발용).
@@ -67,12 +73,15 @@ func sessionSecret(cfg config.Config) []byte {
 	return b
 }
 
-func routes(h *hub.Hub, ids *identity.Issuer) http.Handler {
+func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
 	mux.HandleFunc("GET /api/me", ids.HandleMe)
 	mux.HandleFunc("GET /ws", h.ServeWS)
 	mux.HandleFunc("GET /api/rooms", h.ServeRooms)
+	matches := record.Handler{Store: records, IDs: ids}
+	mux.HandleFunc("GET /api/matches", matches.ServeMine)
+	mux.HandleFunc("GET /api/matches/{id}", matches.ServeMatch)
 	// TODO: 업로드와 등록 정보 저장은 계정만 됩니다. 붙일 때 ids.RequireMember로 감쌉니다.
 	//   mux.Handle("PUT /api/games/{id}/listing", ids.RequireMember(...))
 	return mux

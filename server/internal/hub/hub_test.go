@@ -20,7 +20,7 @@ import (
 func newServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	ids := identity.NewIssuer([]byte("test-secret-test-secret-test-secret"))
-	h := New(config.Config{}, ids)
+	h := New(config.Config{}, ids, nil)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/me", ids.HandleMe)
 	mux.HandleFunc("GET /ws", h.ServeWS)

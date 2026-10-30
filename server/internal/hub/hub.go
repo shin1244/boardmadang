@@ -26,6 +26,7 @@ import (
 	"github.com/shin1244/boardmadang/server/internal/config"
 	"github.com/shin1244/boardmadang/server/internal/identity"
 	"github.com/shin1244/boardmadang/server/internal/protocol"
+	"github.com/shin1244/boardmadang/server/internal/record"
 )
 
 // 제한값 (docs/abuse-and-limits.md). 테스트에서 줄이려고 변수로 둡니다.
@@ -65,6 +66,7 @@ var gameIDPattern = regexp.MustCompile(`^[a-z0-9-]{1,40}$`)
 type Hub struct {
 	cfg      config.Config
 	ids      *identity.Issuer
+	records  *record.Store // 끝난 대국의 기보. nil이면 저장하지 않습니다
 	upgrader websocket.Upgrader
 
 	mu    sync.Mutex
@@ -74,14 +76,16 @@ type Hub struct {
 	away  map[string]*Room     // 연결이 끊겨 돌아오기를 기다리는 user.ID → 그 방 (끝난 방일 수도 있습니다)
 }
 
-func New(cfg config.Config, ids *identity.Issuer) *Hub {
+// New는 허브를 만듭니다. records가 nil이면 기보를 저장하지 않습니다.
+func New(cfg config.Config, ids *identity.Issuer, records *record.Store) *Hub {
 	h := &Hub{
-		cfg:   cfg,
-		ids:   ids,
-		queue: make(map[string]*Client),
-		rooms: make(map[string]*Room),
-		open:  make(map[string]*openRoom),
-		away:  make(map[string]*Room),
+		cfg:     cfg,
+		ids:     ids,
+		records: records,
+		queue:   make(map[string]*Client),
+		rooms:   make(map[string]*Room),
+		open:    make(map[string]*openRoom),
+		away:    make(map[string]*Room),
 	}
 	h.upgrader = websocket.Upgrader{CheckOrigin: h.checkOrigin}
 	return h

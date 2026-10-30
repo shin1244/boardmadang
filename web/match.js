@@ -55,7 +55,7 @@ let stateHash = '';
 let applied = 0; // 적용한 relay 수 = 다음 순번
 let effective = 0; // 상태를 바꾼 행동 수 (maxActions 기준)
 let reported = null; // 내가 서버에 보고한 결과. 서버의 ended를 기다리는 중
-let ended = null; // 서버가 보낸 ended
+let ended = null; // 서버가 보낸 ended. record가 있으면 저장된 기보 id입니다
 let hover = null;
 let offlineUntil = null; // 내 연결이 끊겨 다시 붙는 중이면 마감 시각 (ms)
 let oppAwayUntil = null; // 상대 연결이 끊겨 기다리는 중이면 마감 시각 (ms)
@@ -475,6 +475,8 @@ function renderActions() {
   $('#cancel').hidden = !['waiting', 'hosting', 'connecting'].includes(phase);
   $('#again').hidden = !['ended', 'idle', 'error'].includes(phase) || !game;
   $('#again').textContent = t({ quick: 'match.again', create: 'match.againRoom', enter: 'match.toRooms' }[mode]);
+  $('#replay').hidden = phase !== 'ended' || !ended?.record;
+  if (ended?.record) $('#replay').href = `/web/replay.html?id=${encodeURIComponent(ended.record)}`;
   const specials = $('#specials');
   specials.replaceChildren();
   if (!playing) return;

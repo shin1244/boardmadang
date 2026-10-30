@@ -84,6 +84,7 @@ GO_SERVER=http://localhost:8081 node sdk/playground/serve.js
 - 플레이그라운드: http://localhost:5173/sdk/playground/?game=tictactoe
 - 게임 등록: http://localhost:5173/web/register.html (이름, 룰북, 난이도, 지원 언어, 타이머를 `games/<id>/listing.json`에 저장)
 - 방 목록: http://localhost:5173/web/rooms.html
+- 내 대국 (상단의 내 이름을 누름): http://localhost:5173/web/history.html. 끝난 대국은 `server/data/`에 기보로 저장되고, 여기서 다시볼 수 있습니다.
 
 로비는 `games/`와 `games/private/`에 있는 게임을 자동으로 보여줍니다. 카드의 '혼자 둬보기'는 플레이그라운드를,
 '대전 찾기'는 대전 화면(`web/match.html`)을 열어 같은 타이머의 상대를 찾고, '방 만들기'는 방 목록에 방을 올립니다.

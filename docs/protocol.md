@@ -8,6 +8,8 @@
 | `GET /api/games` | 게임 목록 `[{"id":"tictactoe","module":"/games/tictactoe/index.js","private":false,"listing":{...}}]` |
 | `GET /api/locale` | 접속 나라와 화면 언어 `{"country":"KR","lang":"ko"}` |
 | `GET /api/me` | 지금 신원 `{"id":"g_…","kind":"guest","tag":"4821"}`. 쿠키가 없으면 게스트를 새로 발급합니다 |
+| `GET /api/matches/{id}` | 기보 하나. 시드와 행동 기록이 있어 처음부터 다시 둘 수 있습니다 `{"id":"VJ7QHHVKDY","game":"tictactoe","seed":3551073280,"minutes":10,"players":[{…},{…}],"you":[0],"moves":[{"player":0,"action":{"kind":"click","row":1,"col":1},"at":10854}],"count":1,"winner":0,"reason":"result","clock":[587103,597876],"started":"…","ended":"…"}` |
+| `GET /api/matches` | 내가 둔 대국 목록, 최근 것부터 50개 (`moves` 없이). 쿠키가 없으면 `[]` |
 | `GET /api/rooms` | 상대를 기다리는 방 목록. 최근에 만들거나 올린 방이 먼저 `[{"room":"K3P9QX","game":"tictactoe","minutes":10,"host":{"kind":"guest","tag":"4821"},"age":42}]` |
 
 - `listing`은 등록 정보(이름, 소개, 룰북, 난이도, 지원 언어, 타이머)입니다. 등록 전이면 `null`입니다.
@@ -16,6 +18,11 @@
   내 컴퓨터에서 온 요청과 계정만 받고(게스트면 `403 {"error":"member only"}`), 검사에 걸리면 `422 {"problems":[...]}`를 돌려줍니다.
   검사 규칙은 [sdk/playground/listing.js](../sdk/playground/listing.js)에 있고, 운영 서버도 같은 규칙으로 검사합니다.
   타이머를 켰는데 게임 코드에 `turn()`이 없으면 `422 {"problems":[{"code":"timer.needsTurn"}]}`입니다.
+- `/api/matches`: 끝난 대국은 Go 서버가 기보로 저장합니다 (`server/internal/record`). 무효가 된 대국도 남깁니다.
+  - 기보 id(10글자)를 아는 사람은 누구나 볼 수 있습니다. 링크로 공유하는 용도입니다.
+  - 플레이어의 내부 id는 보내지 않고, 보는 사람이 앉았던 자리를 `you`로 붙입니다 (안 둔 사람이면 `[]`, 혼자 두 자리면 `[0,1]`).
+  - `at`은 대국 시작부터 그 행동이 서버에 온 시각(ms), `clock`은 끝났을 때 남은 시간(ms)입니다.
+  - 개발 서버는 쿠키를 붙여 Go 서버에 그대로 묻습니다.
 - `/api/rooms`: 방 목록은 Go 서버의 메모리에만 있습니다. 개발 서버는 Go 서버에 물어 그대로 넘깁니다.
   `age`는 마지막으로 만들거나 올린 뒤 지난 초, `minutes`가 `null`이면 타이머 없음입니다. 최대 200개입니다.
 - `/api/locale`: 나라는 GCP 부하 분산기의 커스텀 요청 헤더 `X-Client-Region: {client_region}`에서 읽습니다.
@@ -79,7 +86,7 @@
 | `clock` | 대국 시계가 넘어가거나 멈출 때 (타이머가 있을 때만) | `{"type":"clock","remaining":[598512,600000],"running":1}` |
 | `relay` | 누군가의 행동 (내 행동도 포함) | `{"type":"relay","seq":4,"player":0,"action":{"kind":"click","row":1,"col":1}}` |
 | `desync` | 양쪽 해시가 달랐을 때 | `{"type":"desync","seq":4}` |
-| `ended` | 대국이 끝났을 때 | `{"type":"ended","winner":0,"reason":"result"}` |
+| `ended` | 대국이 끝났을 때. `record`는 저장한 기보 id입니다 | `{"type":"ended","winner":0,"reason":"result","record":"VJ7QHHVKDY"}` |
 | `error` | 잘못된 요청 | `{"type":"error","message":"unknown game"}` |
 
 - **내 행동도 서버를 거쳐 `relay`로 돌아온 뒤에 적용합니다.** 내 화면에 바로 적용하면
