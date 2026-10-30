@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/shin1244/boardmadang/server/internal/comment"
 	"github.com/shin1244/boardmadang/server/internal/config"
 	"github.com/shin1244/boardmadang/server/internal/hub"
 	"github.com/shin1244/boardmadang/server/internal/identity"
@@ -25,11 +26,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("기보 폴더를 열지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
 	}
+	comments, err := comment.Open(cfg.DataDir)
+	if err != nil {
+		log.Fatalf("의견 폴더를 열지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
+	}
 	h := hub.New(cfg, ids, records)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           routes(h, ids, records),
+		Handler:           routes(h, ids, records, comments),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -73,7 +78,7 @@ func sessionSecret(cfg config.Config) []byte {
 	return b
 }
 
-func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store) http.Handler {
+func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *comment.Store) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
 	mux.HandleFunc("GET /api/me", ids.HandleMe)
@@ -83,6 +88,11 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store) http.Handle
 	matches := record.Handler{Store: records, IDs: ids}
 	mux.HandleFunc("GET /api/matches", matches.ServeMine)
 	mux.HandleFunc("GET /api/matches/{id}", matches.ServeMatch)
+	talk := comment.Handler{Store: comments, IDs: ids}
+	mux.HandleFunc("GET /api/games/{game}/comments", talk.ServeList)
+	mux.HandleFunc("POST /api/games/{game}/comments", talk.ServePost)
+	mux.HandleFunc("DELETE /api/games/{game}/comments/{id}", talk.ServeDelete)
+	mux.HandleFunc("POST /api/reports", talk.ServeReport)
 	// TODO: 업로드와 등록 정보 저장은 계정만 됩니다. 붙일 때 ids.RequireMember로 감쌉니다.
 	//   mux.Handle("PUT /api/games/{id}/listing", ids.RequireMember(...))
 	return mux

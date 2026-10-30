@@ -12,7 +12,7 @@ import (
 
 func newTestServer() *httptest.Server {
 	ids := identity.NewIssuer([]byte("test-secret-test-secret-test-secret"))
-	return httptest.NewServer(routes(hub.New(config.Config{Port: "0"}, ids, nil), ids, nil))
+	return httptest.NewServer(routes(hub.New(config.Config{Port: "0"}, ids, nil), ids, nil, nil))
 }
 
 func TestHealthz(t *testing.T) {

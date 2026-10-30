@@ -12,6 +12,10 @@
 | `GET /api/matches` | 내가 둔 대국 목록, 최근 것부터 50개 (`moves` 없이). 쿠키가 없으면 `[]` |
 | `GET /api/rooms` | 상대를 기다리는 방 목록. 최근에 만들거나 올린 방이 먼저 `[{"room":"K3P9QX","game":"tictactoe","version":"3f1c9a0b2e7d4c56","minutes":10,"host":{"kind":"guest","tag":"4821"},"age":42}]` |
 | `GET /api/live` | 진행 중인 대국 목록. 최근에 시작한 대국이 먼저 `[{"room":"K3P9QX","game":"tictactoe","version":"3f1c…","minutes":10,"players":[{…},{…}],"moves":7,"watchers":2,"age":95}]` |
+| `GET /api/games/{id}/comments` | 게임의 의견, 최근 것부터 100개와 전체 수 `{"comments":[{"id":"RN92MFYW","author":{"kind":"guest","tag":"5875"},"text":"…","at":"…","mine":true,"reported":true,"hidden":true}],"count":2}` |
+| `POST /api/games/{id}/comments` | 의견 남기기 `{"text":"…"}` → `201`과 남긴 의견 |
+| `DELETE /api/games/{id}/comments/{comment}` | 내 의견 지우기 → `{"ok":true}` |
+| `POST /api/reports` | 신고 `{"game":"tictactoe","comment":"RN92MFYW","reason":"spam","detail":"…"}` → `{"ok":true,"hidden":false}`. `comment`가 없으면 게임 신고 |
 
 - `version`은 게임 코드 버전입니다. 개발 서버가 게임 폴더의 `.js`, `.mjs` 파일(테스트 제외)을 경로 순으로 이어 SHA-256을 구하고 앞 16글자를 씁니다.
   코드를 한 글자라도 고치면 바뀝니다. 대전할 때 서버에 같이 보내고, 기보에도 남습니다.
@@ -29,6 +33,15 @@
 - `/api/rooms`: 방 목록은 Go 서버의 메모리에만 있습니다. 개발 서버는 Go 서버에 물어 그대로 넘깁니다.
   `age`는 마지막으로 만들거나 올린 뒤 지난 초, `minutes`가 `null`이면 타이머 없음입니다. 최대 200개입니다.
 - `/api/live`: 관전할 수 있는 대국입니다. `age`는 시작한 뒤 지난 초, `moves`는 지금까지의 행동 수, `watchers`는 관전자 수입니다. 최대 200개입니다.
+- 의견과 신고 (`server/internal/comment`):
+  - 남기기, 지우기, 신고는 세션 쿠키가 있어야 합니다 (게스트도 됩니다). 없으면 `401 {"error":"no session"}`.
+    POST는 `Content-Type: application/json`만 받습니다 (`415`). 다른 사이트에서 보내지 못하게 하려는 것입니다.
+  - 의견은 500자, 20줄까지이고 한 사람이 15초에 한 번 남길 수 있습니다. 오류는 `400 empty`, `400 too long`, `429 too soon`.
+  - 남이 쓴 의견을 지우면 `403 not yours`, 없는 의견이면 `404 not found`입니다.
+  - 신고 사유(`reason`)는 `spam`, `abuse`, `adult`, `copyright`, `broken`, `other`입니다. `detail`은 300자까지입니다.
+    내 의견은 신고할 수 없고(`400 own comment`), 같은 것을 두 번 신고하면 그냥 받습니다. 한 사람이 한 시간에 20번까지입니다 (`429 too many reports`).
+  - 서로 다른 세 사람이 신고한 의견은 `hidden: true`가 되고 글(`text`)을 보내지 않습니다.
+  - `author`에는 쓴 사람의 `kind`, `tag`, `name`만 들어갑니다. `mine`은 보는 사람이 쓴 의견, `reported`는 보는 사람이 이미 신고한 의견입니다.
 - 기보의 `version`이 지금 게임 코드와 다르면 다시보기 화면이 "판이 다르게 보일 수 있다"고 알립니다.
   예전 코드를 보관해 그 코드로 재생하는 건 아직 하지 않습니다.
 - `/api/locale`: 나라는 GCP 부하 분산기의 커스텀 요청 헤더 `X-Client-Region: {client_region}`에서 읽습니다.

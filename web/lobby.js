@@ -5,7 +5,7 @@
 import { BoardView } from '/sdk/playground/board.js';
 import { DIFFICULTIES, LANGS, LANG_NAMES, NO_TIMER, fullLangs, gameLang, localize, timerOf } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
-import { loadMe, renderMe } from './me.js';
+import { displayName, loadMe, renderMe } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -225,16 +225,21 @@ function renderCard(entry) {
 }
 
 // ---- 게임 창 ----
-// 왼쪽: 그림, 이름, 대전 찾기, 방 만들기, 혼자 둬보기. 오른쪽: 소개 (방 만들기를 누르면 방 만들기).
+// 왼쪽: 그림, 이름, 대전 찾기, 방 만들기, 혼자 둬보기, 그리고 남은 자리를 채우는 의견 칸.
+// 오른쪽: 소개 (방 만들기를 누르면 방 만들기, 의견 칸을 누르면 의견, 의견이나 게임을 신고하면 신고).
 // 열려 있는 동안 주소에 ?game=<id>&tab=<메뉴>를 붙여 두므로 링크로 바로 열 수 있습니다.
 
-const TABS = { about: 'detail.about', create: 'card.createRoom' };
+const TABS = { about: 'detail.about', create: 'card.createRoom', comments: 'comments.title', report: 'report.title' };
 let current = null; // 창에 띄운 게임
 let tab = 'about';
 
 function openGame(entry, startTab = 'about') {
   current = entry;
   tab = startTab in TABS ? startTab : 'about';
+  if (tab === 'report') tab = 'comments'; // 무엇을 신고할지는 주소에 남기지 않습니다
+  reportTarget = null;
+  talkNote = '';
+  loadComments(entry);
   initCreate();
   for (const d of document.querySelectorAll('.gd-fold')) d.open = false;
   fillDialog();
@@ -245,11 +250,12 @@ function openGame(entry, startTab = 'about') {
 
 function setTab(name) {
   tab = name;
+  if (name !== 'comments') talkNote = '';
   fillDialog();
   syncUrl();
   $('.gd-body').scrollTop = 0;
   // 휴대폰에서는 오른쪽 칸이 아래에 있으므로 거기로 내려갑니다
-  if (name === 'create' && matchMedia('(max-width: 760px)').matches) $('.gd-main').scrollIntoView({ block: 'start' });
+  if (name !== 'about' && matchMedia('(max-width: 760px)').matches) $('.gd-main').scrollIntoView({ block: 'start' });
 }
 
 function syncUrl() {
@@ -258,7 +264,7 @@ function syncUrl() {
   url.searchParams.delete('tab');
   if (current) {
     url.searchParams.set('game', current.id);
-    if (tab !== 'about') url.searchParams.set('tab', tab);
+    if (tab !== 'about') url.searchParams.set('tab', tab === 'report' ? 'comments' : tab);
   }
   history.replaceState(null, '', url);
 }
@@ -283,11 +289,18 @@ function fillDialog() {
 
   // 오른쪽
   $('#gd-title').textContent = t(TABS[tab]);
-  $('#gd-back').hidden = tab === 'about';
+  const back = $('#gd-back');
+  back.hidden = tab === 'about';
+  // 신고에서 ‹를 누르면 의견으로, 나머지는 소개로 돌아갑니다
+  const backLabel = t(tab === 'report' ? 'detail.backToComments' : 'detail.back');
+  back.setAttribute('aria-label', backLabel);
+  back.title = backLabel;
   for (const panel of document.querySelectorAll('[data-panel]')) panel.hidden = panel.dataset.panel !== tab;
   fillAbout(entry);
   fillRulebook(entry);
   fillCreate(entry);
+  renderTalk();
+  fillReport();
 }
 
 function fillAbout(entry) {
@@ -332,6 +345,252 @@ function fillRulebook(entry) {
   }));
 }
 
+// ---- 의견과 신고 ----
+// 의견은 게임마다 Go 서버에 쌓입니다 (GET·POST /api/games/<id>/comments, 내 의견 지우기는 DELETE).
+// 신고는 POST /api/reports로 운영자에게 갑니다. 여러 사람이 신고한 의견은 서버가 글을 빼고 보냅니다 (hidden).
+
+const COMMENT_REASONS = ['spam', 'abuse', 'adult', 'other'];
+const GAME_REASONS = ['broken', 'copyright', 'abuse', 'adult', 'spam', 'other'];
+const MAX_COMMENT = 500;
+const ERRORS = {
+  empty: 'comments.error.empty',
+  'too long': 'comments.error.tooLong',
+  'too soon': 'comments.error.tooSoon',
+  'no session': 'comments.error.noSession',
+  'too many reports': 'report.error.tooMany',
+  'not found': 'report.error.gone',
+};
+
+let talk = null; // 창에 띄운 게임의 의견 { game, list, count, error }. list가 null이면 불러오는 중
+let reportTarget = null; // 신고할 것: { comment } 또는 { game: true }
+let talkNote = ''; // 의견 위에 잠깐 보여줄 안내 (글자 key)
+
+const commentsUrl = (game) => `/api/games/${encodeURIComponent(game)}/comments`;
+const errorText = (code) => (ERRORS[code] ? t(ERRORS[code]) : t('comments.error.server', { msg: code }));
+
+/** POST JSON. 응답 본문과 함께 돌려줍니다. 서버에 닿지 못하면 { ok: false, body: { error: 메시지 } } */
+async function postJSON(url, data) {
+  try {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    const body = await res.json().catch(() => ({ error: String(res.status) }));
+    return { ok: res.ok, body };
+  } catch (e) {
+    return { ok: false, body: { error: e.message } };
+  }
+}
+
+async function loadComments(entry) {
+  const game = entry.id;
+  talk = { game, list: null, count: 0, error: null };
+  try {
+    const res = await fetch(commentsUrl(game), { cache: 'no-store' });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error ?? res.status);
+    if (talk?.game !== game) return; // 그 사이에 다른 게임을 열었음
+    talk.list = body.comments;
+    talk.count = body.count;
+  } catch (e) {
+    if (talk?.game !== game) return;
+    talk.error = e.message;
+  }
+  if (current?.id === game) renderTalk();
+}
+
+/** 지난 시간. 한 달이 넘으면 날짜로 씁니다. */
+function ago(at) {
+  const s = Math.max(0, Math.floor((Date.now() - new Date(at)) / 1000));
+  if (s < 60) return t('rooms.age.now');
+  if (s < 3600) return t('rooms.age.min', { n: Math.floor(s / 60) });
+  if (s < 86400) return t('rooms.age.hour', { n: Math.floor(s / 3600) });
+  if (s < 30 * 86400) return t('comments.age.day', { n: Math.floor(s / 86400) });
+  return new Date(at).toLocaleDateString(lang);
+}
+
+/** 왼쪽 의견 칸(수와 최근 의견 하나)과 오른쪽 의견 목록 */
+function renderTalk() {
+  const list = talk?.list;
+  const latest = list?.[0];
+  $('#gd-talk').setAttribute('aria-pressed', String(tab === 'comments' || tab === 'report'));
+  $('#gd-talk-count').textContent = list ? String(talk.count) : '';
+  let preview = '';
+  if (talk?.error) preview = t('comments.failed', { msg: talk.error });
+  else if (list) preview = !latest ? t('comments.preview.empty')
+    : `${displayName(latest.author)} · ${ago(latest.at)}\n${latest.hidden ? t('comments.preview.hidden') : latest.text}`;
+  $('#gd-talk-preview').textContent = preview;
+
+  $('#comment-as').textContent = me ? t('comments.as', { name: displayName(me) }) : '';
+  syncCommentLength();
+  const note = $('#comments-note');
+  note.hidden = !talkNote;
+  note.textContent = talkNote ? t(talkNote) : '';
+  const shown = list ?? [];
+  const empty = $('#comments-empty');
+  empty.hidden = shown.length > 0 || (!list && !talk?.error);
+  empty.textContent = talk?.error ? t('comments.failed', { msg: talk.error }) : t('comments.empty');
+  $('#comments').replaceChildren(...shown.map(renderComment));
+  $('#comments-more').hidden = !list || talk.count <= shown.length;
+  $('#comments-more').textContent = t('comments.more', { n: shown.length });
+}
+
+function textButton(label, onClick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'text-btn';
+  b.textContent = label;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+function renderComment(c) {
+  const li = document.createElement('li');
+  li.className = 'comment';
+  li.classList.toggle('hidden', !!c.hidden);
+  li.innerHTML = `
+    <div class="comment-head"><b></b><small></small><span class="comment-actions"></span></div>
+    <p class="comment-text"></p>`;
+  // 글은 textContent로만 넣습니다 (남이 쓴 글을 HTML로 해석하지 않음)
+  li.querySelector('b').textContent = c.mine ? `${displayName(c.author)} (${t('match.you')})` : displayName(c.author);
+  const when = li.querySelector('small');
+  when.textContent = ago(c.at);
+  when.title = new Date(c.at).toLocaleString(lang);
+  li.querySelector('.comment-text').textContent = c.hidden ? t('comments.hidden') : c.text;
+  const actions = li.querySelector('.comment-actions');
+  if (c.mine) {
+    actions.append(textButton(t('comments.delete'), () => deleteComment(c)));
+  } else if (!c.hidden) {
+    const report = textButton(t(c.reported ? 'comments.reported' : 'comments.report'), () => openReport({ comment: c }));
+    report.disabled = !!c.reported;
+    actions.append(report);
+  }
+  return li;
+}
+
+function showError(sel, text) {
+  const el = $(sel);
+  el.hidden = !text;
+  el.textContent = text ?? '';
+}
+
+function syncCommentLength() {
+  const n = [...$('#comment-text').value].length;
+  const el = $('#comment-len');
+  el.textContent = n ? `${n} / ${MAX_COMMENT}` : '';
+  el.classList.toggle('over', n > MAX_COMMENT);
+}
+
+async function postComment(e) {
+  e.preventDefault();
+  const input = $('#comment-text');
+  const text = input.value.trim();
+  if (!text) return showError('#comment-error', errorText('empty'));
+  if ([...text].length > MAX_COMMENT) return showError('#comment-error', errorText('too long'));
+  const game = current.id;
+  const button = e.target.querySelector('button[type=submit]');
+  button.disabled = true;
+  const { ok, body } = await postJSON(commentsUrl(game), { text });
+  button.disabled = false;
+  if (!ok) return showError('#comment-error', errorText(body.error));
+  showError('#comment-error', null);
+  input.value = '';
+  talkNote = '';
+  if (talk?.game === game && talk.list) {
+    talk.list.unshift(body);
+    talk.count++;
+  }
+  renderTalk();
+}
+
+async function deleteComment(c) {
+  if (!confirm(t('comments.deleteConfirm'))) return;
+  const game = talk.game;
+  let res = null;
+  try {
+    res = await fetch(`${commentsUrl(game)}/${encodeURIComponent(c.id)}`, { method: 'DELETE' });
+  } catch {
+    // 아래에서 알립니다
+  }
+  // 이미 없으면(404) 지워진 것으로 봅니다
+  if (!res?.ok && res?.status !== 404) {
+    showError('#comment-error', t('comments.error.server', { msg: res?.status ?? '-' }));
+    return;
+  }
+  if (talk?.game === game && talk.list?.includes(c)) {
+    talk.list = talk.list.filter((x) => x !== c);
+    talk.count--;
+  }
+  renderTalk();
+}
+
+function openReport(target) {
+  reportTarget = target;
+  $('#report-form').reset();
+  showError('#report-error', null);
+  setTab('report');
+}
+
+/** 신고 칸: 무엇을 신고하는지와 사유. 의견과 게임은 고를 수 있는 사유가 다릅니다. */
+function fillReport() {
+  if (tab !== 'report' || !reportTarget) return;
+  const c = reportTarget.comment;
+  $('#report-what').textContent = c ? t('report.what.comment') : t('report.what.game', { name: nameOf(current) });
+  $('#report-quote').textContent = c ? `${displayName(c.author)}: ${c.text}` : '';
+  const chosen = document.querySelector('input[name=report-reason]:checked')?.value;
+  $('#report-reasons').replaceChildren(...(c ? COMMENT_REASONS : GAME_REASONS).map((r) => {
+    const label = document.createElement('label');
+    label.className = 'pick';
+    label.innerHTML = '<input type="radio" name="report-reason"> <span></span>';
+    const input = label.querySelector('input');
+    input.value = r;
+    input.checked = r === chosen;
+    label.querySelector('span').textContent = t(`report.reason.${r}`);
+    return label;
+  }));
+}
+
+async function sendReport(e) {
+  e.preventDefault();
+  const reason = document.querySelector('input[name=report-reason]:checked')?.value;
+  if (!reason) return showError('#report-error', t('report.pick'));
+  const c = reportTarget?.comment;
+  const data = { game: current.id, reason, detail: $('#report-detail').value };
+  if (c) data.comment = c.id;
+  const button = e.target.querySelector('button[type=submit]');
+  button.disabled = true;
+  const { ok, body } = await postJSON('/api/reports', data);
+  button.disabled = false;
+  if (!ok) {
+    showError('#report-error', errorText(body.error));
+    // 그 사이에 지워진 의견이면 목록에서도 뺍니다
+    if (body.error === 'not found' && c && talk?.list?.includes(c)) {
+      talk.list = talk.list.filter((x) => x !== c);
+      talk.count--;
+    }
+    return;
+  }
+  if (c) {
+    c.reported = true;
+    if (body.hidden) c.hidden = true;
+  }
+  reportTarget = null;
+  setTab('comments');
+  talkNote = 'report.done';
+  renderTalk();
+}
+
+function setupTalk() {
+  // 의견 칸을 다시 누르면 소개로 돌아갑니다
+  $('#gd-talk').addEventListener('click', () => setTab(tab === 'comments' || tab === 'report' ? 'about' : 'comments'));
+  $('#comment-form').addEventListener('submit', postComment);
+  $('#comment-text').addEventListener('input', () => {
+    syncCommentLength();
+    showError('#comment-error', null);
+  });
+  $('#report-game').addEventListener('click', () => openReport({ game: true }));
+  $('#report-form').addEventListener('submit', sendReport);
+  $('#report-form').addEventListener('change', () => showError('#report-error', null));
+  $('#report-cancel').addEventListener('click', () => setTab('comments'));
+}
+
 // ---- 방 만들기 ----
 
 const roomUrl = (entry, minutes) => `/web/match.html?game=${encodeURIComponent(entry.id)}&create=1&minutes=${minutes ?? 'none'}`;
@@ -362,13 +621,15 @@ function setupDialog() {
   const dlg = $('#game');
   // 방 만들기를 다시 누르거나 ‹를 누르면 소개로 돌아갑니다
   $('#gd-create').addEventListener('click', () => setTab(tab === 'create' ? 'about' : 'create'));
-  $('#gd-back').addEventListener('click', () => setTab('about'));
+  $('#gd-back').addEventListener('click', () => setTab(tab === 'report' ? 'comments' : 'about'));
   // 창 바깥(어두운 곳)을 누르면 닫습니다
   dlg.addEventListener('click', (e) => {
     if (e.target === dlg) dlg.close();
   });
   dlg.addEventListener('close', () => {
     current = null;
+    talk = null;
+    reportTarget = null;
     syncUrl();
   });
   $('#create-form').addEventListener('change', syncCreateForm);
@@ -488,6 +749,7 @@ function render() {
 setupBanner();
 setupFilters();
 setupDialog();
+setupTalk();
 setLang(await detectLang());
 render();
 me = await loadMe();

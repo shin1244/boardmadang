@@ -84,7 +84,7 @@
     </div>
   </div>
 
-  <!-- 게임 창: 카드를 누르면 뜹니다. 왼쪽은 그림과 버튼들, 오른쪽은 소개 (방 만들기를 누르면 방 만들기) -->
+  <!-- 게임 창: 카드를 누르면 뜹니다. 왼쪽은 그림과 버튼들, 오른쪽은 소개 (방 만들기를 누르면 방 만들기, 아래 의견 칸을 누르면 의견) -->
   <dialog id="game" class="game-dialog" aria-labelledby="gd-name">
     <aside class="gd-side">
       <div id="gd-thumb" class="gd-thumb"><canvas></canvas></div>
@@ -93,6 +93,11 @@
       <a id="gd-match" class="btn" data-i18n="card.match">대전 찾기</a>
       <button id="gd-create" class="btn ghost" type="button" aria-controls="create-form" aria-pressed="false" data-i18n="card.createRoom">방 만들기</button>
       <a id="gd-try" class="btn ghost" data-i18n="card.try">혼자 둬보기</a>
+      <!-- 남은 자리를 채우는 의견 칸. 최근 의견 하나를 미리 보여주고, 누르면 오른쪽이 의견으로 바뀝니다 -->
+      <button id="gd-talk" class="gd-talk" type="button" aria-controls="comments-panel" aria-pressed="false">
+        <span class="gd-talk-head"><b data-i18n="comments.title">의견</b> <span id="gd-talk-count" class="gd-talk-count"></span><span class="gd-talk-go" aria-hidden="true">›</span></span>
+        <span id="gd-talk-preview" class="gd-talk-preview"></span>
+      </button>
     </aside>
 
     <section class="gd-main">
@@ -145,6 +150,50 @@
             <div class="gd-actions">
               <button class="btn" type="submit" data-i18n="card.createRoom">방 만들기</button>
               <a class="btn ghost" href="/web/rooms.html" data-i18n="detail.openRooms">열린 방 보기</a>
+            </div>
+          </div>
+        </form>
+
+        <!-- 의견: 위에서 남기고, 아래에 최근 것부터. 의견마다 신고, 내 의견은 삭제 -->
+        <div id="comments-panel" class="gd-card" role="tabpanel" data-panel="comments" hidden>
+          <form id="comment-form" class="gd-field comment-form">
+            <textarea id="comment-text" rows="3" maxlength="500" data-i18n-attr="placeholder:comments.placeholder aria-label:comments.placeholder"></textarea>
+            <div class="comment-form-row">
+              <span id="comment-as" class="comment-as"></span>
+              <span id="comment-len" class="comment-len"></span>
+              <button class="btn" type="submit" data-i18n="comments.post">남기기</button>
+            </div>
+            <p id="comment-error" class="comment-error" role="alert" hidden></p>
+          </form>
+          <div class="gd-field">
+            <p id="comments-note" class="comments-note" role="status" hidden></p>
+            <p id="comments-empty" class="gd-desc muted" hidden></p>
+            <ul id="comments" class="comments"></ul>
+            <p id="comments-more" class="gd-desc muted" hidden></p>
+          </div>
+          <div class="gd-field comments-foot">
+            <button id="report-game" class="text-btn" type="button" data-i18n="report.game">이 게임 신고하기</button>
+          </div>
+        </div>
+
+        <!-- 신고: 의견이나 게임을 사유와 함께 운영자에게 보냅니다 -->
+        <form id="report-form" class="gd-card" role="tabpanel" data-panel="report" hidden>
+          <div class="gd-field">
+            <h4 id="report-what"></h4>
+            <blockquote id="report-quote" class="report-quote"></blockquote>
+          </div>
+          <div class="gd-field">
+            <h4 id="report-reason-label" data-i18n="report.reason">사유</h4>
+            <div id="report-reasons" class="report-reasons" role="radiogroup" aria-labelledby="report-reason-label"></div>
+          </div>
+          <div class="gd-field">
+            <label for="report-detail"><h4 data-i18n="report.detail">자세한 내용 (선택)</h4></label>
+            <textarea id="report-detail" rows="3" maxlength="300"></textarea>
+            <p class="gd-desc muted report-lead" data-i18n="report.lead"></p>
+            <p id="report-error" class="comment-error" role="alert" hidden></p>
+            <div class="gd-actions">
+              <button class="btn" type="submit" data-i18n="report.submit">신고하기</button>
+              <button id="report-cancel" class="btn ghost" type="button" data-i18n="report.cancel">취소</button>
             </div>
           </div>
         </form>

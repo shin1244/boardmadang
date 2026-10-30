@@ -120,13 +120,16 @@ function proxyMe(req, res) {
 }
 
 /**
- * 방 목록(/api/rooms), 진행 중인 대국(/api/live), 기보(/api/matches...)는 Go 서버에만 있습니다. 쿠키를 붙여 그대로 물어 넘깁니다.
- * Go 서버가 꺼져 있으면 목록은 빈 목록, 기보 하나는 503입니다.
+ * 방 목록(/api/rooms), 진행 중인 대국(/api/live), 기보(/api/matches...), 의견과 신고(/api/games/<id>/comments, /api/reports)는
+ * Go 서버에만 있습니다. 쿠키와 본문을 붙여 그대로 넘깁니다.
+ * Go 서버가 꺼져 있으면 목록은 빈 목록, 나머지는 503입니다.
  */
 function proxyGo(req, res, url) {
-  const isList = ['/api/rooms', '/api/live', '/api/matches'].includes(url.pathname);
+  const isList = req.method === 'GET' && ['/api/rooms', '/api/live', '/api/matches'].includes(url.pathname);
   const fail = () => (isList ? json(res, 200, []) : json(res, 503, { error: 'no game server' }));
-  const up = http.get(new URL(url.pathname + url.search, GO), { headers: { cookie: req.headers.cookie ?? '' }, timeout: 2000 }, (r) => {
+  const headers = { cookie: req.headers.cookie ?? '' };
+  if (req.headers['content-type']) headers['content-type'] = req.headers['content-type'];
+  const up = http.request(new URL(url.pathname + url.search, GO), { method: req.method, headers, timeout: 2000 }, (r) => {
     let body = '';
     r.setEncoding('utf8');
     r.on('data', (c) => (body += c));
@@ -140,6 +143,7 @@ function proxyGo(req, res, url) {
   });
   up.on('error', fail);
   up.on('timeout', () => up.destroy());
+  req.pipe(up);
 }
 
 /** /ws 웹소켓을 Go 서버로 그대로 잇습니다. Host와 Origin을 바꾸지 않으므로 Go 서버는 같은 출처로 봅니다. */
@@ -236,6 +240,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/locale') return json(res, 200, detectLocale(req));
   if (url.pathname === '/api/me') return proxyMe(req, res);
   if (url.pathname === '/api/rooms' || url.pathname === '/api/live' || /^\/api\/matches(\/[A-Z0-9]+)?$/.test(url.pathname)) return proxyGo(req, res, url);
+  if (/^\/api\/games\/[a-z0-9-]+\/comments(\/[A-Z0-9]+)?$/.test(url.pathname) || url.pathname === '/api/reports') return proxyGo(req, res, url);
   const m = url.pathname.match(/^\/api\/games\/([a-z0-9-]+)\/listing$/);
   if (m && req.method === 'PUT') return saveListing(req, res, m[1]);
 

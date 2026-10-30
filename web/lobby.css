@@ -253,6 +253,41 @@ fieldset label:has(input:disabled) { opacity: 0.5; cursor: default; }
 .gd-side button.btn { cursor: pointer; }
 .gd-side .btn[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 
+/* 의견 칸: 왼쪽 버튼들 아래의 남은 자리를 채웁니다 */
+.gd-talk {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 84px;
+  margin-top: 4px;
+  padding: 12px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+.gd-talk:hover, .gd-talk[aria-pressed="true"] { border-style: solid; border-color: var(--accent); }
+.gd-talk[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.gd-talk-head { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.gd-talk-count { color: var(--muted); font-variant-numeric: tabular-nums; }
+.gd-talk-go { margin-left: auto; color: var(--muted); font-size: 18px; line-height: 1; }
+.gd-talk-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
 .gd-main { display: flex; flex-direction: column; min-height: 0; }
 .gd-head { position: relative; padding: 14px 56px; border-bottom: 1px solid var(--border); text-align: center; }
 .gd-head h3 { margin: 0; font-size: 15px; letter-spacing: 0.03em; }
@@ -322,11 +357,72 @@ fieldset label:has(input:disabled) { opacity: 0.5; cursor: default; }
 .gd-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .gd-actions .btn { flex: none; padding: 10px 22px; }
 
+/* ---- 의견과 신고 ---- */
+
+.comment-form textarea,
+#report-detail {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.6;
+  resize: vertical;
+}
+.comment-form-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.comment-as { color: var(--muted); font-size: 13px; }
+.comment-len { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.comment-len.over { color: var(--bad); }
+.comment-form-row .btn { flex: none; padding: 8px 20px; }
+.comment-error { margin: 10px 0 0; color: var(--bad); font-size: 13px; }
+.comment-error[hidden], .comments-note[hidden], .gd-desc[hidden] { display: none; }
+.comments-note { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--good) 12%, transparent); font-size: 14px; }
+
+.comments { margin: 0; padding: 0; list-style: none; }
+.comment { padding: 12px 0; border-top: 1px solid var(--border); }
+.comment:first-child { padding-top: 0; border-top: 0; }
+.comment-head { display: flex; align-items: baseline; gap: 8px; font-size: 14px; }
+.comment-head small { color: var(--muted); font-size: 12px; }
+.comment-text { margin: 6px 0 0; line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; }
+.comment.hidden .comment-text { color: var(--muted); font-style: italic; }
+.comment-actions { margin-left: auto; display: flex; gap: 10px; }
+
+.text-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.text-btn:hover { color: var(--text); text-decoration: underline; }
+.text-btn:disabled { cursor: default; text-decoration: none; opacity: 0.7; }
+.comments-foot { text-align: right; }
+
+.report-quote {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  max-height: 8em;
+  overflow: auto;
+}
+.report-quote:empty { display: none; }
+.report-reasons { display: flex; flex-direction: column; gap: 8px; }
+.report-lead { margin-top: 10px; }
+
 @media (max-width: 760px) {
   .game-dialog { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
   .game-dialog[open] { grid-template-columns: 1fr; grid-template-rows: auto auto; overflow-y: auto; }
   .gd-side { border-right: 0; border-bottom: 1px solid var(--border); overflow: visible; }
   .gd-thumb { flex: none; height: 180px; }
+  .gd-talk { flex: none; }
   .gd-main { min-height: auto; }
   .gd-body { overflow: visible; padding: 16px; }
   /* 닫기 버튼은 화면 위에 붙여 둡니다 (오른쪽 칸이 아래로 내려가므로) */
