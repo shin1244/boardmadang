@@ -1,4 +1,4 @@
-// Package site는 화면(web/), 게임 코드(games/), 화면이 import하는 SDK 모듈(sdk/playground/)을 내보내고,
+// Package site는 화면(web/), 게임 코드(games/), 화면이 import하는 SDK 모듈(sdk/playground/의 세 파일)을 내보내고,
 // 게임 목록(/api/games)과 화면 언어(/api/locale)를 알려 줍니다.
 //
 // 개발 서버(sdk/playground/serve.js)가 하던 일을 운영에서는 Go 서버가 맡습니다. 두 곳의 응답 모양은 같아야 합니다.
@@ -7,7 +7,8 @@
 // SITE_DIR(레포 루트) 아래에서 이것만 내보냅니다.
 //
 //	web/              화면
-//	sdk/playground/   화면이 import하는 모듈과 플레이그라운드 (serve.js 제외)
+//	sdk/playground/   화면이 import하는 모듈만 (sdkModules). 플레이그라운드 화면과 개발 서버는
+//	                  게임 제작자가 자기 컴퓨터에서 쓰는 도구라 사이트에서는 내보내지 않습니다
 //	games/            게임 코드. games/private/가 있으면 같이 (운영 이미지에는 넣지 않습니다)
 //
 // 테스트 파일(*.test.js)과 점으로 시작하는 파일, types에 없는 종류는 내보내지 않습니다.
@@ -41,7 +42,10 @@ var types = map[string]string{
 }
 
 // roots는 내보내는 폴더입니다 (SITE_DIR 기준).
-var roots = []string{"web/", "sdk/playground/", "games/"}
+var roots = []string{"web/", "games/"}
+
+// sdkModules는 sdk/에서 내보내는 파일입니다. 화면(web/)이 import하는 것만 둡니다.
+var sdkModules = []string{"sdk/playground/board.js", "sdk/playground/listing.js", "sdk/playground/platform.js"}
 
 var gameIDPattern = regexp.MustCompile(`^[a-z0-9-]+$`)
 
@@ -63,7 +67,7 @@ func ServeHome(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/web/", http.StatusFound)
 }
 
-// ServeFile은 web/, sdk/playground/, games/ 아래의 파일을 내보냅니다.
+// ServeFile은 web/, games/ 아래의 파일과 sdkModules를 내보냅니다.
 // 폴더면 그 안의 index.html입니다. 폴더 목록은 보여주지 않습니다.
 //
 // 브라우저가 매번 바뀌었는지 묻게 합니다 (no-cache + Last-Modified).
@@ -107,13 +111,13 @@ func (s *Site) ServeFile(w http.ResponseWriter, r *http.Request) {
 
 // public은 내보내도 되는 경로인지 봅니다. name은 앞의 /를 뗀 URL 경로입니다.
 func public(name string) bool {
+	if slices.Contains(sdkModules, strings.TrimSuffix(name, "/")) {
+		return true
+	}
 	if !slices.ContainsFunc(roots, func(root string) bool { return strings.HasPrefix(name, root) }) {
 		return false
 	}
 	name = strings.TrimSuffix(name, "/")
-	if name == "sdk/playground/serve.js" { // 개발 서버 자신
-		return false
-	}
 	for _, part := range strings.Split(name, "/") {
 		if part == "" || strings.HasPrefix(part, ".") { // .., 숨김 파일, 빈 칸(//)
 			return false

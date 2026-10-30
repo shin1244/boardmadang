@@ -121,6 +121,7 @@ func TestServeFile(t *testing.T) {
 		"web/.secret.js":               "x",
 		"web/notes.txt":                "x",
 		"sdk/playground/index.html":    "playground",
+		"sdk/playground/playground.js": "playground",
 		"sdk/playground/board.js":      "board",
 		"sdk/playground/serve.js":      "dev server",
 		"sdk/playground/a.test.js":     "test",
@@ -140,7 +141,6 @@ func TestServeFile(t *testing.T) {
 		{"/web/", 200, "text/html; charset=utf-8", "<h1>lobby</h1>"},
 		{"/web/lobby.js", 200, "text/javascript; charset=utf-8", "lobby"},
 		{"/web/lobby.css", 200, "text/css; charset=utf-8", "css"},
-		{"/sdk/playground/", 200, "text/html; charset=utf-8", "playground"},
 		{"/sdk/playground/board.js", 200, "text/javascript; charset=utf-8", "board"},
 		{"/games/tictactoe/index.js", 200, "text/javascript; charset=utf-8", "game"},
 		{"/games/tictactoe/sub/x.mjs", 200, "text/javascript; charset=utf-8", "mjs"},
@@ -150,7 +150,10 @@ func TestServeFile(t *testing.T) {
 		{"/web/lobby.js/", 404, "", ""},
 		{"/web/missing.js", 404, "", ""},
 		{"/web/.secret.js", 404, "", ""},
-		{"/web/notes.txt", 404, "", ""}, // types에 없는 종류
+		{"/web/notes.txt", 404, "", ""},   // types에 없는 종류
+		{"/sdk/playground/", 404, "", ""}, // 플레이그라운드 화면은 내보내지 않습니다
+		{"/sdk/playground/playground.js", 404, "", ""},
+		{"/sdk/playground/board.js/", 404, "", ""},
 		{"/sdk/playground/serve.js", 404, "", ""},
 		{"/sdk/playground/a.test.js", 404, "", ""},
 		{"/sdk/README.md", 404, "", ""},

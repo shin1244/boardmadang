@@ -267,7 +267,6 @@ function renderGame() {
   }
   if (current.listingError) line.textContent = t('register.status.broken', { msg: current.listingError });
   else line.textContent = t(current.listing ? 'register.status.saved' : 'register.status.new');
-  $('#try').href = `/sdk/playground/?game=${encodeURIComponent(current.id)}`;
 }
 
 function render() {

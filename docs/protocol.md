@@ -52,8 +52,9 @@
 - `/api/me`: 게스트와 계정, 세션 쿠키는 [identity.md](identity.md)에 정리했습니다.
   Go 서버는 서명한 쿠키로 신원을 정합니다. 개발 서버는 늘 같은 가짜 신원을 돌려주고, `DEV_AS=guest`로 게스트를 흉내 냅니다.
 - `/api/games`, `/api/locale`은 개발 서버(`sdk/playground/serve.js`)와 Go 서버(`server/internal/site`)가 같은 모양으로 제공합니다.
-  Go 서버는 화면(`/web/`), SDK 모듈과 플레이그라운드(`/sdk/playground/`, `serve.js` 제외), 게임 코드(`/games/`)도 내보냅니다.
-  테스트 파일과 점으로 시작하는 파일은 내보내지 않습니다. 개발 서버에만 있는 것은 `PUT /api/games/<id>/listing`(등록창 저장)뿐입니다.
+  Go 서버는 화면(`/web/`), 화면이 import하는 SDK 모듈(`/sdk/playground/`의 `board.js`, `listing.js`, `platform.js`), 게임 코드(`/games/`)도 내보냅니다.
+  테스트 파일과 점으로 시작하는 파일은 내보내지 않습니다. 개발 서버에만 있는 것은 플레이그라운드 화면과 `PUT /api/games/<id>/listing`(등록창 저장)입니다.
+  플레이그라운드는 게임 제작자가 자기 컴퓨터에서 쓰는 도구라 사이트의 메뉴와 버튼에는 없습니다.
 
 # 웹소켓
 
