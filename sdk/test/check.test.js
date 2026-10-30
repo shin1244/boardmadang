@@ -36,7 +36,7 @@ test('필수 멤버가 없으면 대국을 두지 않고 멈춥니다', () => {
 test('Math.random()을 쓰면 결정성 검사에 걸립니다', () => {
   const play = (s, p, a) => ({ ...tictactoe.play(s, p, a), noise: Math.random() });
   const r = checkGame(variant({ play }), opts);
-  assert.ok(r.problems.some((p) => p.includes('같은 시드·같은 행동')), r.problems.join('\n'));
+  assert.ok(r.problems.some((p) => p.includes('Replaying the same seed')), r.problems.join('\n'));
 });
 
 test('받은 state를 고치면 걸립니다', () => {
@@ -46,30 +46,30 @@ test('받은 state를 고치면 걸립니다', () => {
     return next;
   };
   const r = checkGame(variant({ play }), opts);
-  assert.ok(r.problems.some((p) => p.includes('state를 고쳤습니다')), r.problems.join('\n'));
+  assert.ok(r.problems.some((p) => p.includes('changed the state it received')), r.problems.join('\n'));
 });
 
 test('state에 JSON이 아닌 값이 있으면 걸립니다', () => {
   const setup = () => ({ ...tictactoe.setup(), seen: new Set() });
   const r = checkGame(variant({ setup }), opts);
-  assert.ok(r.problems.some((p) => p.includes('JSON이 아닌 값') && p.includes('Set')), r.problems.join('\n'));
+  assert.ok(r.problems.some((p) => p.includes('non-JSON value') && p.includes('Set')), r.problems.join('\n'));
 });
 
 test('행동이 계속 무시되기만 하면 진행 불가로 걸립니다', () => {
   const { legal, ...noLegal } = tictactoe; // legal()이 없으면 아무 칸이나 눌러 봅니다
   const r = checkGame({ ...noLegal, play: (s) => s }, opts);
-  assert.ok(r.problems.some((p) => p.includes('진행되지 않은 판')), r.problems.join('\n'));
+  assert.ok(r.problems.some((p) => p.includes('got stuck')), r.problems.join('\n'));
 });
 
 test('게임 함수가 오류를 던지면 어느 함수인지 알려줍니다', () => {
-  const r = checkGame(variant({ result: () => { throw new Error('펑'); } }), opts);
-  assert.ok(r.problems.some((p) => p === 'result()에서 오류: 펑'), r.problems.join('\n'));
+  const r = checkGame(variant({ result: () => { throw new Error('boom'); } }), opts);
+  assert.ok(r.problems.some((p) => p === 'result() threw an error: boom'), r.problems.join('\n'));
 });
 
 test('판 그림이 언어에 따라 달라지면 걸립니다', () => {
   const view = (s, p, lang) => ({ ...tictactoe.view(s, p, lang), pieces: lang === 'en' ? [] : tictactoe.view(s, p, lang).pieces });
   const r = checkGame(variant({ view }), opts);
-  assert.ok(r.problems.some((p) => p.includes('view()가 lang에 따라')), r.problems.join('\n'));
+  assert.ok(r.problems.some((p) => p.includes('view() changes more than the message')), r.problems.join('\n'));
 });
 
 // ---- 썸네일 ----
@@ -100,18 +100,18 @@ test('썸네일 모양 검사', () => {
   assert.match(broken((t) => { t.view.tint = [{ row: 0, col: 0, color: 'red' }]; return t; })[0], /thumbnail\.view\.tint/);
   assert.match(broken((t) => { t.player = 2; return t; })[0], /thumbnail\.player/);
   assert.match(broken((t) => { t.board.rows = 0; return t; })[0], /thumbnail\.board\.rows/);
-  assert.match(broken((t) => { t.view.pieces = Array.from({ length: 5000 }, () => ({ row: 0, col: 0, piece: 'x'.repeat(30) })); return t; })[0], /KB를 넘습니다/);
-  assert.deepEqual(validateThumbnail(null), ['썸네일: 객체가 필요합니다']);
+  assert.match(broken((t) => { t.view.pieces = Array.from({ length: 5000 }, () => ({ row: 0, col: 0, piece: 'x'.repeat(30) })); return t; })[0], /larger than/);
+  assert.deepEqual(validateThumbnail(null), ['thumbnail: must be an object']);
 });
 
 test('찍은 뒤 게임의 판이나 기물을 바꾸면 다시 찍으라고 합니다', () => {
   const thumb = makeThumbnail(tictactoe, 0, tictactoe.view(midGame(), 0, 'ko'));
   const bigger = variant({ board: { ...tictactoe.board, rows: 4 } });
-  assert.match(checkThumbnail(bigger, thumb)[0], /board 설정이 바뀌었습니다/);
+  assert.match(checkThumbnail(bigger, thumb)[0], /board settings changed/);
   const custom = variant({ pieces: ['a', 'b'] });
   const problems = checkThumbnail(custom, thumb);
-  assert.ok(problems.some((p) => p.includes('pieces가 바뀌었습니다')));
-  assert.ok(problems.some((p) => p.includes('pieces에 없는 기물')));
+  assert.ok(problems.some((p) => p.includes('pieces changed')));
+  assert.ok(problems.some((p) => p.includes("isn't in the game's pieces")));
   // 키 순서만 다른 board는 같은 것으로 봅니다
   const reordered = variant({ board: { look: 'plain', cols: 3, rows: 3, places: 'cells' } });
   assert.deepEqual(checkThumbnail(reordered, thumb), []);

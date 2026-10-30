@@ -25,7 +25,7 @@
 - `thumbnail`은 썸네일(`thumbnail.json`)입니다. 이미지가 아니라 혼자 두던 판을 그대로 찍은 데이터
   `{"board":{…},"pieces":"xo","player":0,"view":{"pieces":[…],"marks":[…]}}`이고, 화면이 보드 렌더러로 다시 그립니다.
   없거나 깨졌으면 `null`이고 화면은 시작 판을 그립니다. 모양은 [sdk/game.d.ts](../sdk/game.d.ts)의 `Thumbnail`입니다.
-- `PUT /api/games/<id>/thumbnail`: 개발 서버 전용. 플레이그라운드의 「썸네일로」가 찍은 판을 `thumbnail.json`에 저장합니다.
+- `PUT /api/games/<id>/thumbnail`: 개발 서버 전용. 플레이그라운드의 "Use as thumbnail"이 찍은 판을 `thumbnail.json`에 저장합니다.
   내 컴퓨터에서 온 JSON만 받고, 모양이 틀리면 `422 {"problems":[...]}`입니다.
 - `PUT /api/games/<id>/listing`: 개발 서버 전용. 등록창이 등록 정보를 `games/<id>/listing.json`에 저장합니다.
   내 컴퓨터에서 온 요청과 계정만 받고(게스트면 `403 {"error":"member only"}`), 검사에 걸리면 `422 {"problems":[...]}`를 돌려줍니다.

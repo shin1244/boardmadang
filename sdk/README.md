@@ -1,11 +1,13 @@
-# 게임 API
+# boardmadang
 
-보드마당에 올리는 게임은 **JS 모듈 하나**입니다. 규칙만 쓰고, 그리기·네트워크·AI는 플랫폼이 합니다.
-정확한 타입은 [game.d.ts](game.d.ts)에 있습니다.
+Make 1-vs-1 board games for [boardmadang.com](https://boardmadang.com).
+You write only the **rules**. Boardmadang draws the board, runs online matches, and later trains an AI opponent.
 
-## 시작하기
+[한국어](https://github.com/shin1244/boardmadang/blob/main/sdk/README.ko.md)
 
-Node 18 이상만 있으면 됩니다. 이 폴더가 npm 패키지 [`boardmadang`](https://www.npmjs.com/package/boardmadang)입니다 (MIT).
+## Quick start
+
+You need [Node.js](https://nodejs.org) 18 or newer.
 
 ```bash
 npx boardmadang new my-game
@@ -13,234 +15,195 @@ cd my-game
 npx boardmadang dev
 ```
 
-| 명령 | 하는 일 |
-|---|---|
-| `npx boardmadang new <폴더>` | 새 게임 틀을 만듭니다 (틱택토에서 시작). 폴더 이름이 게임 id가 됩니다 |
-| `npx boardmadang dev` | [플레이그라운드](#내-컴퓨터에서-돌려보기-플레이그라운드)를 띄웁니다. 혼자 양쪽을 두고, 「썸네일로」로 [썸네일](#썸네일)을 찍습니다 |
-| `npx boardmadang check` | 업로드할 때와 같은 검사를 합니다 ([제한값](#제한값-초안)) |
-| `npx boardmadang pack` | 검사를 통과하면 사이트에 올릴 `<id>.zip`을 만듭니다 |
+Open the address it prints. You'll see both players' boards side by side, so you can play both sides yourself.
+The new game is tic-tac-toe. Change the rules in `index.js` and refresh the page.
 
-게임 폴더는 이렇게 생겼고, `pack`은 이 파일들만 묶습니다 (테스트, `node_modules`, 점으로 시작하는 파일은 뺍니다).
+## Commands
+
+| Command | What it does |
+|---|---|
+| `npx boardmadang new <folder>` | Makes a new game from a tic-tac-toe starter. The folder name becomes the game id. |
+| `npx boardmadang dev` | Opens the playground. Play both sides and take a [thumbnail](#thumbnail). |
+| `npx boardmadang check` | Runs the same checks the site runs when you upload. |
+| `npx boardmadang pack` | If the checks pass, makes `<id>.zip` for uploading. |
+
+Uploading on boardmadang.com is coming soon.
+
+## A game folder
 
 ```
 my-game/
-├─ index.js        게임 모듈 (필수)
-├─ *.js, *.mjs     index.js가 import하는 다른 파일 (선택)
-├─ listing.json    등록 정보: 이름, 소개, 룰북, 난이도, 언어, 타이머 (선택, 사이트 등록창에서도 고칠 수 있음)
-└─ thumbnail.json  썸네일: 플레이그라운드에서 찍은 판 (선택, 없으면 시작 판)
+├─ index.js        your game (required)
+├─ *.js, *.mjs     other files that index.js imports (optional)
+├─ listing.json    name, description, rules text, difficulty, languages, timer (optional)
+├─ thumbnail.json  the picture in the game list (optional, made in the playground)
+└─ package.json    tells Node that index.js is a module (made by `new`)
 ```
 
-`index.js`가 `export`를 쓰므로 폴더에 `{"type": "module"}`이 든 `package.json`이 있어야 Node가 읽습니다 (`new`가 만들어 줍니다).
+## How a game works
 
-## 모양
+A game is one object. Here is the idea, using tic-tac-toe:
 
 ```js
 export default {
   id: 'my-game',
-  board: { places: 'cells', rows: 8, cols: 8, look: 'checker' },
-  pieces: ['red', 'blue'],
-  maxActions: 400,
+  board: { places: 'cells', rows: 3, cols: 3 }, // a 3×3 board, pieces go inside the squares
+  pieces: 'xo',                                  // built-in X and O pieces
+  maxActions: 9,                                 // the game must end within this many moves
 
-  setup(rng) { /* 시작 상태 */ },
-  play(state, player, action) { /* 행동 하나 → 새 상태 */ },
-  result(state, lang) { /* 끝났으면 { winner, reason }, 아니면 null */ },
-  view(state, player, lang) { /* 화면에 보일 것 */ },
+  // The starting position.
+  setup(rng) {
+    return { board: Array(9).fill(null), turn: 0 };
+  },
 
-  legal(state, player) { /* (선택) 둘 수 있는 행동 목록 */ },
-  observe(state, player) { /* (선택) 판에 안 보이는 정보 */ },
-  turn(state) { /* (선택) 지금 누구 차례인지: 0, 1, 끝났으면 null. 타이머를 쓰려면 필요 */ },
+  // A player clicked a square. Return the new state.
+  // If the move isn't allowed (not their turn, square taken), return the same state.
+  play(state, player, action) {
+    const i = action.row * 3 + action.col;
+    if (player !== state.turn || state.board[i] !== null) return state;
+    const board = state.board.slice(); // copy, don't change the old state
+    board[i] = player;
+    return { board, turn: 1 - player };
+  },
+
+  // Is the game over? { winner: 0 or 1 } or { winner: null } for a draw. null = keep playing.
+  result(state, lang) {
+    return null; // (check for three in a row here)
+  },
+
+  // What to draw for this player.
+  view(state, player, lang) {
+    const pieces = [];
+    state.board.forEach((p, i) => {
+      if (p !== null) pieces.push({ row: Math.floor(i / 3), col: i % 3, piece: p === 0 ? 'x' : 'o' });
+    });
+    return { pieces, message: state.turn === player ? 'Your turn' : "Opponent's turn" };
+  },
 };
 ```
 
-게임 코드에는 **규칙만** 둡니다. 이름, 소개, 룰북, 난이도, 지원 언어, 타이머는 [등록 정보](#등록-정보와-언어)로 따로 입력합니다.
+That's all. When someone clicks, boardmadang turns the click into `{ kind: 'click', row, col }` and calls `play()`.
+Both players' browsers run your `play()` with the same clicks in the same order, so they always see the same board.
+Your code never deals with the network, the screen, or who the opponent is.
 
-## 등록 정보와 언어
+## Four rules your code must follow
 
-게임 등록창(`/web/register.html`)에서 입력하고, 플랫폼이 따로 저장합니다. 개발 서버는 `games/<id>/listing.json`에 씁니다.
-코드를 다시 올리지 않아도 소개, 룰북, 번역을 고칠 수 있습니다. 모양은 [game.d.ts](game.d.ts)의 `Listing`입니다.
+1. **Same input, same result.** Don't use `Math.random()` or `Date.now()`.
+   If you need randomness, use the `rng` passed to `setup(rng)` (`rng.next()`, `rng.int(n)`).
+   Otherwise the two players' boards drift apart.
+2. **Don't change the state you receive.** Copy it and return a new one.
+3. **Keep the state plain JSON.** Numbers, strings, booleans, arrays, plain objects.
+   No `Set`, `Map`, classes, or functions.
+4. **Ignore moves that aren't allowed** by returning the same state. Your game decides whose turn it is.
 
-| 항목 | 내용 |
+`npx boardmadang check` catches all four, plays 200 random games, and checks speed and size limits.
+
+## Optional parts
+
+| Add this | When |
 |---|---|
-| 난이도 | 하(`easy`) / 중(`normal`) / 상(`hard`). 로비의 난이도 필터와 '쉬운 순' 정렬에 쓰입니다 |
-| 타이머 | 기본 타이머(각자 N분, 1~180) 또는 타이머 없음, 그리고 방장이 시간을 정할 수 있는지(커스텀). [아래](#타이머와-turn) 참고 |
-| 지원 언어 | 많이 쓰는 언어 10개(`ko`, `en`, `ja`, `zh`, `es`, `fr`, `de`, `pt`, `ru`, `ar`) 중에서 일부 번역 / 완전 번역할 언어를 고릅니다. 아래 표 참고 |
-| 이름, 한 줄 소개, 룰북 | 등록창 2단계에서 고른 언어마다 씁니다 (40자 / 200자 / 20,000자) |
+| `turn(state)` | Return whose turn it is (`0`, `1`, or `null` when the game is over). Needed for a game timer. |
+| `legal(state, player)` | Return the moves allowed right now. Shows hover hints and helps the AI learn. |
+| `observe(state, player)` | Extra info you can't see on the board (like castling rights in chess), for the AI. |
+| `specialActions: ['pass']` | Moves that aren't on the board. Boardmadang shows them as buttons and sends `{ kind: 'pass' }`. |
 
-| 지원 수준 | 그 언어로 나오는 것 |
-|---|---|
-| 완전 번역 (`full`) | 이름, 소개, 룰북, **게임 안 글자**(`view()`의 `message`, `result()`의 `reason`) |
-| 일부 번역 (`rulebook`) | 이름, 소개, 룰북. 게임 안 글자는 완전 번역 언어로 나옵니다 |
+Resigning is built into the site, so your game doesn't handle it.
 
-- **게임 안 글자는 제작자가 직접 번역합니다.** 플랫폼은 `view(state, player, lang)`과 `result(state, lang)`에
-  완전 번역 언어 중 하나를 넘깁니다. 유저 화면 언어를 완전 번역하면 그 언어, 아니면 첫 번째 완전 번역 언어입니다.
-  그래서 게임은 자기가 완전 번역한다고 등록한 언어만 받습니다.
-- 완전 번역 언어가 하나 이상 있어야 합니다. 게임 안 글자를 보여줄 언어가 필요하기 때문입니다.
-- 승자와 판 그림(`pieces`, `marks`, `tint`, `text`)은 `lang`과 상관없이 같아야 합니다. 바뀌는 건 `message`와 `reason`뿐입니다.
-  플레이그라운드가 매 수마다 확인합니다.
-- 글자는 언어별 표로 두면 편합니다. 상태에는 글자 대신 코드(`'king-trapped'`)를 두고, 화면에 보일 때 바꿉니다.
+## Drawing (`view`)
 
-```js
-const TEXT = {
-  ko: { won: '이겼습니다!', myTurn: '당신 차례' },
-  en: { won: 'You won!', myTurn: 'Your turn' },
-};
-view(state, player, lang) {
-  return { pieces, message: TEXT[lang].myTurn };
-}
-```
-
-- 로비는 접속한 나라가 한국이면 한국어, 그 밖이면 영어로 열립니다. 유저가 KR / EN을 직접 고르면 그 선택이 우선입니다.
-- 로비의 '지원 언어' 필터는 그 언어로 룰북이라도 있는 게임을, '게임 안 글자까지 번역된 것만'을 켜면 완전 번역 게임만 보여줍니다.
-
-## 타이머와 `turn()`
-
-타이머는 체스 시계입니다. 각자 자기 차례에 쓴 시간만 줄고, 다 쓰면 집니다.
-
-- **기본 타이머**: 빠른 매칭(대전 찾기)은 이 시간으로 하고, 같은 타이머끼리만 만납니다. 예: 각자 10분.
-- **커스텀 타이머**: 켜면 방 만들기에서 방장이 분 단위로 시간을 고르거나 타이머 없이 둘 수 있습니다.
-  끄면 방도 기본 타이머로 합니다.
-- **`turn(state)`이 있어야 씁니다.** 서버는 규칙을 모르므로, 누구 시계를 돌릴지는 게임이 알려 줘야 합니다.
-  지금 차례인 플레이어(0 또는 1)를, 끝났으면 `null`을 돌려주세요. `null`이면 시계가 멈춥니다.
-  선택 → 이동처럼 한 차례에 클릭이 여러 번이어도, 차례가 넘어갈 때만 바뀌면 됩니다.
-  `turn()`이 없는 게임은 등록창에서 타이머 칸이 막힙니다.
-- `turn()`도 다른 함수처럼 결정적이어야 합니다. 두 브라우저의 `turn()`이 다르면 대국이 무효(`desync`)가 됩니다.
-
-```js
-turn(state) {
-  return result(state) ? null : state.turn;
-}
-```
-
-## 보드 (`board`)
-
-| 필드 | 값 | 예 |
-|---|---|---|
-| `places` | `'cells'` 칸 안 / `'points'` 교차점 | 체스 / 바둑 |
-| `rows`, `cols` | **놓을 수 있는 자리의 개수** | 바둑 19줄이면 `19` |
-| `look` | `'plain'` / `'checker'` / `'wood'` | 틱택토 / 체스 / 바둑 |
-| `starPoints` | 화점 | 바둑 |
-| `labels` | 가장자리 좌표 (a~h, 1~8) | 체스 |
-| `flipForPlayer` | 이 플레이어 화면은 뒤집기 | 체스 흑 → `1` |
-
-좌표는 보드 모드와 상관없이 항상 `0 ~ rows-1`, `0 ~ cols-1`입니다.
-특정 칸만 쓰는 보드(십자 모양, 넓어지는 보드 등)는 나머지 칸을 `blocked`로 표시하면 됩니다.
-
-## 행동 (`action`)
-
-- 클릭: `{ kind: 'click', row, col }`
-- 특수 행동: `specialActions: ['pass']`로 선언하면 플랫폼이 버튼을 보여주고 `{ kind: 'pass' }`가 옵니다.
-- **기권은 플랫폼 기능**이라 게임이 처리하지 않습니다.
-- **차례는 게임이 관리합니다.** 남의 차례에 온 행동은 `state`를 그대로 돌려주면 됩니다.
-  한 턴에 여러 번 클릭하는 게임(체스의 선택 → 이동)도 상태에 "선택 중"을 담으면 됩니다.
-- **`maxActions`는 상태를 바꾼 행동만 셉니다.** 무시된 클릭은 세지 않으므로, 상대가 클릭을 연타해도
-  판이 무승부로 끝나지 않습니다. "선택 중" 상태로 바뀌는 클릭도 상태를 바꾼 것이니 셉니다.
-  체스처럼 2클릭으로 한 수를 두는 게임은 그만큼 넉넉하게 잡으세요.
-
-## 화면 (`view`)
+Return what to show. Boardmadang does the drawing.
 
 ```js
 view(state, player, lang) {
   return {
-    pieces: [{ row: 3, col: 3, piece: 'black' }],
-    marks:  [{ row: 3, col: 3, type: 'last-move' }, { row: 0, col: 0, type: 'blocked' }],
-    tint:   [{ row: 5, col: 5, color: 0 }],     // 플레이어 0의 색으로 칠하기
-    text:   [{ row: 0, col: 2, text: '4' }],    // 칸 위 숫자
-    message: '당신 차례',
+    pieces:  [{ row: 1, col: 1, piece: 'x' }],
+    marks:   [{ row: 1, col: 1, type: 'last-move' }],
+    tint:    [{ row: 0, col: 0, color: 0 }],  // color a square with player 0's color
+    text:    [{ row: 2, col: 2, text: '4' }], // a short label on a square
+    message: 'Your turn',
   };
 }
 ```
 
-| 마커 | 뜻 |
+| Mark | Meaning |
 |---|---|
-| `dot` | 둘 수 있는 곳 |
-| `ring` | 선택한 기물 |
-| `last-move` | 마지막 수 |
-| `danger` | 위험 (체크 등) |
-| `ghost` | 반투명 기물 (`piece` 필요) — "여기로 갈 것" 미리보기 |
-| `blocked` | 쓸 수 없는 칸 (어둡게) |
-| `frame` | 칸 테두리 (`color` 필요) — 목표 칸 같은 특별한 칸. 기물이 올라가도 보입니다 |
+| `dot` | You can move here |
+| `ring` | Selected piece |
+| `last-move` | The last move |
+| `danger` | Danger (like check) |
+| `ghost` | See-through piece (needs `piece`), e.g. a preview |
+| `blocked` | A square you can't use (darkened) |
+| `frame` | A colored border (needs `color`), e.g. a goal square |
 
-## 반드시 지킬 것
+**Board options:** `places` is `'cells'` (inside squares, like chess) or `'points'` (on line crossings, like go).
+`rows` and `cols` are how many places there are (up to 32). You can also set `look` (`'plain'`, `'checker'`, `'wood'`),
+`starPoints`, `labels`, and `flipForPlayer` (show the board upside down for one player, like black in chess).
 
-1. **결정적이어야 합니다.** 같은 시드와 같은 행동이면 항상 같은 결과가 나와야 합니다.
-   `Math.random()`, `Date.now()`는 쓰지 말고 `setup(rng)`의 `rng`만 쓰세요.
-   어기면 두 플레이어의 화면이 서로 다른 게임이 됩니다.
-2. **받은 `state`를 고치지 마세요.** 복사해서 새 상태를 돌려줍니다.
-3. **상태는 JSON으로 직렬화할 수 있어야 합니다.** `Set`, `Map`, 클래스 인스턴스, 함수는 넣지 마세요.
-   플랫폼이 상태 해시를 만들고 Worker 사이로 옮기기 때문입니다.
-4. **판에 안 보이는 상태가 있으면 `observe()`로 알려주세요.** 캐슬링 권리, 패 금지 자리,
-   "지금 기물을 선택한 상태" 같은 것들입니다. 없으면 AI가 두 상황을 구분하지 못합니다.
-5. **`play()`는 빨라야 합니다.** AI 학습에는 수백만 번 호출됩니다.
-6. 화면, 네트워크, 저장소에는 접근할 수 없습니다 (Web Worker 안에서 실행됩니다).
+**Pieces:** use a built-in set (`'xo'`, `'go-stones'`, `'chess'`) or list your own names, like `['red', 'blue']`.
 
-## 제한값 (초안)
+## Thumbnail
 
-업로드할 때 자동으로 검사합니다. 이유와 전체 목록은 [docs/abuse-and-limits.md](../docs/abuse-and-limits.md)에 있습니다.
+There are no image uploads. Instead, the picture in the game list is a **snapshot of a real board**.
+In the playground, play until the board looks the way you want, then press **Use as thumbnail** under a board.
+It saves that board to `thumbnail.json`, and the site draws it with the same board renderer as the game.
 
-| 항목 | 상한 |
-|---|---|
-| `rows`, `cols` | 32 |
-| 기물 종류 수 | 32 |
-| 게임 코드 크기 | 256 KB |
-| `play()` 실행 시간 | 평균 2 ms, 1회 최대 50 ms |
-| 상태 JSON 크기 | 64 KB |
-| `maxActions` | 2,000 |
+- If there's no thumbnail, the site shows the starting position.
+- If you later change `board` or `pieces` in your code, take the snapshot again. `check` will remind you.
 
-판이 크고 경우의 수가 많은 게임도 올릴 수 있고, 사람끼리 대전은 똑같이 됩니다.
-다만 AI 학습 예산은 게임 크기와 상관없이 같아서, 큰 게임일수록 AI가 약하게 나옵니다.
-업로드 화면에서 예상 복잡도와 예상 AI 실력을 알려드립니다.
+## listing.json: the text on the site
 
-## 자주 묻는 질문
+`listing.json` holds what players read: the name, a one-line description, the rules, difficulty (`easy`, `normal`, `hard`),
+languages, and the timer. You can also fill it in on the site later, without uploading your code again.
 
-**내 게임도 AGPL이 되나요?**
-아니요. 게임의 라이선스는 제작자가 정합니다. 게임은 MIT인 이 SDK 규격만 따르며,
-플랫폼 쪽에서 AGPL 7조의 추가 허가로 이를 명시해 두었습니다. → [LICENSING.md](../LICENSING.md)
-
-**내 게임 코드를 숨길 수 있나요?**
-법적으로는 저작권으로 보호받지만, 게임은 플레이어의 브라우저에서 실행되므로
-개발자 도구로 코드를 읽을 수 있습니다. 모든 웹 프론트엔드가 마찬가지입니다.
-
-**AI는 언제 생기나요?**
-업로드하면 바로 사람끼리 대전할 수 있고, AI 학습은 조건(실제 플레이 수 등)을 채우면 시작됩니다.
-초기에는 운영자가 고른 게임부터 학습합니다.
-
-## 내 컴퓨터에서 돌려보기 (플레이그라운드)
-
-게임 폴더에서 `npx boardmadang dev`를 실행하고 나오는 주소(`http://localhost:5173/`)를 엽니다.
-
-이 레포 안에서 작업한다면 레포 루트에서 개발 서버를 켜고 `http://localhost:5173/sdk/playground/?game=tictactoe`를 엽니다.
-`game=` 뒤에 `games/` 아래 폴더 이름을 넣으면 그 게임이 열립니다.
-
-```bash
-node sdk/playground/serve.js
+```json
+{
+  "languages": { "en": "full", "ko": "full" },
+  "difficulty": "easy",
+  "timer": { "minutes": 10, "custom": true },
+  "name": { "en": "Tic-tac-toe", "ko": "틱택토" },
+  "description": { "en": "Fill a line first to win.", "ko": "한 줄을 먼저 채우면 이깁니다." },
+  "rulebook": { "en": "Two players take turns…", "ko": "두 사람이 번갈아…" }
+}
 ```
 
-- 두 플레이어 화면이 나란히 나와서 혼자 양쪽을 둘 수 있습니다. 시드, 한 수 무르기, 기권도 됩니다.
-- 플랫폼과 같은 방식으로 상태를 바꾼 행동과 무시된 행동을 세고, `maxActions`에 이르면 무승부로 끝냅니다.
-- 이런 실수를 바로 알려줍니다.
-  - 필수 멤버가 없거나 제한값을 넘음
-  - 받은 `state`를 고침
-  - `state`에 `Set`, `Map`, 클래스 같은 JSON이 아닌 값이 있음
-  - 결정적이지 않음: 같은 시드와 같은 행동으로 다시 뒀더니 상태가 다름
-  - `legal()`이 준 행동을 `play()`가 무시함, `play()`가 느림
-- "랜덤 대국 200판"은 `npx boardmadang check`와 같은 검사를 하고, 선공 승률과 평균 길이를 보여줍니다.
-- 판 아래 「썸네일로」를 누르면 그 화면을 그대로 [썸네일](#썸네일)로 찍습니다.
+- **Languages:** `full` means your game's own text (`message` in `view`, `reason` in `result`) is translated too.
+  `rulebook` means only the name, description, and rules are. Boardmadang passes one of your `full` languages as `lang`,
+  so keep your in-game text in a small table per language.
+- **Timer:** each player gets this many minutes in total, like a chess clock (1 to 180, or `null` for none).
+  `custom: true` lets a room host pick their own time. A timer needs `turn()`.
 
-실제 사이트와 달리 게임 코드를 Web Worker가 아니라 페이지에서 바로 실행합니다.
+## Limits
 
-## 썸네일
+| | Max |
+|---|---|
+| Board size (`rows`, `cols`) | 32 |
+| Kinds of pieces | 32 |
+| `maxActions` | 2,000 |
+| Game code | 256 KB |
+| State (as JSON) | 64 KB |
+| Time per `play()` | 2 ms on average, 50 ms at most |
 
-게임 목록에 보일 그림은 **이미지를 올리지 않고 판을 찍어서** 만듭니다. 플레이그라운드에서 원하는 장면까지 혼자 둔 뒤
-판 아래 「썸네일로」를 누르면, 그 플레이어 화면이 게임 폴더의 `thumbnail.json`에 그대로 저장됩니다.
+Big games are fine for people playing each other. The AI just gets a fixed training budget, so it ends up weaker in bigger games.
 
-- 저장하는 것은 판 설정(`board`), 기물 세트(`pieces`), 찍은 플레이어, 그 순간의 `view()`입니다. 언어마다 다른 `message`는 넣지 않습니다.
-- 사이트는 이 데이터를 대국 화면과 같은 보드 렌더러로 다시 그립니다. 그래서 그림이 늘 게임 화면과 똑같이 보이고,
-  게임 코드 없이도 그릴 수 있습니다. 모양은 [game.d.ts](game.d.ts)의 `Thumbnail`입니다.
-- 썸네일이 없으면 시작 판을 보여줍니다.
-- 코드에서 `board`나 `pieces`를 바꾸면 다시 찍어야 합니다. `npx boardmadang check`가 알려줍니다.
+## Editor autocomplete
 
-## 예정
+Add a type comment above your game to get autocomplete in VS Code and other editors.
+For it to find the types, install the package in your game folder with `npm i -D boardmadang`.
 
-- 사이트에서 zip 올리기, 그리고 **클리어 체크**: 등록하기 전에 혼자 한 판을 끝까지 둬서 승자가 나와야 합니다 (무승부, 기권은 안 됨).
-  그 판은 "제작자 클리어 기보"로 같이 남습니다
-- 같은 검사 코드(`check.js`)로 하는 서버 쪽 업로드 검사와 AI 학습 환경
+```js
+/** @type {import('boardmadang').Game<State>} */
+export default { /* … */ };
+```
+
+The full types are in [game.d.ts](https://github.com/shin1244/boardmadang/blob/main/sdk/game.d.ts).
+
+## FAQ
+
+**Who owns my game?** You do. This SDK is MIT, and your game does not become AGPL like the boardmadang server.
+See [LICENSING.md](https://github.com/shin1244/boardmadang/blob/main/LICENSING.md).
+
+**Can I hide my code?** It's protected by copyright, but games run in the players' browsers, so anyone can read the code
+with the browser's developer tools. That's true for every website.
+
+**Do I need to know about servers?** No. Your game is pure rules. Matchmaking, clocks, reconnecting,
+replays, and spectating are all handled by boardmadang.

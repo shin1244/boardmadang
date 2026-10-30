@@ -1,7 +1,7 @@
 {
   "languages": {
-    "ko": "full",
-    "en": "full"
+    "en": "full",
+    "ko": "full"
   },
   "difficulty": "easy",
   "timer": {
@@ -9,15 +9,15 @@
     "custom": true
   },
   "name": {
-    "ko": "새 게임",
-    "en": "New game"
+    "en": "New game",
+    "ko": "새 게임"
   },
   "description": {
-    "ko": "게임 목록에 보일 한두 줄 소개를 쓰세요.",
-    "en": "Write a line or two to show in the game list."
+    "en": "Write a line or two to show in the game list.",
+    "ko": "게임 목록에 보일 한두 줄 소개를 쓰세요."
   },
   "rulebook": {
-    "ko": "두 사람이 3×3 판에 번갈아 표시를 놓습니다. 먼저 두는 사람은 X, 나중에 두는 사람은 O입니다.\n\n가로, 세로, 대각선 중 한 줄을 내 표시 세 개로 먼저 채우면 이깁니다.\n\n규칙을 바꾸면 이 룰북도 고치세요.",
-    "en": "Two players take turns placing marks on a 3×3 board. The first player is X and the second is O.\n\nThe first player to fill a row, column, or diagonal with three of their marks wins.\n\nIf you change the rules, update this rulebook too."
+    "en": "Two players take turns placing marks on a 3×3 board. The first player is X and the second is O.\n\nThe first player to fill a row, column, or diagonal with three of their marks wins.\n\nIf you change the rules, update this rulebook too.",
+    "ko": "두 사람이 3×3 판에 번갈아 표시를 놓습니다. 먼저 두는 사람은 X, 나중에 두는 사람은 O입니다.\n\n가로, 세로, 대각선 중 한 줄을 내 표시 세 개로 먼저 채우면 이깁니다.\n\n규칙을 바꾸면 이 룰북도 고치세요."
   }
 }

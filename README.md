@@ -30,7 +30,7 @@ A가 클릭 → 플랫폼이 (row, col)로 변환 → 서버는 순번만 붙여
 | 6 | 로직은 **순수 함수**입니다. 화면, 네트워크, 저장소에 접근할 수 없습니다 | 업로드된 코드를 Web Worker에 가둡니다 |
 | 7 | **최대 행동 수**(`maxActions`)가 있어야 합니다. 상태를 바꾼 행동만 셉니다 | 게임이 반드시 끝나야 AI 학습이 됩니다 |
 
-게임 API 명세는 [sdk/README.md](sdk/README.md)에 있습니다. 게임은 npm 패키지 `boardmadang`으로 만듭니다.
+게임 만드는 법은 [sdk/README.ko.md](sdk/README.ko.md)(영어: [sdk/README.md](sdk/README.md))에 있습니다. 게임은 npm 패키지 `boardmadang`으로 만듭니다.
 
 ```bash
 npx boardmadang new my-game
@@ -64,7 +64,7 @@ Go 서버 하나가 화면까지 모두 보여줍니다. http://localhost:8080 �
 운영(boardmadang.com)도 이 서버 하나로 돌립니다 ([docs/deploy-gcp.md](docs/deploy-gcp.md)).
 
 개발 서버(Node)는 게임을 만들 때 씁니다. 게임 등록창의 저장(`games/<id>/listing.json`에 쓰기)은 아직 개발 서버에만 있습니다.
-로비(게임 목록)와 [플레이그라운드](sdk/README.md#내-컴퓨터에서-돌려보기-플레이그라운드)는 Go 서버 없이 개발 서버로 띄울 수 있습니다.
+로비(게임 목록)와 [플레이그라운드](sdk/README.ko.md#바로-시작하기)는 Go 서버 없이 개발 서버로 띄울 수 있습니다.
 
 ```bash
 node sdk/playground/serve.js

@@ -2,7 +2,8 @@
 // 실제 플랫폼이 하는 일(시드, 행동 기록, 상태 해시, maxActions)을 서버 없이 흉내 냅니다.
 // 두 플레이어의 화면을 나란히 보여주므로 혼자서 양쪽을 둘 수 있습니다.
 //
-// 판 아래 「썸네일로」를 누르면 그 화면을 그대로 찍어 게임 폴더의 thumbnail.json에 저장합니다.
+// 판 아래 "Use as thumbnail"을 누르면 그 화면을 그대로 찍어 게임 폴더의 thumbnail.json에 저장합니다.
+// 화면의 글은 영어가 기본입니다 (npm 패키지로 여러 나라 제작자가 씁니다).
 // 사이트의 게임 목록은 이미지 대신 이 데이터를 보드 렌더러로 다시 그립니다.
 //
 // 실제 플랫폼과 다른 점: 게임 코드를 Web Worker가 아니라 이 페이지에서 바로 실행합니다.
@@ -18,7 +19,7 @@ const gameId = new URLSearchParams(location.search).get('game') || 'tictactoe';
 // ---- 플랫폼 도구 (검사는 ../check.js에 있고 명령줄과 같이 씁니다) ----
 
 function fmtAction(a) {
-  return a.kind === 'click' ? `클릭 (${a.row}, ${a.col})` : a.kind;
+  return a.kind === 'click' ? `click (${a.row}, ${a.col})` : a.kind;
 }
 
 // ---- 대국 ----
@@ -52,11 +53,11 @@ function newGame(s) {
   try {
     state = game.setup(makeRng(seed));
   } catch (e) {
-    warn(`setup()에서 오류: ${e.message}`);
+    warn(`setup() threw an error: ${e.message}`);
     state = null;
   }
   const bad = findNonJson(state);
-  if (bad) warn(`setup()이 돌려준 state에 JSON이 아닌 값이 있습니다: ${bad}`);
+  if (bad) warn(`setup() returned a state with a non-JSON value: ${bad}`);
   stateHash = hashOf(state);
   log = [];
   effective = 0;
@@ -77,13 +78,13 @@ function dispatch(player, action) {
     next = game.play(state, player, action);
     playMs.push(performance.now() - t);
   } catch (e) {
-    warn(`play()에서 오류: ${e.message}`);
+    warn(`play() threw an error: ${e.message}`);
     render();
     return;
   }
-  if (JSON.stringify(state) !== before) warn('play()가 받은 state를 고쳤습니다. 복사해서 새 상태를 돌려주세요.');
+  if (JSON.stringify(state) !== before) warn('play() changed the state it received. Copy it and return a new state.');
   const bad = findNonJson(next);
-  if (bad) warn(`play()가 돌려준 state에 JSON이 아닌 값이 있습니다: ${bad}`);
+  if (bad) warn(`play() returned a state with a non-JSON value: ${bad}`);
 
   const h = hashOf(next);
   const changed = h !== stateHash;
@@ -107,11 +108,11 @@ function checkTurn() {
   try {
     t = game.turn(state);
   } catch (e) {
-    warn(`turn()에서 오류: ${e.message}`);
+    warn(`turn() threw an error: ${e.message}`);
     return;
   }
-  if (t !== 0 && t !== 1 && t !== null) warn(`turn()은 0, 1, null 중 하나여야 합니다 (받은 값: ${JSON.stringify(t)})`);
-  if (ended && t !== null) warn('끝난 판에서는 turn()이 null이어야 시계가 멈춥니다.');
+  if (t !== 0 && t !== 1 && t !== null) warn(`turn() must return 0, 1, or null (got ${JSON.stringify(t)})`);
+  if (ended && t !== null) warn('turn() must return null once the game is over, so the clock stops.');
 }
 
 /** 끝났는지 확인합니다. maxActions에 이르면 플랫폼이 무승부로 끝냅니다. */
@@ -120,7 +121,7 @@ function checkResult() {
   try {
     r = game.result(state, lang);
   } catch (e) {
-    warn(`result()에서 오류: ${e.message}`);
+    warn(`result() threw an error: ${e.message}`);
   }
   if (!r && effective >= game.maxActions) r = { winner: null, reason: 'maxActions' };
   if (r) ended = r;
@@ -134,10 +135,10 @@ function checkLangs() {
     const winner = (l) => { const r = game.result(state, l); return r ? String(r.winner) : '-'; };
     for (const p of [0, 1]) {
       if (langs.some((l) => drawn(p, l) !== drawn(p, langs[0]))) {
-        warn('view()가 lang에 따라 message 말고 다른 것도 바꿉니다. 판 그림은 언어와 상관없이 같아야 합니다.');
+        warn('view() changes more than the message depending on lang. The board must look the same in every language.');
       }
     }
-    if (langs.some((l) => winner(l) !== winner(langs[0]))) warn('result()가 lang에 따라 다른 승자를 돌려줍니다.');
+    if (langs.some((l) => winner(l) !== winner(langs[0]))) warn('result() returns a different winner depending on lang.');
   } catch {
     // 오류는 render와 checkResult에서 이미 알렸습니다.
   }
@@ -150,7 +151,7 @@ function checkReplay() {
     let s = game.setup(makeRng(seed));
     for (const { player, action } of log) s = game.play(s, player, action);
     if (hashOf(s) !== stateHash) {
-      warn('같은 시드·같은 행동으로 다시 뒀더니 상태가 다릅니다. Math.random()이나 Date.now()를 쓰고 있지 않은지 확인하세요.');
+      warn('Replaying the same seed and moves gave a different state. Check for Math.random() or Date.now().');
     }
   } catch {
     // 오류는 dispatch에서 이미 알렸습니다.
@@ -175,7 +176,7 @@ function legalOf(player) {
   try {
     return game.legal(state, player);
   } catch (e) {
-    warn(`legal()에서 오류: ${e.message}`);
+    warn(`legal() threw an error: ${e.message}`);
     return null;
   }
 }
@@ -192,14 +193,14 @@ function randomGames(n) {
   const pct = (x) => `${Math.round((x / stats.n) * 100)}%`;
   $('#random-result').innerHTML = `
     <table>
-      <tr><th>판 수</th><td>${stats.n}</td></tr>
-      <tr><th>플레이어 0 승</th><td>${tally[0]} (${pct(tally[0])})</td></tr>
-      <tr><th>플레이어 1 승</th><td>${tally[1]} (${pct(tally[1])})</td></tr>
-      <tr><th>무승부</th><td>${tally.draw} (${pct(tally.draw)})</td></tr>
-      <tr><th>maxActions 도달</th><td>${tally.maxActions}</td></tr>
-      <tr><th>진행 불가</th><td>${tally.stuck + tally.noLegal}</td></tr>
-      <tr><th>평균 길이</th><td>${stats.avgMoves.toFixed(1)}수</td></tr>
-      <tr><th>play() 시간</th><td>평균 ${stats.avgMs.toFixed(3)}ms · 최대 ${stats.maxMs.toFixed(2)}ms</td></tr>
+      <tr><th>Games</th><td>${stats.n}</td></tr>
+      <tr><th>Player 0 won</th><td>${tally[0]} (${pct(tally[0])})</td></tr>
+      <tr><th>Player 1 won</th><td>${tally[1]} (${pct(tally[1])})</td></tr>
+      <tr><th>Draws</th><td>${tally.draw} (${pct(tally.draw)})</td></tr>
+      <tr><th>Hit maxActions</th><td>${tally.maxActions}</td></tr>
+      <tr><th>Got stuck</th><td>${tally.stuck + tally.noLegal}</td></tr>
+      <tr><th>Average length</th><td>${stats.avgMoves.toFixed(1)} moves</td></tr>
+      <tr><th>play() time</th><td>${stats.avgMs.toFixed(3)}ms average · ${stats.maxMs.toFixed(2)}ms max</td></tr>
     </table>`;
   render();
 }
@@ -223,7 +224,7 @@ async function snapshot(player) {
   try {
     view = game.view(state, player, lang);
   } catch (e) {
-    warn(`view()에서 오류: ${e.message}`);
+    warn(`view() threw an error: ${e.message}`);
     return render();
   }
   const thumb = makeThumbnail(game, player, view);
@@ -235,9 +236,9 @@ async function snapshot(player) {
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.problems?.join(' / ') ?? body.error ?? `HTTP ${res.status}`);
-    showThumbnail(thumb, `플레이어 ${player} 화면을 썸네일로 저장했습니다 (thumbnail.json, 행동 ${log.length}개 둔 판).`);
+    showThumbnail(thumb, `Saved player ${player}'s board as the thumbnail (thumbnail.json, after ${log.length} moves).`);
   } catch (e) {
-    $('#thumb-status').textContent = `썸네일을 저장하지 못했습니다: ${e.message}`;
+    $('#thumb-status').textContent = `Couldn't save the thumbnail: ${e.message}`;
   }
 }
 
@@ -250,7 +251,7 @@ function render() {
     try {
       view = game.view(state, p, lang) ?? view;
     } catch (e) {
-      warn(`view()에서 오류: ${e.message}`);
+      warn(`view() threw an error: ${e.message}`);
     }
     boards[p].draw(view, { flip: game.board.flipForPlayer === p, hover: hover[p] });
     panel.querySelector('.message').textContent = view.message ?? '';
@@ -259,20 +260,20 @@ function render() {
 
   const status = $('#status');
   if (ended) {
-    const who = ended.winner === null ? '무승부' : `플레이어 ${ended.winner} 승`;
-    status.textContent = `끝: ${who}${ended.reason ? ` (${ended.reason})` : ''}`;
+    const who = ended.winner === null ? 'draw' : `player ${ended.winner} won`;
+    status.textContent = `Game over: ${who}${ended.reason ? ` (${ended.reason})` : ''}`;
     status.className = 'status ended';
   } else {
-    status.textContent = '진행 중';
+    status.textContent = 'Playing';
     status.className = 'status';
   }
-  $('#counts').textContent = `상태를 바꾼 행동 ${effective} / ${game.maxActions} · 무시된 행동 P0 ${ignored[0]} · P1 ${ignored[1]} · 해시 ${stateHash}`;
+  $('#counts').textContent = `Moves that changed the state: ${effective} / ${game.maxActions} · ignored: P0 ${ignored[0]}, P1 ${ignored[1]} · hash ${stateHash}`;
 
   const logEl = $('#log');
   logEl.innerHTML = '';
   log.forEach((e, i) => {
     const li = document.createElement('li');
-    li.textContent = `#${i} P${e.player} ${fmtAction(e.action)}${e.changed ? '' : ' — 무시됨'}`;
+    li.textContent = `#${i} P${e.player} ${fmtAction(e.action)}${e.changed ? '' : ' (ignored)'}`;
     if (!e.changed) li.className = 'ignored';
     logEl.prepend(li);
   });
@@ -285,9 +286,9 @@ function render() {
       const { rows, cols } = game.board;
       const ok = Array.isArray(o) && o.every((ch) => Array.isArray(ch) && ch.length === rows
         && ch.every((row) => Array.isArray(row) && row.length === cols && row.every((x) => typeof x === 'number')));
-      if (!ok) warn(`observe()는 [채널][${rows}][${cols}] 모양의 숫자 배열이어야 합니다.`);
+      if (!ok) warn(`observe() must return numbers shaped [channel][${rows}][${cols}].`);
     } catch (e) {
-      warn(`observe()에서 오류: ${e.message}`);
+      warn(`observe() threw an error: ${e.message}`);
     }
   }
 
@@ -296,7 +297,7 @@ function render() {
   if (!warnings.size) {
     const li = document.createElement('li');
     li.className = 'ok';
-    li.textContent = '지금까지 문제 없음';
+    li.textContent = 'No problems so far';
     checks.append(li);
   }
   for (const w of warnings) {
@@ -314,7 +315,7 @@ function buildPanels() {
     panel.className = 'player';
     panel.id = `player-${p}`;
     panel.innerHTML = `
-      <h2><span class="dot p${p}"></span>플레이어 ${p} 화면 <small>${p === 0 ? '선공' : '후공'}</small></h2>
+      <h2><span class="dot p${p}"></span>Player ${p} <small>${p === 0 ? 'moves first' : 'moves second'}</small></h2>
       <canvas></canvas>
       <p class="message"></p>
       <div class="actions"></div>`;
@@ -326,14 +327,14 @@ function buildPanels() {
       actions.append(b);
     }
     const r = document.createElement('button');
-    r.textContent = '기권';
+    r.textContent = 'Resign';
     r.className = 'secondary';
     r.addEventListener('click', () => resign(p));
     actions.append(r);
     const shot = document.createElement('button');
-    shot.textContent = '썸네일로';
+    shot.textContent = 'Use as thumbnail';
     shot.className = 'secondary snapshot';
-    shot.title = '이 플레이어 화면을 그대로 찍어 게임 목록의 썸네일로 씁니다';
+    shot.title = "Save this player's board as the picture in the game list";
     shot.addEventListener('click', () => snapshot(p));
     actions.append(shot);
     wrap.append(panel);
@@ -375,7 +376,7 @@ function fit() {
 /** 게임 안 글자 언어 고르기. 등록창에서 완전 번역으로 고른 언어만 고를 수 있습니다. */
 function setupLang(wanted) {
   if (listing) langs = fullLangs(listing);
-  lang = langs.includes(wanted) ? wanted : langs[0];
+  lang = [wanted, navigator.language?.slice(0, 2), 'en'].find((l) => langs.includes(l)) ?? langs[0];
   const select = $('#lang');
   select.replaceChildren(...langs.map((l) => new Option(LANG_NAMES[l], l, false, l === lang)));
   select.disabled = langs.length < 2;
@@ -393,33 +394,33 @@ function setupLang(wanted) {
 
 function showTitle() {
   const name = localize(listing?.name, lang).text || game.id;
-  document.title = `${name} · 보드마당 플레이그라운드`;
+  document.title = `${name} · boardmadang playground`;
   $('#title').textContent = name;
   const leftover = ['name', 'description', 'difficulty'].filter((k) => k in game);
   $('#meta').textContent = [
-    `${game.id} · ${game.board.rows}×${game.board.cols} ${game.board.places === 'points' ? '교차점' : '칸'} · maxActions ${game.maxActions}`,
-    listing ? null : '등록 정보 없음: 게임 등록 화면에서 이름, 룰북, 지원 언어를 입력하세요 (지금은 모든 언어로 둬봅니다)',
-    leftover.length ? `${leftover.join(', ')}은(는) 이제 게임 코드가 아니라 등록 정보에 씁니다` : null,
+    `${game.id} · ${game.board.rows}×${game.board.cols} ${game.board.places === 'points' ? 'points' : 'cells'} · maxActions ${game.maxActions}`,
+    listing ? null : 'No listing.json yet: add a name, rules, and languages (for now, every language is tried)',
+    leftover.length ? `${leftover.join(', ')} now belong in listing.json, not in the game code` : null,
   ].filter(Boolean).join(' · ');
 }
 
 async function main() {
-  if (!/^[a-z0-9-]+$/.test(gameId)) throw new Error('game 이름은 영문 소문자, 숫자, -만 됩니다');
+  if (!/^[a-z0-9-]+$/.test(gameId)) throw new Error('game may use only lowercase letters, numbers, and -');
   // 개발 서버가 games/<id>와 깃허브에 올리지 않는 games/private/<id>를 찾아 등록 정보와 같이 알려줍니다.
   const entry = (await (await fetch('/api/games')).json()).find((g) => g.id === gameId);
-  if (!entry) throw new Error('개발 서버가 이 게임을 찾지 못했습니다');
+  if (!entry) throw new Error("the dev server couldn't find this game");
   listing = entry.listing;
   game = (await import(entry.module)).default;
   const problems = checkMembers(game ?? {});
   if (problems.length) {
     $('#fatal').hidden = false;
-    $('#fatal').innerHTML = `<b>게임 모듈에 문제가 있어 시작할 수 없습니다.</b><ul>${problems.map((x) => `<li>${x}</li>`).join('')}</ul>`;
+    $('#fatal').innerHTML = `<b>Can't start: the game module has problems.</b><ul>${problems.map((x) => `<li>${x}</li>`).join('')}</ul>`;
     return;
   }
 
   setupLang(new URLSearchParams(location.search).get('lang'));
   if (entry.thumbnail) {
-    showThumbnail(entry.thumbnail, '지금 썸네일입니다. 다른 화면으로 바꾸려면 판 아래 「썸네일로」를 누르세요.');
+    showThumbnail(entry.thumbnail, 'This is the current thumbnail. To change it, press "Use as thumbnail" under a board.');
     for (const p of checkThumbnail(game, entry.thumbnail)) warn(p);
   }
 
@@ -437,5 +438,5 @@ async function main() {
 
 main().catch((e) => {
   $('#fatal').hidden = false;
-  $('#fatal').textContent = `게임을 불러오지 못했습니다 (${gameId}/index.js): ${e.message}`;
+  $('#fatal').textContent = `Couldn't load the game (${gameId}/index.js): ${e.message}`;
 });

@@ -1,7 +1,7 @@
 {
   "name": "boardmadang",
   "version": "0.1.0",
-  "description": "보드마당(boardmadang.com)에 올릴 1대1 격자 보드게임을 만드는 도구: 게임 API 타입, 플레이그라운드, 업로드 검사, 올릴 파일 묶기",
+  "description": "Make 1-vs-1 board games for boardmadang.com: write only the rules, then play them in a local playground, check them, and pack them for upload.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -22,6 +22,7 @@
     "lib/",
     "template/",
     "check.js",
+    "README.ko.md",
     "game.d.ts",
     "playground/index.html",
     "playground/playground.js",
