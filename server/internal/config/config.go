@@ -12,11 +12,14 @@ type Config struct {
 	Port string
 	// 웹소켓 접속을 허용할 Origin 목록. 비어 있으면 같은 출처만 허용합니다.
 	AllowedOrigins []string
+	// 세션 토큰 서명 비밀값 (docs/identity.md). 비어 있으면 서버가 시작할 때 임시 값을 만듭니다.
+	SessionSecret string
 }
 
 func Load() Config {
 	cfg := Config{
-		Port: os.Getenv("PORT"),
+		Port:          os.Getenv("PORT"),
+		SessionSecret: os.Getenv("SESSION_SECRET"),
 	}
 	if cfg.Port == "" {
 		cfg.Port = "8080"

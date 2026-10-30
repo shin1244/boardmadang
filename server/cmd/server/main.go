@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"log"
 	"net/http"
@@ -13,15 +14,17 @@ import (
 
 	"github.com/shin1244/boardmadang/server/internal/config"
 	"github.com/shin1244/boardmadang/server/internal/hub"
+	"github.com/shin1244/boardmadang/server/internal/identity"
 )
 
 func main() {
 	cfg := config.Load()
-	h := hub.New(cfg)
+	ids := identity.NewIssuer(sessionSecret(cfg))
+	h := hub.New(cfg, ids)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           routes(h),
+		Handler:           routes(h, ids),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -47,10 +50,30 @@ func main() {
 	// TODO: 진행 중인 방에 종료를 알리고, 기록을 저장소에 남기기 (docs/deploy-gcp.md 참고)
 }
 
-func routes(h *hub.Hub) http.Handler {
+// sessionSecret은 세션 토큰 서명 비밀값입니다. 없으면 임시 값을 만듭니다 (개발용).
+// 임시 값이면 서버를 다시 켤 때마다 모든 게스트가 새 게스트가 되고, 서버를 여러 대 띄우면 서로의 토큰을 못 읽습니다.
+func sessionSecret(cfg config.Config) []byte {
+	if cfg.SessionSecret != "" {
+		if len(cfg.SessionSecret) < 32 {
+			log.Fatal("SESSION_SECRET은 32자 이상이어야 합니다")
+		}
+		return []byte(cfg.SessionSecret)
+	}
+	log.Println("경고: SESSION_SECRET이 없어 임시 비밀값을 씁니다. 운영에서는 반드시 넣으세요.")
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		log.Fatal(err)
+	}
+	return b
+}
+
+func routes(h *hub.Hub, ids *identity.Issuer) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
+	mux.HandleFunc("GET /api/me", ids.HandleMe)
 	mux.HandleFunc("GET /ws", h.ServeWS)
+	// TODO: 업로드와 등록 정보 저장은 계정만 됩니다. 붙일 때 ids.RequireMember로 감쌉니다.
+	//   mux.Handle("PUT /api/games/{id}/listing", ids.RequireMember(...))
 	return mux
 }
 

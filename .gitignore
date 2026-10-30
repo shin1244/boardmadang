@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# 공개하지 않는 게임 — 이 폴더는 깃허브에 올라가지 않습니다.
+/games/private/
+
 # Go
 /server/bin/
 *.exe

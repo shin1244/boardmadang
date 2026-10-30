@@ -17,7 +17,11 @@ const (
 
 // 서버 → 클라이언트
 const (
+	TypeWaiting = "waiting"
 	TypeMatched = "matched"
+	TypeResumed = "resumed"
+	TypeAway    = "away"
+	TypeBack    = "back"
 	TypeRelay   = "relay"
 	TypeDesync  = "desync"
 	TypeEnded   = "ended"
@@ -28,10 +32,11 @@ const (
 const (
 	ReasonResult   = "result"   // 양쪽이 같은 결과를 보고함
 	ReasonResign   = "resign"   // 한쪽이 기권
-	ReasonLeft     = "left"     // 한쪽 연결이 끊김
+	ReasonLeft     = "left"     // 한쪽 연결이 끊기고 유예 시간 안에 돌아오지 않음
 	ReasonDesync   = "desync"   // 해시 불일치로 무효
 	ReasonDisagree = "disagree" // 양쪽 결과 보고가 다름
 	ReasonSpam     = "spam"     // 한쪽이 무시된 행동을 너무 많이 보냄 → 상대 승
+	ReasonLimit    = "limit"    // 행동 기록이 상한에 닿음 → 무효
 )
 
 // Action은 플레이어의 행동 하나입니다. 서버는 내용을 해석하지 않고 그대로 전달합니다.
@@ -74,13 +79,53 @@ type Resign struct {
 
 // ---- 서버 → 클라이언트 ----
 
+// Waiting은 대기열에 들어갔다는 알림입니다. 상대가 오면 Matched가 갑니다.
+type Waiting struct {
+	Type string `json:"type"`
+	Game string `json:"game"`
+}
+
 // Seed는 32비트입니다. JS 숫자는 2^53을 넘으면 정밀도를 잃기 때문입니다.
 type Matched struct {
+	Type     string     `json:"type"`
+	Room     string     `json:"room"`
+	Game     string     `json:"game"`
+	Player   int        `json:"player"`
+	Seed     uint32     `json:"seed"`
+	Opponent PlayerInfo `json:"opponent"`
+}
+
+// PlayerInfo는 상대에게 보여줄 신원입니다. id는 넣지 않습니다 (docs/identity.md).
+type PlayerInfo struct {
+	Kind string `json:"kind"`           // "guest" 또는 "member"
+	Tag  string `json:"tag"`            // 네 자리 숫자 ("게스트 4821")
+	Name string `json:"name,omitempty"` // 계정만
+}
+
+// Resumed는 끊겼던 플레이어가 유예 시간 안에 돌아왔을 때 보냅니다.
+// 클라이언트는 Seed로 setup()한 뒤 Log를 처음부터 재생해서 판을 복원합니다.
+// 재생하면서 보내는 해시와 결과 중 이미 보고한 것은 서버가 무시합니다.
+type Resumed struct {
+	Type     string     `json:"type"`
+	Room     string     `json:"room"`
+	Game     string     `json:"game"`
+	Player   int        `json:"player"`
+	Seed     uint32     `json:"seed"`
+	Opponent PlayerInfo `json:"opponent"`
+	Log      []Relay    `json:"log"`
+}
+
+// Away는 상대의 연결이 끊겼다는 알림입니다. Seconds 안에 돌아오지 않으면 남은 쪽이 이깁니다.
+type Away struct {
+	Type    string `json:"type"`
+	Player  int    `json:"player"`
+	Seconds int    `json:"seconds"`
+}
+
+// Back은 끊겼던 상대가 돌아왔다는 알림입니다.
+type Back struct {
 	Type   string `json:"type"`
-	Room   string `json:"room"`
-	Game   string `json:"game"`
 	Player int    `json:"player"`
-	Seed   uint32 `json:"seed"`
 }
 
 // Relay는 순번이 붙은 행동입니다. 보낸 사람에게도 돌려보내며,

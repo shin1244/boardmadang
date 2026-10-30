@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>게임 등록 · 보드마당</title>
+  <link rel="stylesheet" href="lobby.css">
+  <link rel="stylesheet" href="register.css">
+</head>
+<body class="page">
+  <!-- 글자는 web/i18n.js에 언어별로 있습니다. 여기 적힌 한국어는 스크립트가 돌기 전 잠깐 보이는 기본값입니다. -->
+  <header class="topbar">
+    <a class="logo" href="/web/">
+      <span class="logo-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span data-i18n="site.name">보드마당</span>
+    </a>
+    <nav class="menu" data-i18n-attr="aria-label:menu.label" aria-label="메뉴">
+      <a href="/web/" data-i18n="menu.games">게임</a>
+      <span class="soon" data-i18n="menu.ranking" data-i18n-attr="title:soon" title="준비 중">랭킹</span>
+      <a href="/web/register.html" aria-current="page" data-i18n="menu.register">게임 등록</a>
+      <a href="/sdk/playground/" data-i18n="menu.playground">플레이그라운드</a>
+    </nav>
+    <div class="langs" role="group" data-i18n-attr="aria-label:lang.label" aria-label="화면 언어">
+      <button type="button" data-lang="ko" lang="ko">KR</button>
+      <button type="button" data-lang="en" lang="en">EN</button>
+    </div>
+    <span class="me" hidden></span>
+    <button class="login" type="button" disabled data-i18n="login" data-i18n-attr="title:soon" title="준비 중">로그인</button>
+  </header>
+
+  <main class="register">
+    <h1 data-i18n="register.title">게임 등록</h1>
+    <p class="lead" data-i18n="register.lead"></p>
+
+    <!-- 게스트는 업로드할 수 없습니다. 계정이 아니면 이 안내만 보이고 폼은 숨깁니다. -->
+    <section id="need-account" class="block need-account" hidden>
+      <h2 class="block-title" data-i18n="register.needAccount.title">게임 업로드는 계정이 필요합니다</h2>
+      <p data-i18n="register.needAccount.body"></p>
+      <a class="btn ghost" href="/web/" data-i18n="register.needAccount.back">게임 목록으로</a>
+    </section>
+
+    <div id="member-only">
+    <ol class="steps">
+      <li data-step="1"><b>1</b> <span data-i18n="register.step1">게임과 언어</span></li>
+      <li data-step="2"><b>2</b> <span data-i18n="register.step2">설명 글</span></li>
+    </ol>
+
+    <div id="problems" class="problems" role="alert" hidden>
+      <b data-i18n="register.problems"></b>
+      <ul></ul>
+    </div>
+
+    <form id="form" novalidate>
+      <!-- 1단계: 게임, 난이도, 지원 언어 -->
+      <div class="step" id="step-1">
+        <section class="block">
+          <label class="block-title" for="game" data-i18n="register.game">게임</label>
+          <select id="game"></select>
+          <p class="hint" data-i18n="register.game.hint"></p>
+          <p id="game-status" class="status-line"></p>
+        </section>
+
+        <fieldset class="block" id="difficulty">
+          <legend class="block-title" data-i18n="register.difficulty">난이도</legend>
+          <div class="choices">
+            <label class="choice"><input type="radio" name="difficulty" value="easy"><span><b data-i18n="difficulty.easy">하</b><small data-i18n="difficulty.easy.hint"></small></span></label>
+            <label class="choice"><input type="radio" name="difficulty" value="normal"><span><b data-i18n="difficulty.normal">중</b><small data-i18n="difficulty.normal.hint"></small></span></label>
+            <label class="choice"><input type="radio" name="difficulty" value="hard"><span><b data-i18n="difficulty.hard">상</b><small data-i18n="difficulty.hard.hint"></small></span></label>
+          </div>
+        </fieldset>
+
+        <section class="block" id="langs">
+          <h2 class="block-title" data-i18n="register.langs">지원 언어</h2>
+          <p class="hint" data-i18n="register.langs.lead"></p>
+
+          <!-- 언어 버튼은 register.js가 LANGS 순서대로 채웁니다. 한 언어는 둘 중 한 곳에만 들어갑니다. -->
+          <div class="lang-group">
+            <h3><span data-i18n="support.rulebook">일부 번역</span> <small data-i18n="support.rulebook.short"></small></h3>
+            <p class="hint" data-i18n="support.rulebook.hint"></p>
+            <div class="chips" data-level="rulebook" role="group" data-i18n-attr="aria-label:support.rulebook"></div>
+          </div>
+          <div class="lang-group">
+            <h3><span data-i18n="support.full">완전 번역</span> <small data-i18n="support.full.short"></small></h3>
+            <p class="hint" data-i18n="support.full.hint"></p>
+            <div class="chips" data-level="full" role="group" data-i18n-attr="aria-label:support.full"></div>
+          </div>
+
+          <aside class="note">
+            <b data-i18n="register.code.title"></b>
+            <p data-i18n="register.code.body"></p>
+            <a id="try" href="/sdk/playground/" data-i18n="register.code.try"></a>
+          </aside>
+        </section>
+
+        <div class="form-actions">
+          <button id="next" class="btn" type="button" data-i18n="register.next">다음</button>
+        </div>
+      </div>
+
+      <!-- 2단계: 고른 언어마다 이름, 소개, 룰북 -->
+      <div class="step" id="step-2" hidden>
+        <section class="block">
+          <h2 class="block-title" data-i18n="register.texts">설명 글</h2>
+          <p class="hint" data-i18n="register.texts.lead"></p>
+          <div id="texts"></div>
+        </section>
+
+        <div class="form-actions">
+          <button id="back" class="btn ghost" type="button" data-i18n="register.back">이전</button>
+          <button id="save" class="btn" type="submit" data-i18n="register.save">저장</button>
+          <span id="save-status" class="status-line" role="status"></span>
+        </div>
+      </div>
+    </form>
+    </div>
+  </main>
+
+  <template id="text-block">
+    <fieldset class="text-block">
+      <legend><span class="lang-name"></span> <small class="level-tag"></small></legend>
+      <div class="fields">
+        <label><span data-i18n="field.name"></span> <small class="counter"></small>
+          <input data-field="name" type="text">
+        </label>
+        <label><span data-i18n="field.description"></span> <small class="counter"></small>
+          <textarea data-field="description" rows="2"></textarea>
+        </label>
+        <label><span data-i18n="field.rulebook"></span> <small class="counter"></small>
+          <textarea data-field="rulebook" rows="10"></textarea>
+          <small class="hint" data-i18n="field.rulebook.hint"></small>
+        </label>
+      </div>
+    </fieldset>
+  </template>
+
+  <script type="module" src="register.js"></script>
+</body>
+</html>

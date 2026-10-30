@@ -1,0 +1,19 @@
+{
+  "languages": {
+    "ko": "full",
+    "en": "full"
+  },
+  "difficulty": "easy",
+  "name": {
+    "ko": "틱택토",
+    "en": "Tic-tac-toe"
+  },
+  "description": {
+    "ko": "가로, 세로, 대각선 중 한 줄을 먼저 채우면 이깁니다.",
+    "en": "Fill a row, column, or diagonal first to win."
+  },
+  "rulebook": {
+    "ko": "두 사람이 3×3 판에 번갈아 표시를 놓습니다. 먼저 두는 사람은 X, 나중에 두는 사람은 O입니다.\n\n빈칸 하나를 누르면 그 칸에 내 표시가 놓입니다.\n\n가로, 세로, 대각선 중 한 줄을 내 표시 세 개로 먼저 채우면 이깁니다. 아홉 칸이 다 찰 때까지 아무도 줄을 못 채우면 무승부입니다.",
+    "en": "Two players take turns placing marks on a 3×3 board. The first player is X and the second is O.\n\nClick an empty square to place your mark there.\n\nThe first player to fill a row, column, or diagonal with three of their marks wins. If all nine squares fill up and nobody has a line, the game is a draw."
+  }
+}

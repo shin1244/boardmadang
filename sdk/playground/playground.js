@@ -5,35 +5,13 @@
 // 실제 플랫폼과 다른 점: 게임 코드를 Web Worker가 아니라 이 페이지에서 바로 실행합니다.
 
 import { BoardView } from './board.js';
+import { LANGS, LANG_NAMES, fullLangs, localize } from './listing.js';
+import { hashOf, makeRng } from './platform.js';
 
 const $ = (sel) => document.querySelector(sel);
 const gameId = new URLSearchParams(location.search).get('game') || 'tictactoe';
 
 // ---- 플랫폼 도구 ----
-
-/** 시드로 만드는 결정적 난수 (mulberry32). 실제 플랫폼과 같은 모양의 rng를 게임에 줍니다. */
-function makeRng(seed) {
-  let a = seed >>> 0;
-  const next = () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-  return { next, int: (n) => Math.floor(next() * n) };
-}
-
-/** 상태 해시 (FNV-1a 32비트). 무시된 행동 판정과 결정성 검사에 씁니다. */
-function hashOf(state) {
-  const s = JSON.stringify(state);
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0).toString(16).padStart(8, '0');
-}
 
 /** JSON으로 그대로 옮길 수 없는 값의 위치. 문제없으면 null */
 function findNonJson(v, where = 'state') {
@@ -63,7 +41,6 @@ function checkMembers(g) {
   const p = [];
   const fn = (k) => typeof g[k] === 'function';
   if (typeof g.id !== 'string' || !/^[a-z0-9-]+$/.test(g.id)) p.push('id: 영문 소문자, 숫자, -로 된 문자열이어야 합니다');
-  if (typeof g.name !== 'string' || !g.name) p.push('name: 문자열이 필요합니다');
   const b = g.board;
   if (!b || typeof b !== 'object') {
     p.push('board: 객체가 필요합니다');
@@ -98,6 +75,9 @@ function fmtAction(a) {
 // ---- 대국 ----
 
 let game;
+let listing = null; // 등록 정보. 없으면 null
+let langs = LANGS; // 게임에 넘길 수 있는 언어 = 완전 번역 언어
+let lang = 'ko'; // 지금 게임에 넘기는 언어
 let boards = [];
 const hover = [null, null];
 const warnings = new Set();
@@ -166,6 +146,7 @@ function dispatch(player, action) {
 
   checkReplay();
   checkResult();
+  checkLangs();
   render();
 }
 
@@ -173,12 +154,29 @@ function dispatch(player, action) {
 function checkResult() {
   let r = null;
   try {
-    r = game.result(state);
+    r = game.result(state, lang);
   } catch (e) {
     warn(`result()에서 오류: ${e.message}`);
   }
   if (!r && effective >= game.maxActions) r = { winner: null, reason: 'maxActions' };
   if (r) ended = r;
+}
+
+/** 승자와 판 그림은 lang과 상관없이 같아야 합니다. 글자(message, reason)만 언어마다 다릅니다. */
+function checkLangs() {
+  if (langs.length < 2) return;
+  try {
+    const drawn = (p, l) => JSON.stringify({ ...game.view(state, p, l), message: undefined });
+    const winner = (l) => { const r = game.result(state, l); return r ? String(r.winner) : '-'; };
+    for (const p of [0, 1]) {
+      if (langs.some((l) => drawn(p, l) !== drawn(p, langs[0]))) {
+        warn('view()가 lang에 따라 message 말고 다른 것도 바꿉니다. 판 그림은 언어와 상관없이 같아야 합니다.');
+      }
+    }
+    if (langs.some((l) => winner(l) !== winner(langs[0]))) warn('result()가 lang에 따라 다른 승자를 돌려줍니다.');
+  } catch {
+    // 오류는 render와 checkResult에서 이미 알렸습니다.
+  }
 }
 
 /** 같은 시드와 같은 행동으로 처음부터 다시 둬서 같은 상태가 나오는지 봅니다. */
@@ -234,7 +232,7 @@ function randomGames(n) {
     let h = hashOf(s);
     let eff = 0;
     let raw = 0;
-    let r = game.result(s);
+    let r = game.result(s, lang);
     while (!r) {
       if (eff >= game.maxActions) { tally.maxActions++; break; }
       if (raw > game.maxActions * 20) { tally.stuck++; break; }
@@ -264,7 +262,7 @@ function randomGames(n) {
       else if (game.legal) legalIgnored++;
       s = next;
       h = h2;
-      r = game.result(s);
+      r = game.result(s, lang);
     }
     if (r) {
       if (r.winner === null) tally.draw++;
@@ -302,7 +300,7 @@ function render() {
     const panel = $(`#player-${p}`);
     let view = { pieces: [] };
     try {
-      view = game.view(state, p) ?? view;
+      view = game.view(state, p, lang) ?? view;
     } catch (e) {
       warn(`view()에서 오류: ${e.message}`);
     }
@@ -420,10 +418,44 @@ function fit() {
   if (log) render();
 }
 
+/** 게임 안 글자 언어 고르기. 등록창에서 완전 번역으로 고른 언어만 고를 수 있습니다. */
+function setupLang(wanted) {
+  if (listing) langs = fullLangs(listing);
+  lang = langs.includes(wanted) ? wanted : langs[0];
+  const select = $('#lang');
+  select.replaceChildren(...langs.map((l) => new Option(LANG_NAMES[l], l, false, l === lang)));
+  select.disabled = langs.length < 2;
+  select.addEventListener('change', () => {
+    lang = select.value;
+    const q = new URLSearchParams(location.search);
+    q.set('lang', lang);
+    history.replaceState(null, '', `?${q}`);
+    showTitle();
+    checkResult();
+    render();
+  });
+  showTitle();
+}
+
+function showTitle() {
+  const name = localize(listing?.name, lang).text || game.id;
+  document.title = `${name} · 보드마당 플레이그라운드`;
+  $('#title').textContent = name;
+  const leftover = ['name', 'description', 'difficulty'].filter((k) => k in game);
+  $('#meta').textContent = [
+    `${game.id} · ${game.board.rows}×${game.board.cols} ${game.board.places === 'points' ? '교차점' : '칸'} · maxActions ${game.maxActions}`,
+    listing ? null : '등록 정보 없음: 게임 등록 화면에서 이름, 룰북, 지원 언어를 입력하세요 (지금은 모든 언어로 둬봅니다)',
+    leftover.length ? `${leftover.join(', ')}은(는) 이제 게임 코드가 아니라 등록 정보에 씁니다` : null,
+  ].filter(Boolean).join(' · ');
+}
+
 async function main() {
   if (!/^[a-z0-9-]+$/.test(gameId)) throw new Error('game 이름은 영문 소문자, 숫자, -만 됩니다');
-  const mod = await import(`../../games/${gameId}/index.js`);
-  game = mod.default;
+  // 개발 서버가 games/<id>와 깃허브에 올리지 않는 games/private/<id>를 찾아 등록 정보와 같이 알려줍니다.
+  const entry = (await (await fetch('/api/games')).json()).find((g) => g.id === gameId);
+  if (!entry) throw new Error('games/ 와 games/private/ 에 이 게임이 없습니다');
+  listing = entry.listing;
+  game = (await import(entry.module)).default;
   const problems = checkMembers(game ?? {});
   if (problems.length) {
     $('#fatal').hidden = false;
@@ -431,9 +463,7 @@ async function main() {
     return;
   }
 
-  document.title = `${game.name} · 보드마당 플레이그라운드`;
-  $('#title').textContent = game.name;
-  $('#meta').textContent = `${game.id} · ${game.board.rows}×${game.board.cols} ${game.board.places === 'points' ? '교차점' : '칸'} · maxActions ${game.maxActions}`;
+  setupLang(new URLSearchParams(location.search).get('lang'));
 
   buildPanels();
   if (game.board.places === 'both') warn("board.places 'both'는 플레이그라운드에서 아직 칸 모드로만 그립니다.");
@@ -450,5 +480,5 @@ async function main() {
 
 main().catch((e) => {
   $('#fatal').hidden = false;
-  $('#fatal').textContent = `게임을 불러오지 못했습니다 (games/${gameId}/index.js): ${e.message}`;
+  $('#fatal').textContent = `게임을 불러오지 못했습니다 (games/${gameId}/index.js 또는 games/private/${gameId}/index.js): ${e.message}`;
 });

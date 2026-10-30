@@ -8,20 +8,58 @@
 ```js
 export default {
   id: 'my-game',
-  name: '내 게임',
   board: { places: 'cells', rows: 8, cols: 8, look: 'checker' },
   pieces: ['red', 'blue'],
   maxActions: 400,
 
   setup(rng) { /* 시작 상태 */ },
   play(state, player, action) { /* 행동 하나 → 새 상태 */ },
-  result(state) { /* 끝났으면 { winner }, 아니면 null */ },
-  view(state, player) { /* 화면에 보일 것 */ },
+  result(state, lang) { /* 끝났으면 { winner, reason }, 아니면 null */ },
+  view(state, player, lang) { /* 화면에 보일 것 */ },
 
   legal(state, player) { /* (선택) 둘 수 있는 행동 목록 */ },
   observe(state, player) { /* (선택) 판에 안 보이는 정보 */ },
 };
 ```
+
+게임 코드에는 **규칙만** 둡니다. 이름, 소개, 룰북, 난이도, 지원 언어는 [등록 정보](#등록-정보와-언어)로 따로 입력합니다.
+
+## 등록 정보와 언어
+
+게임 등록창(`/web/register.html`)에서 입력하고, 플랫폼이 따로 저장합니다. 개발 서버는 `games/<id>/listing.json`에 씁니다.
+코드를 다시 올리지 않아도 소개, 룰북, 번역을 고칠 수 있습니다. 모양은 [game.d.ts](game.d.ts)의 `Listing`입니다.
+
+| 항목 | 내용 |
+|---|---|
+| 난이도 | 하(`easy`) / 중(`normal`) / 상(`hard`). 로비의 난이도 필터와 '쉬운 순' 정렬에 쓰입니다 |
+| 지원 언어 | 많이 쓰는 언어 10개(`ko`, `en`, `ja`, `zh`, `es`, `fr`, `de`, `pt`, `ru`, `ar`) 중에서 일부 번역 / 완전 번역할 언어를 고릅니다. 아래 표 참고 |
+| 이름, 한 줄 소개, 룰북 | 등록창 2단계에서 고른 언어마다 씁니다 (40자 / 200자 / 20,000자) |
+
+| 지원 수준 | 그 언어로 나오는 것 |
+|---|---|
+| 완전 번역 (`full`) | 이름, 소개, 룰북, **게임 안 글자**(`view()`의 `message`, `result()`의 `reason`) |
+| 일부 번역 (`rulebook`) | 이름, 소개, 룰북. 게임 안 글자는 완전 번역 언어로 나옵니다 |
+
+- **게임 안 글자는 제작자가 직접 번역합니다.** 플랫폼은 `view(state, player, lang)`과 `result(state, lang)`에
+  완전 번역 언어 중 하나를 넘깁니다. 유저 화면 언어를 완전 번역하면 그 언어, 아니면 첫 번째 완전 번역 언어입니다.
+  그래서 게임은 자기가 완전 번역한다고 등록한 언어만 받습니다.
+- 완전 번역 언어가 하나 이상 있어야 합니다. 게임 안 글자를 보여줄 언어가 필요하기 때문입니다.
+- 승자와 판 그림(`pieces`, `marks`, `tint`, `text`)은 `lang`과 상관없이 같아야 합니다. 바뀌는 건 `message`와 `reason`뿐입니다.
+  플레이그라운드가 매 수마다 확인합니다.
+- 글자는 언어별 표로 두면 편합니다. 상태에는 글자 대신 코드(`'king-trapped'`)를 두고, 화면에 보일 때 바꿉니다.
+
+```js
+const TEXT = {
+  ko: { won: '이겼습니다!', myTurn: '당신 차례' },
+  en: { won: 'You won!', myTurn: 'Your turn' },
+};
+view(state, player, lang) {
+  return { pieces, message: TEXT[lang].myTurn };
+}
+```
+
+- 로비는 접속한 나라가 한국이면 한국어, 그 밖이면 영어로 열립니다. 유저가 KR / EN을 직접 고르면 그 선택이 우선입니다.
+- 로비의 '지원 언어' 필터는 그 언어로 룰북이라도 있는 게임을, '게임 안 글자까지 번역된 것만'을 켜면 완전 번역 게임만 보여줍니다.
 
 ## 보드 (`board`)
 
@@ -51,7 +89,7 @@ export default {
 ## 화면 (`view`)
 
 ```js
-view(state, player) {
+view(state, player, lang) {
   return {
     pieces: [{ row: 3, col: 3, piece: 'black' }],
     marks:  [{ row: 3, col: 3, type: 'last-move' }, { row: 0, col: 0, type: 'blocked' }],
@@ -70,6 +108,7 @@ view(state, player) {
 | `danger` | 위험 (체크 등) |
 | `ghost` | 반투명 기물 (`piece` 필요) — "여기로 갈 것" 미리보기 |
 | `blocked` | 쓸 수 없는 칸 (어둡게) |
+| `frame` | 칸 테두리 (`color` 필요) — 목표 칸 같은 특별한 칸. 기물이 올라가도 보입니다 |
 
 ## 반드시 지킬 것
 

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>대전 · 보드마당</title>
+  <link rel="stylesheet" href="lobby.css">
+  <link rel="stylesheet" href="match.css">
+</head>
+<body class="page">
+  <!-- 글자는 web/i18n.js에 언어별로 있습니다. 여기 적힌 한국어는 스크립트가 돌기 전 잠깐 보이는 기본값입니다. -->
+  <header class="topbar">
+    <a class="logo" href="/web/">
+      <span class="logo-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span data-i18n="site.name">보드마당</span>
+    </a>
+    <nav class="menu" data-i18n-attr="aria-label:menu.label" aria-label="메뉴">
+      <a href="/web/" data-i18n="menu.games">게임</a>
+      <span class="soon" data-i18n="menu.ranking" data-i18n-attr="title:soon" title="준비 중">랭킹</span>
+      <a href="/web/register.html" data-i18n="menu.register">게임 등록</a>
+      <a href="/sdk/playground/" data-i18n="menu.playground">플레이그라운드</a>
+    </nav>
+    <div class="langs" role="group" data-i18n-attr="aria-label:lang.label" aria-label="화면 언어">
+      <button type="button" data-lang="ko" lang="ko">KR</button>
+      <button type="button" data-lang="en" lang="en">EN</button>
+    </div>
+    <span class="me" hidden></span>
+    <button class="login" type="button" disabled data-i18n="login" data-i18n-attr="title:soon" title="준비 중">로그인</button>
+  </header>
+
+  <main class="match">
+    <h1 id="title"></h1>
+
+    <!-- 대국이 시작되면 보입니다: 나 vs 상대 -->
+    <div id="players" class="players" hidden>
+      <span class="who"><i class="dot" id="my-dot"></i><b id="my-name"></b> <small id="my-seat"></small></span>
+      <span class="vs" aria-hidden="true">vs</span>
+      <span class="who"><i class="dot" id="opp-dot"></i><b id="opp-name"></b> <small id="opp-seat"></small></span>
+    </div>
+
+    <p id="status" class="match-status" role="status"></p>
+
+    <div id="board-wrap" class="board-wrap" hidden>
+      <canvas id="board"></canvas>
+      <p id="message" class="message"></p>
+    </div>
+
+    <div class="match-actions">
+      <span id="specials" class="specials"></span>
+      <button id="resign" class="btn ghost" type="button" data-i18n="match.resign" hidden>기권</button>
+      <button id="cancel" class="btn ghost" type="button" data-i18n="match.cancel" hidden>취소</button>
+      <button id="again" class="btn" type="button" data-i18n="match.again" hidden>다시 찾기</button>
+      <a id="to-lobby" class="btn ghost" href="/web/" data-i18n="match.toLobby">게임 목록</a>
+    </div>
+    <p id="note" class="match-note" hidden></p>
+  </main>
+
+  <script type="module" src="match.js"></script>
+</body>
+</html>

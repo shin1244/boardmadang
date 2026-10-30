@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>보드마당</title>
+  <link rel="stylesheet" href="lobby.css">
+</head>
+<body>
+  <!-- 글자는 web/i18n.js에 언어별로 있습니다. 여기 적힌 한국어는 스크립트가 돌기 전 잠깐 보이는 기본값입니다. -->
+  <div class="app">
+    <header class="topbar">
+      <a class="logo" href="/web/">
+        <span class="logo-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span data-i18n="site.name">보드마당</span>
+      </a>
+      <nav class="menu" data-i18n-attr="aria-label:menu.label" aria-label="메뉴">
+        <a href="/web/" aria-current="page" data-i18n="menu.games">게임</a>
+        <span class="soon" data-i18n="menu.ranking" data-i18n-attr="title:soon" title="준비 중">랭킹</span>
+        <a href="/web/register.html" data-i18n="menu.register">게임 등록</a>
+        <a href="/sdk/playground/" data-i18n="menu.playground">플레이그라운드</a>
+      </nav>
+      <div class="langs" role="group" data-i18n-attr="aria-label:lang.label" aria-label="화면 언어">
+        <button type="button" data-lang="ko" lang="ko">KR</button>
+        <button type="button" data-lang="en" lang="en">EN</button>
+      </div>
+      <span class="me" hidden></span>
+      <button class="login" type="button" disabled data-i18n="login" data-i18n-attr="title:soon" title="준비 중">로그인</button>
+    </header>
+
+    <section class="banner" data-i18n-attr="aria-label:banner.label" aria-label="이벤트">
+      <div id="slides" class="slides"></div>
+      <div id="dots" class="dots" role="tablist" data-i18n-attr="aria-label:banner.dots" aria-label="배너 선택"></div>
+    </section>
+
+    <div class="body">
+      <aside class="filters" data-i18n-attr="aria-label:filters.label" aria-label="필터">
+        <input id="q" class="search" type="search" data-i18n-attr="placeholder:search aria-label:search" placeholder="게임 이름 검색" aria-label="게임 이름 검색">
+
+        <fieldset>
+          <legend data-i18n="filter.places">놓는 자리</legend>
+          <label><input type="checkbox" name="places" value="cells"> <span data-i18n="places.cells">칸 안</span></label>
+          <label><input type="checkbox" name="places" value="points"> <span data-i18n="places.points">교차점</span></label>
+        </fieldset>
+
+        <fieldset>
+          <legend data-i18n="filter.size">판 크기</legend>
+          <label><input type="checkbox" name="size" value="small"> <span data-i18n="size.small">작음</span> <small data-i18n="size.small.hint">5줄 이하</small></label>
+          <label><input type="checkbox" name="size" value="medium"> <span data-i18n="size.medium">중간</span> <small data-i18n="size.medium.hint">6~10줄</small></label>
+          <label><input type="checkbox" name="size" value="large"> <span data-i18n="size.large">큼</span> <small data-i18n="size.large.hint">11줄 이상</small></label>
+        </fieldset>
+
+        <fieldset>
+          <legend data-i18n="filter.difficulty">난이도</legend>
+          <label><input type="checkbox" name="difficulty" value="easy"> <span data-i18n="difficulty.easy">하</span></label>
+          <label><input type="checkbox" name="difficulty" value="normal"> <span data-i18n="difficulty.normal">중</span></label>
+          <label><input type="checkbox" name="difficulty" value="hard"> <span data-i18n="difficulty.hard">상</span></label>
+        </fieldset>
+
+        <!-- 언어 이름은 화면 언어와 상관없이 그 언어로 씁니다. 언어 체크박스는 lobby.js가 LANGS로 채웁니다. -->
+        <fieldset id="support-langs">
+          <legend data-i18n="filter.lang">지원 언어</legend>
+          <label class="sub"><input type="checkbox" id="full-only" disabled> <span data-i18n="filter.fullOnly">게임 안 글자까지 번역된 것만</span></label>
+        </fieldset>
+
+        <button id="reset" class="link" type="button" data-i18n="reset">필터 초기화</button>
+      </aside>
+
+      <main class="list">
+        <div class="list-head">
+          <h1><span data-i18n="list.title">게임</span> <span id="count" class="count"></span></h1>
+          <label class="sort"><span data-i18n="sort">정렬</span>
+            <select id="sort">
+              <option value="name" data-i18n="sort.name">이름순</option>
+              <option value="size" data-i18n="sort.size">판 작은 순</option>
+              <option value="difficulty" data-i18n="sort.difficulty">쉬운 순</option>
+            </select>
+          </label>
+        </div>
+        <div id="grid" class="grid"></div>
+        <p id="empty" class="empty" hidden data-i18n="empty">조건에 맞는 게임이 없습니다.</p>
+      </main>
+    </div>
+  </div>
+
+  <dialog id="rulebook" class="rulebook" aria-labelledby="rulebook-title">
+    <header>
+      <h2 id="rulebook-title"></h2>
+      <form method="dialog"><button class="close" data-i18n-attr="aria-label:rulebook.close" aria-label="닫기">×</button></form>
+    </header>
+    <p class="rulebook-notes"></p>
+    <div class="rulebook-text"></div>
+  </dialog>
+
+  <script type="module" src="lobby.js"></script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+/* 대전 화면. 색과 상단 메뉴는 lobby.css를 같이 씁니다. */
+
+.match {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 28px 24px 64px;
+  text-align: center;
+}
+.match h1 { margin: 0 0 12px; font-size: 24px; }
+
+.players {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 8px;
+  font-size: 15px;
+}
+.players[hidden] { display: none; }
+.who { display: inline-flex; align-items: center; gap: 6px; }
+.who small { color: var(--muted); }
+.dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }
+.vs { color: var(--muted); font-size: 13px; }
+
+.match-status { min-height: 1.5em; margin: 0 0 14px; color: var(--muted); }
+.match-status.win { color: #2f8a52; font-size: 18px; font-weight: 700; }
+.match-status.lose { color: #c13f3f; font-size: 18px; font-weight: 700; }
+.match-status.even { color: var(--text); font-size: 18px; font-weight: 700; }
+.match-status.waiting::after {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 8px;
+  border: 2px solid var(--muted);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .match-status.waiting::after { animation: none; }
+}
+
+.board-wrap[hidden] { display: none; }
+.board-wrap canvas { display: block; margin: 0 auto; max-width: 100%; }
+.message { min-height: 1.5em; margin: 10px 0 0; font-weight: 600; }
+
+.match-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 18px; }
+.match-actions .btn { flex: none; padding: 8px 20px; }
+.match-actions [hidden] { display: none; }
+.specials { display: contents; }
+
+.match-note { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
+
+@media (prefers-color-scheme: dark) {
+  .match-status.win { color: #6cc98f; }
+  .match-status.lose { color: #ee8080; }
+}
+
+@media (max-width: 760px) {
+  .match { padding: 20px 16px 48px; }
+}

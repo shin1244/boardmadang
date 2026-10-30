@@ -1,0 +1,390 @@
+// 사이트 화면 글자 (한국어 / 영어). 로비와 등록창이 같이 씁니다.
+// 화면 언어는 유저가 고른 언어(이 브라우저에 저장) → 서버가 접속 나라로 고른 언어(/api/locale) 순서로 정합니다.
+
+const STRINGS = {
+  ko: {
+    'site.name': '보드마당',
+    'menu.label': '메뉴',
+    'menu.games': '게임',
+    'menu.ranking': '랭킹',
+    'menu.register': '게임 등록',
+    'menu.playground': '플레이그라운드',
+    'soon': '준비 중',
+    'login': '로그인',
+    'lang.label': '화면 언어',
+    'guest.name': '게스트 {tag}',
+    'guest.hint': '게스트는 게임 참여만 할 수 있습니다. 게임을 올리려면 계정이 필요합니다.',
+
+    'banner.label': '이벤트',
+    'banner.dots': '배너 선택',
+    'banner.n': '배너 {n}',
+    'banner.make.title': '내가 만든 보드게임을 올려보세요',
+    'banner.make.body': '규칙만 쓰면 보드 그리기, 온라인 대전, AI 상대는 보드마당이 맡습니다.',
+    'banner.make.cta': '게임 만들기',
+    'banner.soon.title': '오픈 준비 중',
+    'banner.soon.body': '지금은 플레이그라운드에서 두 플레이어를 혼자 번갈아 둬볼 수 있습니다.',
+
+    'filters.label': '필터',
+    'search': '게임 이름 검색',
+    'filter.places': '놓는 자리',
+    'places.cells': '칸 안',
+    'places.points': '교차점',
+    'filter.size': '판 크기',
+    'size.small': '작음',
+    'size.small.hint': '5줄 이하',
+    'size.medium': '중간',
+    'size.medium.hint': '6~10줄',
+    'size.large': '큼',
+    'size.large.hint': '11줄 이상',
+    'filter.difficulty': '난이도',
+    'difficulty.easy': '하',
+    'difficulty.normal': '중',
+    'difficulty.hard': '상',
+    'filter.lang': '지원 언어',
+    'filter.fullOnly': '게임 안 글자까지 번역된 것만',
+    'reset': '필터 초기화',
+    'list.title': '게임',
+    'sort': '정렬',
+    'sort.name': '이름순',
+    'sort.size': '판 작은 순',
+    'sort.difficulty': '쉬운 순',
+    'empty': '조건에 맞는 게임이 없습니다.',
+    'load.failed': '게임 목록을 불러오지 못했습니다: {msg}',
+
+    'card.failed': '불러오지 못했습니다: {msg}',
+    'card.try': '혼자 둬보기',
+    'card.try.label': '{name} 둬보기',
+    'card.match': '대전 찾기',
+    'card.rulebook': '룰북',
+    'card.private': '비공개',
+    'card.private.title': 'games/private에 있는 게임입니다. 깃허브에 올라가지 않습니다.',
+    'card.unregistered': '미등록',
+    'card.unregistered.desc': '아직 등록 정보(이름, 소개, 룰북)가 없습니다.',
+    'card.register': '등록하기',
+    'tag.cells': '칸',
+    'tag.points': '교차점',
+    'tag.players': '2인',
+    'tag.difficulty': '난이도 {d}',
+    'tag.special': '특수 행동 {n}',
+    'tag.lang.full': '{lang} 완전 번역',
+    'tag.lang.rulebook': '{lang} 일부 번역',
+    'tag.rulebookOnly': '{code} 룰북',
+
+    'rulebook.title': '{name} 룰북',
+    'rulebook.fallback': '{ui} 룰북이 없어 {lang} 룰북을 보여줍니다.',
+    'rulebook.ingame': '게임 안 글자는 {lang}로 나옵니다.',
+    'rulebook.close': '닫기',
+
+    'match.title': '대전',
+    'match.loading': '게임을 불러오는 중…',
+    'match.connecting': '대전 서버에 연결하는 중…',
+    'match.waiting': '상대를 찾는 중… 다른 사람이 이 게임에서 대전 찾기를 누르면 시작합니다.',
+    'match.reporting': '결과를 확인하는 중…',
+    'match.you': '나',
+    'match.first': '선공',
+    'match.second': '후공',
+    'match.win': '이겼습니다!',
+    'match.lose': '졌습니다',
+    'match.draw': '무승부',
+    'match.void': '무효 처리된 대국입니다',
+    'match.reason.maxActions': '행동 수 상한(maxActions)에 닿아 무승부입니다.',
+    'match.reason.resign.me': '기권했습니다.',
+    'match.reason.resign.opp': '상대가 기권했습니다.',
+    'match.reason.left': '상대의 연결이 끊긴 뒤 돌아오지 않았습니다.',
+    'match.reason.desync': '두 사람의 판이 달라졌습니다. 게임 코드가 결정적이지 않을 수 있습니다.',
+    'match.reason.disagree': '두 사람의 결과 보고가 달랐습니다.',
+    'match.reason.spam.me': '둘 수 없는 행동을 너무 많이 보냈습니다.',
+    'match.reason.spam.opp': '상대가 둘 수 없는 행동을 너무 많이 보냈습니다.',
+    'match.reason.limit': '행동 기록이 상한에 닿았습니다.',
+    'match.resign': '기권',
+    'match.resign.confirm': '기권할까요? 상대가 이깁니다.',
+    'match.cancel': '취소',
+    'match.cancelled': '대전 찾기를 취소했습니다.',
+    'match.again': '다시 찾기',
+    'match.toLobby': '게임 목록',
+    'match.noServer': '대전 서버에 연결하지 못했습니다. 잠시 뒤 다시 시도하세요.',
+    'match.disconnected': '연결이 끊겼습니다.',
+    'match.reconnecting': '연결이 끊겼습니다. 다시 연결하는 중… ({s}초)',
+    'match.lostConnection': '다시 연결하지 못했습니다. 상대가 이긴 것으로 처리됩니다.',
+    'match.oppAway': '상대의 연결이 끊겼습니다. {s}초 안에 돌아오지 않으면 이깁니다.',
+    'match.noGame': '게임을 찾지 못했습니다: {id}',
+    'match.loadFailed': '게임을 불러오지 못했습니다: {msg}',
+    'match.serverError': '서버가 요청을 거절했습니다: {msg}',
+
+    'register.title': '게임 등록',
+    'register.lead': '게임 코드에는 규칙만 둡니다. 이름, 소개, 룰북, 난이도, 지원 언어는 여기서 입력하고, 코드를 다시 올리지 않아도 고칠 수 있습니다.',
+    'register.game': '게임',
+    'register.game.hint': '개발 서버에서는 games/ 폴더에 있는 게임을 고릅니다. 실제 사이트에서는 여기서 게임 코드 파일을 올립니다.',
+    'register.status.new': '아직 등록하지 않은 게임입니다.',
+    'register.status.saved': '등록된 게임입니다. 고쳐서 저장하면 로비에 바로 반영됩니다.',
+    'register.status.broken': 'listing.json을 읽지 못했습니다: {msg}',
+    'register.noGames': '게임이 없습니다. games/ 폴더에 게임을 먼저 만드세요.',
+    'register.difficulty': '난이도',
+    'difficulty.easy.hint': '몇 분이면 규칙을 익힙니다',
+    'difficulty.normal.hint': '몇 판 둬봐야 익숙해집니다',
+    'difficulty.hard.hint': '규칙이 많거나 깊이 생각해야 합니다',
+    'register.langs': '지원 언어',
+    'register.langs.lead': '번역한 언어를 눌러 추가하세요. 완전 번역 언어가 하나 이상 있어야 합니다.',
+    'support.rulebook': '일부 번역',
+    'support.rulebook.short': '(이름, 소개, 룰북)',
+    'support.rulebook.hint': '이름, 소개, 룰북만 이 언어로 씁니다. 게임 안 글자는 완전 번역 언어로 나옵니다.',
+    'support.full': '완전 번역',
+    'support.full.short': '(게임 안 글자까지)',
+    'support.full.hint': '게임 안 글자(안내 문구, 승패 이유)까지 이 언어로 나옵니다. 게임 코드에서 직접 번역해야 합니다.',
+    'register.step1': '게임과 언어',
+    'register.step2': '설명 글',
+    'register.next': '다음',
+    'register.back': '이전',
+    'register.texts': '설명 글',
+    'register.texts.lead': '고른 언어마다 이름, 한 줄 소개, 룰북을 쓰세요.',
+    'field.name': '이름',
+    'field.description': '한 줄 소개',
+    'field.rulebook': '룰북',
+    'field.rulebook.hint': '빈 줄로 문단을 나눕니다.',
+    'register.code.title': '게임 안 글자는 직접 번역합니다',
+    'register.code.body': '완전 번역 언어마다 게임 코드의 view(state, player, lang)과 result(state, lang)가 그 언어 글자를 돌려줘야 합니다. 플랫폼은 완전 번역 언어만 lang으로 넘깁니다.',
+    'register.code.try': '플레이그라운드에서 언어별로 확인하기',
+    'register.save': '저장',
+    'register.saving': '저장 중…',
+    'register.saved': '저장했습니다.',
+    'register.toLobby': '로비에서 보기',
+    'register.failed': '저장하지 못했습니다: {msg}',
+    'register.problems': '고칠 곳이 있습니다',
+    'register.discard': '저장하지 않은 내용이 사라집니다. 다른 게임으로 바꿀까요?',
+    'register.needAccount.title': '게임 업로드는 계정이 필요합니다',
+    'register.needAccount.body': '게스트는 게임에 참여만 할 수 있습니다. 로그인 기능은 준비 중입니다.',
+    'register.needAccount.back': '게임 목록으로',
+    'register.memberOnly': '계정만 저장할 수 있습니다.',
+    'problem.languages.none': '지원 언어를 하나 이상 고르세요.',
+    'problem.languages.needFull': '완전 번역 언어가 하나 이상 있어야 합니다. 게임 안 글자를 보여줄 언어가 필요합니다.',
+    'problem.languages.invalid': '모르는 언어나 지원 수준이 들어 있습니다.',
+    'problem.difficulty.invalid': '난이도를 고르세요.',
+    'problem.text.missing': '{lang} {field} 칸이 비어 있습니다.',
+    'problem.text.tooLong': '{lang} {field} 칸은 {max}자까지 쓸 수 있습니다.',
+  },
+  en: {
+    'site.name': 'Boardmadang',
+    'menu.label': 'Menu',
+    'menu.games': 'Games',
+    'menu.ranking': 'Ranking',
+    'menu.register': 'Register a game',
+    'menu.playground': 'Playground',
+    'soon': 'Coming soon',
+    'login': 'Log in',
+    'lang.label': 'Language',
+    'guest.name': 'Guest {tag}',
+    'guest.hint': 'Guests can only play. You need an account to upload games.',
+
+    'banner.label': 'Events',
+    'banner.dots': 'Choose banner',
+    'banner.n': 'Banner {n}',
+    'banner.make.title': 'Upload a board game you made',
+    'banner.make.body': 'Write the rules. Boardmadang handles the board, online matches, and AI opponents.',
+    'banner.make.cta': 'Make a game',
+    'banner.soon.title': 'Opening soon',
+    'banner.soon.body': 'For now, you can play both sides yourself in the playground.',
+
+    'filters.label': 'Filters',
+    'search': 'Search games',
+    'filter.places': 'Placement',
+    'places.cells': 'In cells',
+    'places.points': 'On intersections',
+    'filter.size': 'Board size',
+    'size.small': 'Small',
+    'size.small.hint': '5 lines or fewer',
+    'size.medium': 'Medium',
+    'size.medium.hint': '6–10 lines',
+    'size.large': 'Large',
+    'size.large.hint': '11+ lines',
+    'filter.difficulty': 'Difficulty',
+    'difficulty.easy': 'Easy',
+    'difficulty.normal': 'Normal',
+    'difficulty.hard': 'Hard',
+    'filter.lang': 'Language',
+    'filter.fullOnly': 'In-game text translated too',
+    'reset': 'Reset filters',
+    'list.title': 'Games',
+    'sort': 'Sort',
+    'sort.name': 'Name',
+    'sort.size': 'Smallest board',
+    'sort.difficulty': 'Easiest first',
+    'empty': 'No games match these filters.',
+    'load.failed': "Couldn't load the game list: {msg}",
+
+    'card.failed': "Couldn't load: {msg}",
+    'card.try': 'Try solo',
+    'card.try.label': 'Try {name}',
+    'card.match': 'Find a match',
+    'card.rulebook': 'Rulebook',
+    'card.private': 'Private',
+    'card.private.title': 'This game is in games/private and is never pushed to GitHub.',
+    'card.unregistered': 'Unregistered',
+    'card.unregistered.desc': 'No listing yet (name, description, rulebook).',
+    'card.register': 'Register',
+    'tag.cells': 'Cells',
+    'tag.points': 'Intersections',
+    'tag.players': '2 players',
+    'tag.difficulty': '{d}',
+    'tag.special': '{n} special actions',
+    'tag.lang.full': 'Full {lang} translation',
+    'tag.lang.rulebook': 'Partial {lang} translation',
+    'tag.rulebookOnly': '{code} rulebook',
+
+    'rulebook.title': '{name} rulebook',
+    'rulebook.fallback': 'There is no {ui} rulebook, so this is the {lang} one.',
+    'rulebook.ingame': 'In-game text appears in {lang}.',
+    'rulebook.close': 'Close',
+
+    'match.title': 'Match',
+    'match.loading': 'Loading the game…',
+    'match.connecting': 'Connecting to the match server…',
+    'match.waiting': 'Looking for an opponent… The match starts when someone else finds a match for this game.',
+    'match.reporting': 'Checking the result…',
+    'match.you': 'you',
+    'match.first': 'first',
+    'match.second': 'second',
+    'match.win': 'You won!',
+    'match.lose': 'You lost',
+    'match.draw': 'Draw',
+    'match.void': 'This match was voided',
+    'match.reason.maxActions': 'The action limit (maxActions) was reached, so it is a draw.',
+    'match.reason.resign.me': 'You resigned.',
+    'match.reason.resign.opp': 'Your opponent resigned.',
+    'match.reason.left': 'Your opponent disconnected and did not come back.',
+    'match.reason.desync': "The two boards stopped matching. The game code may not be deterministic.",
+    'match.reason.disagree': 'The two players reported different results.',
+    'match.reason.spam.me': 'You sent too many moves that could not be played.',
+    'match.reason.spam.opp': 'Your opponent sent too many moves that could not be played.',
+    'match.reason.limit': 'The move log reached its limit.',
+    'match.resign': 'Resign',
+    'match.resign.confirm': 'Resign? Your opponent will win.',
+    'match.cancel': 'Cancel',
+    'match.cancelled': 'You stopped looking for a match.',
+    'match.again': 'Find another',
+    'match.toLobby': 'Back to games',
+    'match.noServer': "Couldn't connect to the match server. Try again in a moment.",
+    'match.disconnected': 'Disconnected.',
+    'match.reconnecting': 'Connection lost. Reconnecting… ({s}s)',
+    'match.lostConnection': "Couldn't reconnect. Your opponent wins.",
+    'match.oppAway': "Your opponent disconnected. You win if they aren't back in {s}s.",
+    'match.noGame': "Couldn't find the game: {id}",
+    'match.loadFailed': "Couldn't load the game: {msg}",
+    'match.serverError': 'The server rejected the request: {msg}',
+
+    'register.title': 'Register a game',
+    'register.lead': "Your game code holds only the rules. Enter the name, description, rulebook, difficulty, and languages here. You can change them later without re-uploading the code.",
+    'register.game': 'Game',
+    'register.game.hint': 'On the dev server, pick a game from the games/ folder. On the real site, you upload your game code here.',
+    'register.status.new': 'This game has not been registered yet.',
+    'register.status.saved': 'Registered. Saved changes show up in the lobby right away.',
+    'register.status.broken': "Couldn't read listing.json: {msg}",
+    'register.noGames': 'No games found. Make a game in the games/ folder first.',
+    'register.difficulty': 'Difficulty',
+    'difficulty.easy.hint': 'Rules take a few minutes to learn',
+    'difficulty.normal.hint': 'Takes a few games to get comfortable',
+    'difficulty.hard.hint': 'Many rules or lots of thinking',
+    'register.langs': 'Languages',
+    'register.langs.lead': 'Click a language to add it. At least one language needs a full translation.',
+    'support.rulebook': 'Partial translation',
+    'support.rulebook.short': '(name, description, rulebook)',
+    'support.rulebook.hint': 'Only the name, description, and rulebook are in this language. In-game text appears in a fully translated language.',
+    'support.full': 'Full translation',
+    'support.full.short': '(including in-game text)',
+    'support.full.hint': 'In-game text (prompts, win reasons) also appears in this language. You translate it yourself in the game code.',
+    'register.step1': 'Game and languages',
+    'register.step2': 'Listing text',
+    'register.next': 'Next',
+    'register.back': 'Back',
+    'register.texts': 'Listing text',
+    'register.texts.lead': 'For each language you chose, write the name, a short description, and the rulebook.',
+    'field.name': 'Name',
+    'field.description': 'Short description',
+    'field.rulebook': 'Rulebook',
+    'field.rulebook.hint': 'Separate paragraphs with a blank line.',
+    'register.code.title': 'You translate in-game text yourself',
+    'register.code.body': 'For each fully translated language, view(state, player, lang) and result(state, lang) in your game code must return text in that language. The platform only passes fully translated languages as lang.',
+    'register.code.try': 'Check each language in the playground',
+    'register.save': 'Save',
+    'register.saving': 'Saving…',
+    'register.saved': 'Saved.',
+    'register.toLobby': 'View in lobby',
+    'register.failed': "Couldn't save: {msg}",
+    'register.problems': 'Please fix the following',
+    'register.discard': 'Unsaved changes will be lost. Switch to another game?',
+    'register.needAccount.title': 'You need an account to upload games',
+    'register.needAccount.body': 'Guests can only play games. Log in is coming soon.',
+    'register.needAccount.back': 'Back to games',
+    'register.memberOnly': 'Only accounts can save.',
+    'problem.languages.none': 'Choose at least one language.',
+    'problem.languages.needFull': 'At least one language needs a full translation, so in-game text has a language to appear in.',
+    'problem.languages.invalid': 'Contains an unknown language or support level.',
+    'problem.difficulty.invalid': 'Choose a difficulty.',
+    'problem.text.missing': '{lang}: {field} is empty.',
+    'problem.text.tooLong': '{lang}: {field} can be at most {max} characters.',
+  },
+};
+
+const KEY = 'boardmadang.lang';
+
+export let lang = 'ko';
+
+/** 화면 글자. {이름} 자리는 vars로 채웁니다. */
+export function t(key, vars = {}) {
+  const s = STRINGS[lang][key] ?? STRINGS.ko[key] ?? key;
+  return s.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ''));
+}
+
+/** 유저가 고른 언어가 없으면 서버에 접속 나라 기준 언어를 물어봅니다. */
+export async function detectLang() {
+  try {
+    const saved = localStorage.getItem(KEY);
+    if (saved && STRINGS[saved]) return saved;
+  } catch {
+    // 저장소를 못 쓰는 브라우저면 서버 판단을 씁니다.
+  }
+  try {
+    const res = await fetch('/api/locale');
+    const { lang: l } = await res.json();
+    if (STRINGS[l]) return l;
+  } catch {
+    // 서버가 모르면 브라우저 언어로
+  }
+  return navigator.language?.toLowerCase().startsWith('ko') ? 'ko' : 'en';
+}
+
+/** @param {string} l @param {{ save?: boolean }} [opts] save는 유저가 직접 골랐을 때만 */
+export function setLang(l, { save = false } = {}) {
+  lang = STRINGS[l] ? l : 'ko';
+  document.documentElement.lang = lang;
+  if (save) {
+    try { localStorage.setItem(KEY, lang); } catch { /* 저장 못 해도 이번 화면에는 적용됩니다 */ }
+  }
+}
+
+/**
+ * HTML에 적힌 글자를 바꿉니다.
+ *   data-i18n="key"                      → 글자
+ *   data-i18n-attr="placeholder:key ..." → 속성
+ * @param {string} [titleKey] 탭 제목에 쓸 글자 (사이트 이름 앞에 붙습니다)
+ */
+export function applyStatic(titleKey) {
+  for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
+  for (const el of document.querySelectorAll('[data-i18n-attr]')) {
+    for (const pair of el.dataset.i18nAttr.split(/\s+/)) {
+      const [attr, key] = pair.split(':');
+      el.setAttribute(attr, t(key));
+    }
+  }
+  for (const b of document.querySelectorAll('.langs button')) b.setAttribute('aria-pressed', String(b.dataset.lang === lang));
+  document.title = titleKey ? `${t(titleKey)} · ${t('site.name')}` : t('site.name');
+}
+
+/** 상단 KR / EN 버튼. 누르면 저장하고 onChange로 화면을 다시 그리게 합니다. */
+export function setupLangButtons(onChange) {
+  for (const b of document.querySelectorAll('.langs button')) {
+    b.addEventListener('click', () => {
+      setLang(b.dataset.lang, { save: true });
+      onChange();
+    });
+  }
+}

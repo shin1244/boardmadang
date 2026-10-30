@@ -9,6 +9,13 @@ const LINES = [
 
 const PIECE = ['x', 'o'];
 
+// 게임 안 글자. 등록창에서 '완전 번역'으로 고른 언어마다 직접 번역해 둡니다.
+// 플랫폼은 그 언어 중 하나를 lang으로 넘겨줍니다.
+const TEXT = {
+  ko: { line: '세 줄 완성', full: '판이 가득 참', myTurn: '당신 차례', theirTurn: '상대 차례', draw: '무승부', won: '이겼습니다!', lost: '졌습니다' },
+  en: { line: 'Three in a row', full: 'Board is full', myTurn: 'Your turn', theirTurn: "Opponent's turn", draw: 'Draw', won: 'You won!', lost: 'You lost' },
+};
+
 /** @typedef {{ board: (0 | 1 | null)[], turn: 0 | 1, last: number | null }} State */
 
 /** 세 개가 이어진 줄. 없으면 null */
@@ -21,10 +28,10 @@ function setup() {
   return { board: Array(9).fill(null), turn: 0, last: null };
 }
 
-function result(state) {
+function result(state, lang = 'ko') {
   const line = winningLine(state.board);
-  if (line) return { winner: state.board[line[0]], reason: '세 줄 완성' };
-  if (state.board.every((c) => c !== null)) return { winner: null, reason: '판이 가득 참' };
+  if (line) return { winner: state.board[line[0]], reason: TEXT[lang].line };
+  if (state.board.every((c) => c !== null)) return { winner: null, reason: TEXT[lang].full };
   return null;
 }
 
@@ -54,7 +61,7 @@ function legal(state, player) {
   return actions;
 }
 
-function view(state, player) {
+function view(state, player, lang = 'ko') {
   const pieces = [];
   state.board.forEach((c, i) => {
     if (c !== null) pieces.push({ row: Math.floor(i / 3), col: i % 3, piece: PIECE[c] });
@@ -72,10 +79,11 @@ function view(state, player) {
   }
 
   const r = result(state);
+  const text = TEXT[lang];
   let message;
-  if (!r) message = state.turn === player ? '당신 차례' : '상대 차례';
-  else if (r.winner === null) message = '무승부';
-  else message = r.winner === player ? '이겼습니다!' : '졌습니다';
+  if (!r) message = state.turn === player ? text.myTurn : text.theirTurn;
+  else if (r.winner === null) message = text.draw;
+  else message = r.winner === player ? text.won : text.lost;
 
   return { pieces, marks, tint, message };
 }
@@ -83,7 +91,6 @@ function view(state, player) {
 /** @type {import('../../sdk/game').Game<State>} */
 export default {
   id: 'tictactoe',
-  name: '틱택토',
   board: { places: 'cells', rows: 3, cols: 3, look: 'plain' },
   pieces: 'xo',
   maxActions: 9,

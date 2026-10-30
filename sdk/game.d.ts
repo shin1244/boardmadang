@@ -37,12 +37,16 @@ export interface BoardConfig {
  * - last-move: 마지막 수      - danger: 위험 (체크 등)
  * - ghost: 반투명 기물 (piece 필요)
  * - blocked: 아직/영원히 쓸 수 없는 칸 (어둡게)
+ * - frame: 칸 테두리 (color 필요) — 목표 칸, 진영 같은 "특별한 칸" 표시
  */
-export type MarkType = 'dot' | 'ring' | 'last-move' | 'danger' | 'ghost' | 'blocked';
+export type MarkType = 'dot' | 'ring' | 'last-move' | 'danger' | 'ghost' | 'blocked' | 'frame';
 
 export interface Mark extends Cell {
   type: MarkType;
+  /** ghost에 그릴 기물 */
   piece?: string;
+  /** frame의 색. 0 / 1이면 플랫폼이 정한 플레이어 색, 문자열이면 '#rrggbb' */
+  color?: Player | string;
 }
 
 /** 화면에 보일 것. 그리는 건 플랫폼이 합니다. */
@@ -71,10 +75,42 @@ export interface Rng {
   int(n: number): number;
 }
 
+/** 플랫폼이 지원하는 언어 */
+export type Lang = 'ko' | 'en';
+
+/** 언어별 글자 */
+export type Localized = Partial<Record<Lang, string>>;
+
+/** 하, 중, 상 */
+export type Difficulty = 'easy' | 'normal' | 'hard';
+
+/**
+ * 언어별 지원 수준.
+ * - full: 완전 번역. 소개, 룰북, 게임 안 글자(view의 message, result의 reason)까지 그 언어로 나옵니다.
+ *   게임 안 글자는 제작자가 직접 번역합니다.
+ * - rulebook: 일부 번역. 소개와 룰북만 그 언어로 쓰고, 게임 안 글자는 완전 번역 언어로 나옵니다.
+ */
+export type Support = 'full' | 'rulebook';
+
+/**
+ * 등록 정보. 게임 코드에 넣지 않고 등록창에서 입력합니다 (개발 서버는 games/<id>/listing.json).
+ * 코드를 다시 올리지 않아도 소개, 룰북, 번역을 고칠 수 있습니다.
+ */
+export interface Listing {
+  /** 지원하는 언어와 수준. 완전 번역 언어가 하나 이상 있어야 합니다. */
+  languages: Partial<Record<Lang, Support>>;
+  difficulty: Difficulty;
+  /** 아래 셋은 지원하는 언어마다 씁니다. */
+  name: Localized;
+  /** 게임 목록에 보일 한두 줄 소개 */
+  description: Localized;
+  /** 규칙 설명. 빈 줄로 문단을 나눕니다. */
+  rulebook: Localized;
+}
+
 export interface Game<S> {
   /** 영문 소문자 id (URL에 쓰입니다) */
   id: string;
-  name: string;
   board: BoardConfig;
   /** 내장 기물 세트 이름, 또는 이 게임이 쓰는 기물 id 목록 (AI 관측 채널이 됩니다) */
   pieces: 'chess' | 'go-stones' | 'xo' | string[];
@@ -95,11 +131,15 @@ export interface Game<S> {
    */
   play(state: S, player: Player, action: Action): S;
 
-  /** 끝났으면 결과, 진행 중이면 null */
-  result(state: S): Result | null;
+  /**
+   * 끝났으면 결과, 진행 중이면 null. reason은 lang으로 씁니다. 승자는 lang과 상관없이 같아야 합니다.
+   * lang은 등록창에서 '완전 번역'으로 고른 언어 중 하나입니다. 유저 화면 언어를 완전 번역하지 않으면
+   * 첫 번째 완전 번역 언어가 옵니다.
+   */
+  result(state: S, lang: Lang): Result | null;
 
-  /** 이 플레이어 화면에 보일 것 */
-  view(state: S, player: Player): View;
+  /** 이 플레이어 화면에 보일 것. message 같은 글자는 lang으로 씁니다 (result와 같은 규칙). 그 밖의 내용은 lang과 상관없이 같아야 합니다. */
+  view(state: S, player: Player, lang: Lang): View;
 
   /** (선택) 지금 둘 수 있는 행동 목록. AI 학습의 행동 마스크와 호버 표시에 쓰입니다. */
   legal?(state: S, player: Player): Action[];

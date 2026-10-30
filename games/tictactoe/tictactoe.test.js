@@ -72,3 +72,12 @@ test('랜덤 대국은 항상 9수 안에 끝나고, 상태는 JSON으로 왕복
     assert.ok(n <= 9);
   }
 });
+
+test('게임 안 글자는 lang으로 나오고, 승자와 판은 lang과 상관없다', () => {
+  const s = replay([[0, 0, 0], [1, 1, 0], [0, 0, 1], [1, 1, 1], [0, 0, 2]]);
+  assert.deepEqual(game.result(s, 'en'), { winner: 0, reason: 'Three in a row' });
+  assert.equal(game.view(s, 0, 'en').message, 'You won!');
+  const { message: _ko, ...ko } = game.view(s, 1, 'ko');
+  const { message: _en, ...en } = game.view(s, 1, 'en');
+  assert.deepEqual(ko, en);
+});

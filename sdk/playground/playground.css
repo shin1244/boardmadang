@@ -51,7 +51,8 @@ small { color: var(--muted); font-weight: normal; font-size: 13px; }
 .meta { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
 
 .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.controls input {
+.controls input,
+.controls select {
   width: 120px;
   padding: 6px 8px;
   border: 1px solid var(--border);

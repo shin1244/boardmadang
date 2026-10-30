@@ -33,3 +33,14 @@ func TestDrawResultHasNullWinner(t *testing.T) {
 		t.Fatalf("draw should send winner:null, got %s", data)
 	}
 }
+
+// 상대 정보에는 id가 없어야 합니다. 게스트는 이름도 보내지 않습니다.
+func TestMatchedOpponentHasNoID(t *testing.T) {
+	data, _ := json.Marshal(Matched{Type: TypeMatched, Opponent: PlayerInfo{Kind: "guest", Tag: "4821"}})
+	if strings.Contains(string(data), `"id"`) || strings.Contains(string(data), `"name"`) {
+		t.Fatalf("opponent leaks id or empty name: %s", data)
+	}
+	if !strings.Contains(string(data), `"opponent":{"kind":"guest","tag":"4821"}`) {
+		t.Fatalf("unexpected opponent: %s", data)
+	}
+}

@@ -150,7 +150,7 @@ export class BoardView {
     for (const t of view.tint ?? []) {
       const color = typeof t.color === 'number' ? PLAYER_COLORS[t.color] : t.color;
       const [x, y] = at(t.row, t.col);
-      ctx.globalAlpha = 0.3;
+      ctx.globalAlpha = 0.55;
       ctx.fillStyle = color;
       if (this.points) {
         this.circle(x, y, S * 0.48);
@@ -172,6 +172,15 @@ export class BoardView {
       const [x, y] = at(m.row, m.col);
       ctx.fillStyle = 'rgba(25, 25, 25, 0.55)';
       ctx.fillRect(x - S / 2, y - S / 2, S, S);
+    }
+    // 테두리: 칸 가장자리를 따라 굵게. 교차점 모드는 점 둘레의 사각형입니다.
+    const frameW = Math.max(3, Math.round(S * 0.09));
+    for (const m of marksOf('frame')) {
+      const [x, y] = at(m.row, m.col);
+      ctx.strokeStyle = typeof m.color === 'number' ? PLAYER_COLORS[m.color] : (m.color ?? '#333');
+      ctx.lineWidth = frameW;
+      const half = this.points ? S * 0.42 : S / 2 - frameW / 2;
+      ctx.strokeRect(x - half, y - half, half * 2, half * 2);
     }
     if (hover) {
       const [x, y] = at(hover.row, hover.col);
@@ -202,9 +211,10 @@ export class BoardView {
         const d = S * 0.16;
         ctx.fillRect(x - d / 2, y - d / 2, d, d);
       } else {
+        const inset = frameW + 3;
         ctx.strokeStyle = '#e0a800';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(x - S / 2 + 3, y - S / 2 + 3, S - 6, S - 6);
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(x - S / 2 + inset, y - S / 2 + inset, S - inset * 2, S - inset * 2);
       }
     }
     for (const m of marksOf('ring')) {

@@ -6,8 +6,8 @@
 제작자는 게임 규칙만 씁니다. 보드 그리기, 매칭, 네트워크, 화면 뒤집기,
 AI 학습은 전부 플랫폼이 합니다.
 
-> 지금은 아키텍처 뼈대 단계입니다. 서버는 `/healthz`만 동작하고,
-> 나머지는 `TODO`로 표시돼 있습니다.
+> 지금은 초기 단계입니다. 게스트 신원, 매칭, 행동 중계까지 동작합니다.
+> 로그인, 기록 저장은 `TODO`로 표시돼 있습니다.
 
 ## 핵심 아이디어
 
@@ -41,7 +41,7 @@ sdk/       게임 API 명세와 타입, 나중에 로컬 실행기         (MIT)
 games/     예제 게임: 틱택토, 바둑, 체스                    (MIT)
 trainer/   (예정) AlphaZero 방식 AI 학습 파이프라인
 docs/      설계 문서
-web/       (예정) 프론트엔드: 범용 보드 렌더러, 로비       (AGPL-3.0)
+web/       프론트엔드: 로비(게임 목록), 게임 등록창, 대전 화면         (AGPL-3.0)
 ```
 
 ## 실행
@@ -57,16 +57,40 @@ curl http://localhost:8080/healthz
 
 설정은 환경변수로 합니다. [.env.example](.env.example)을 참고하세요.
 
-게임을 만들고 있다면 서버 없이 [플레이그라운드](sdk/README.md#내-컴퓨터에서-돌려보기-플레이그라운드)로 바로 둬볼 수 있습니다.
+로비(게임 목록)와 [플레이그라운드](sdk/README.md#내-컴퓨터에서-돌려보기-플레이그라운드)는 Go 서버 없이 개발 서버로 띄웁니다.
 
 ```bash
 node sdk/playground/serve.js
 ```
 
+온라인 대전까지 해보려면 Go 서버를 같이 켭니다. 개발 서버가 `/ws`와 `/api/me`를 Go 서버로 넘기므로
+브라우저는 http://localhost:5173 하나만 씁니다. 같은 브라우저의 탭 두 개로 대전 찾기를 누르면 서로 매칭됩니다.
+
+```bash
+cd server && go run ./cmd/server
+```
+
+8080 포트를 다른 프로그램이 쓰고 있으면 Go 서버의 포트를 바꾸고 개발 서버에 알려줍니다.
+
+```bash
+cd server && PORT=8081 go run ./cmd/server
+```
+
+```bash
+GO_SERVER=http://localhost:8081 node sdk/playground/serve.js
+```
+
+- 로비: http://localhost:5173
+- 플레이그라운드: http://localhost:5173/sdk/playground/?game=tictactoe
+- 게임 등록: http://localhost:5173/web/register.html (이름, 룰북, 난이도, 지원 언어를 `games/<id>/listing.json`에 저장)
+
+로비는 `games/`와 `games/private/`에 있는 게임을 자동으로 보여줍니다. 카드의 '혼자 둬보기'는 플레이그라운드를,
+'대전 찾기'는 대전 화면(`web/match.html`)을 엽니다.
+
 ## 라이선스
 
 - `sdk/`, `games/`: **MIT** — 게임 제작자가 제약 없이 씁니다.
-- 그 외 전부(`server/`, 앞으로의 `web/`, `trainer/`): **AGPL-3.0** — 수정해서 서비스로 운영하면 수정본도 공개해야 합니다.
+- 그 외 전부(`server/`, `web/`, 앞으로의 `trainer/`): **AGPL-3.0** — 수정해서 서비스로 운영하면 수정본도 공개해야 합니다.
 
 **올린 게임은 AGPL이 되지 않습니다.** 게임의 라이선스는 제작자가 정하며, 이를 AGPL 7조의
 추가 허가로 명시해 두었습니다. 자세한 내용은 [LICENSING.md](LICENSING.md)를 보세요.
