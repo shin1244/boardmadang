@@ -1,46 +1,49 @@
-// 새 게임 틀. 틱택토에서 시작합니다. 규칙을 바꿔 나만의 게임으로 만드세요.
-// 게임 API: https://github.com/shin1244/boardmadang/blob/main/sdk/README.md
-//   npx boardmadang dev     혼자 양쪽을 둬보고, 「썸네일로」로 게임 목록에 보일 판을 찍습니다
-//   npx boardmadang check   업로드할 때와 같은 검사
-//   npx boardmadang pack    올릴 zip 만들기
-// 판은 칸 9개짜리 배열입니다. board[row * 3 + col] = null(빈칸) | 0 | 1
+// Your new game. It starts as tic-tac-toe: change the rules to make it yours.
+// Guide: https://github.com/shin1244/boardmadang/blob/main/sdk/README.md
+//   npx boardmadang dev     play both sides, and save a thumbnail for the game list
+//   npx boardmadang check   run the same checks as the upload
+//   npx boardmadang pack    make the zip to upload
 
 const LINES = [
-  [0, 1, 2], [3, 4, 5], [6, 7, 8], // 가로
-  [0, 3, 6], [1, 4, 7], [2, 5, 8], // 세로
-  [0, 4, 8], [2, 4, 6],            // 대각선
+  [0, 1, 2], [3, 4, 5], [6, 7, 8], // rows
+  [0, 3, 6], [1, 4, 7], [2, 5, 8], // columns
+  [0, 4, 8], [2, 4, 6],            // diagonals
 ];
 
 const PIECE = ['x', 'o'];
 
-// 게임 안 글자. 등록창에서 '완전 번역'으로 고른 언어마다 직접 번역해 둡니다.
-// 플랫폼은 그 언어 중 하나를 lang으로 넘겨줍니다.
+// In-game text, one table per language. Translate it for every language you mark "full" in listing.json.
+// Boardmadang passes one of those languages as `lang`.
 const TEXT = {
-  ko: { line: '세 줄 완성', full: '판이 가득 참', myTurn: '당신 차례', theirTurn: '상대 차례', draw: '무승부', won: '이겼습니다!', lost: '졌습니다' },
   en: { line: 'Three in a row', full: 'Board is full', myTurn: 'Your turn', theirTurn: "Opponent's turn", draw: 'Draw', won: 'You won!', lost: 'You lost' },
+  ko: { line: '세 줄 완성', full: '판이 가득 참', myTurn: '당신 차례', theirTurn: '상대 차례', draw: '무승부', won: '이겼습니다!', lost: '졌습니다' },
 };
 
+/** The board is 9 squares in a row: board[row * 3 + col] = null (empty) | 0 | 1 */
 /** @typedef {{ board: (0 | 1 | null)[], turn: 0 | 1, last: number | null }} State */
 
-/** 세 개가 이어진 줄. 없으면 null */
+/** The three squares in a line, or null */
 function winningLine(board) {
   return LINES.find(([a, b, c]) =>
     board[a] !== null && board[a] === board[b] && board[a] === board[c]) ?? null;
 }
 
-function setup() {
+/** The starting position. Use `rng` (not Math.random) if you need randomness. */
+function setup(rng) {
   return { board: Array(9).fill(null), turn: 0, last: null };
 }
 
-function result(state, lang = 'ko') {
+/** Over? { winner: 0 | 1 } or { winner: null } for a draw. Still playing: null */
+function result(state, lang = 'en') {
   const line = winningLine(state.board);
   if (line) return { winner: state.board[line[0]], reason: TEXT[lang].line };
   if (state.board.every((c) => c !== null)) return { winner: null, reason: TEXT[lang].full };
   return null;
 }
 
+/** A player clicked. Return the new state, or the same state to ignore the move. */
 function play(state, player, action) {
-  // 둘 수 없는 행동은 전부 무시합니다. 상대 화면에서도 똑같이 무시되므로 판이 어긋나지 않습니다.
+  // Ignore every move that isn't allowed. The other browser ignores it too, so the boards stay the same.
   if (result(state)) return state;
   if (player !== state.turn) return state;
   if (action.kind !== 'click') return state;
@@ -50,17 +53,18 @@ function play(state, player, action) {
   const i = row * 3 + col;
   if (state.board[i] !== null) return state;
 
-  // 받은 state는 고치지 않고 새로 만듭니다.
+  // Don't change the state you received. Make a new one.
   const board = state.board.slice();
   board[i] = player;
   return { board, turn: 1 - player, last: i };
 }
 
-/** 누구 차례인지. 끝났으면 null (대국 시계가 멈춥니다) */
+/** Whose turn it is. null once the game is over (the clock stops). Needed for a timer. */
 function turn(state) {
   return result(state) ? null : state.turn;
 }
 
+/** The moves allowed right now. Used for hover hints and for the AI. */
 function legal(state, player) {
   if (result(state) || player !== state.turn) return [];
   const actions = [];
@@ -70,7 +74,8 @@ function legal(state, player) {
   return actions;
 }
 
-function view(state, player, lang = 'ko') {
+/** What to draw for this player. Boardmadang does the drawing. */
+function view(state, player, lang = 'en') {
   const pieces = [];
   state.board.forEach((c, i) => {
     if (c !== null) pieces.push({ row: Math.floor(i / 3), col: i % 3, piece: PIECE[c] });

@@ -1,24 +1,24 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>보드마당 플레이그라운드</title>
+  <title>boardmadang playground</title>
   <link rel="stylesheet" href="playground.css">
 </head>
 <body>
   <header class="top">
     <div>
-      <h1 id="title">보드마당 플레이그라운드</h1>
+      <h1 id="title">boardmadang playground</h1>
       <p id="meta" class="meta"></p>
     </div>
     <div class="controls">
-      <label title="등록창에서 완전 번역으로 고른 언어">게임 안 글자 <select id="lang"></select></label>
-      <label>시드 <input id="seed" type="number" min="0" max="4294967295"></label>
-      <button id="restart">이 시드로 새 판</button>
-      <button id="newseed">새 시드로 새 판</button>
-      <button id="undo" class="secondary">한 수 무르기</button>
-      <button id="random" class="secondary">랜덤 대국 200판</button>
+      <label title="Languages marked full in listing.json">In-game text <select id="lang"></select></label>
+      <label>Seed <input id="seed" type="number" min="0" max="4294967295"></label>
+      <button id="restart">New game (this seed)</button>
+      <button id="newseed">New game (new seed)</button>
+      <button id="undo" class="secondary">Undo</button>
+      <button id="random" class="secondary">Play 200 random games</button>
     </div>
   </header>
 
@@ -31,17 +31,17 @@
 
   <section class="panels">
     <div class="card">
-      <h3>검사</h3>
+      <h3>Checks</h3>
       <ul id="checks" class="checks"></ul>
       <div id="random-result"></div>
     </div>
     <div class="card">
-      <h3>썸네일 <small>게임 목록에 보일 판</small></h3>
+      <h3>Thumbnail <small>shown in the game list</small></h3>
       <canvas id="thumb" class="thumb" hidden></canvas>
-      <p id="thumb-status" class="thumb-status">아직 없습니다. 판 아래 「썸네일로」를 누르면 그 화면을 그대로 찍습니다.</p>
+      <p id="thumb-status" class="thumb-status">None yet. Press "Use as thumbnail" under a board to save that board as it is.</p>
     </div>
     <div class="card">
-      <h3>기록 <small>최신이 위</small></h3>
+      <h3>Moves <small>newest first</small></h3>
       <ol id="log" class="log"></ol>
     </div>
     <div class="card">

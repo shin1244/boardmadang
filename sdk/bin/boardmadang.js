@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // 보드마당 게임 제작 도구. 게임 폴더 안에서 씁니다 (폴더를 따로 적어도 됩니다).
 //
-//   npx boardmadang new <폴더>   새 게임 틀 (틱택토에서 시작)
-//   npx boardmadang dev          플레이그라운드: 혼자 양쪽을 두고, 「썸네일로」로 게임 목록에 보일 판을 찍습니다
-//   npx boardmadang check        업로드할 때와 같은 검사
-//   npx boardmadang pack         검사를 통과하면 올릴 zip을 만듭니다 (<id>.zip)
+// 화면에 나오는 글은 영어가 기본입니다 (npm으로 여러 나라 제작자가 씁니다). 한국어 안내는 README.ko.md.
+//
+//   npx boardmadang new <folder>   새 게임 틀 (틱택토에서 시작)
+//   npx boardmadang dev            플레이그라운드: 혼자 양쪽을 두고, "Use as thumbnail"로 게임 목록에 보일 판을 찍습니다
+//   npx boardmadang check          업로드할 때와 같은 검사
+//   npx boardmadang pack           검사를 통과하면 올릴 zip을 만듭니다 (<id>.zip)
 //
 // 게임 폴더: index.js(필수), index.js가 import하는 다른 .js/.mjs, listing.json(등록 정보), thumbnail.json(썸네일)
 
@@ -21,25 +23,25 @@ import { makeRng } from '../playground/platform.js';
 const SDK = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const VERSION = JSON.parse(fs.readFileSync(path.join(SDK, 'package.json'), 'utf8')).version;
 
-const HELP = `보드마당 게임 제작 도구 ${VERSION}
+const HELP = `boardmadang ${VERSION}: make 1-vs-1 board games for boardmadang.com
 
-  npx boardmadang new <폴더>          새 게임 틀을 만듭니다 (틱택토에서 시작)
-  npx boardmadang dev [폴더]          플레이그라운드를 띄웁니다 (--port 5173)
-  npx boardmadang check [폴더]        업로드할 때와 같은 검사를 합니다 (--games 200)
-  npx boardmadang pack [폴더]         검사를 통과하면 올릴 zip을 만듭니다
+  npx boardmadang new <folder>     make a new game (starts as tic-tac-toe)
+  npx boardmadang dev [folder]     open the playground (--port 5173)
+  npx boardmadang check [folder]   run the same checks as the upload (--games 200)
+  npx boardmadang pack [folder]    if the checks pass, make the zip to upload
 
-폴더를 적지 않으면 지금 폴더입니다. 게임 API: https://github.com/shin1244/boardmadang/blob/main/sdk/README.md`;
+[folder] defaults to the current folder. Guide: https://github.com/shin1244/boardmadang/blob/main/sdk/README.md`;
 
 /** 등록 정보 검사 결과(code)를 글로. 사이트 등록창과 같은 뜻입니다. */
 const LISTING_TEXT = {
-  'languages.none': () => '지원 언어를 하나 이상 고르세요.',
-  'languages.needFull': () => '완전 번역(full) 언어가 하나 이상 있어야 합니다. 게임 안 글자를 보여줄 언어가 필요합니다.',
-  'languages.invalid': () => '모르는 언어나 지원 수준이 들어 있습니다.',
-  'difficulty.invalid': () => "difficulty는 'easy', 'normal', 'hard' 중 하나여야 합니다.",
-  'timer.invalid': (p) => `timer.minutes는 ${p.min}~${p.max}의 정수이거나 null, timer.custom은 true/false여야 합니다.`,
-  'timer.needsTurn': () => '타이머를 쓰려면 게임 코드에 turn()이 있어야 합니다.',
-  'text.missing': (p) => `${p.field}.${p.lang} 칸이 비어 있습니다.`,
-  'text.tooLong': (p) => `${p.field}.${p.lang} 칸은 ${p.max}자까지 쓸 수 있습니다.`,
+  'languages.none': () => 'pick at least one language.',
+  'languages.needFull': () => "at least one language must be 'full', so your in-game text has a language to show in.",
+  'languages.invalid': () => "unknown language or level (use 'full' or 'rulebook').",
+  'difficulty.invalid': () => "difficulty must be 'easy', 'normal', or 'hard'.",
+  'timer.invalid': (p) => `timer.minutes must be a whole number from ${p.min} to ${p.max} or null, and timer.custom must be true or false.`,
+  'timer.needsTurn': () => 'a timer needs turn() in your game code.',
+  'text.missing': (p) => `${p.field}.${p.lang} is empty.`,
+  'text.tooLong': (p) => `${p.field}.${p.lang} can be at most ${p.max} characters.`,
 };
 
 function parseArgs(argv) {
@@ -65,11 +67,11 @@ const note = (s) => console.log(`  ! ${s}`);
 // ---- new ----
 
 function newGame(dir) {
-  if (!dir) throw new Error('만들 폴더 이름을 적으세요: npx boardmadang new my-game');
+  if (!dir) throw new Error('Name the folder to create: npx boardmadang new my-game');
   const folder = path.resolve(dir);
   const id = path.basename(folder);
-  if (!/^[a-z0-9-]+$/.test(id)) throw new Error(`폴더 이름이 게임 id가 됩니다. 영문 소문자, 숫자, -만 쓰세요 (받은 이름: ${id})`);
-  if (fs.existsSync(folder) && fs.readdirSync(folder).length) throw new Error(`${dir} 폴더가 비어 있지 않습니다`);
+  if (!/^[a-z0-9-]+$/.test(id)) throw new Error(`The folder name becomes the game id, so use only lowercase letters, numbers, and - (got: ${id})`);
+  if (fs.existsSync(folder) && fs.readdirSync(folder).length) throw new Error(`${dir} is not empty`);
   fs.mkdirSync(folder, { recursive: true });
   const template = path.join(SDK, 'template');
   for (const name of fs.readdirSync(template)) {
@@ -77,12 +79,12 @@ function newGame(dir) {
     // npm은 패키지 안의 .gitignore를 빼 버려서 gitignore로 넣어 두고 여기서 이름을 바꿉니다
     fs.writeFileSync(path.join(folder, name === 'gitignore' ? '.gitignore' : name), text);
   }
-  say(`새 게임 ${id}를 만들었습니다: ${folder}`);
+  say(`Made a new game "${id}" in ${folder}`);
   say();
   say(`  cd ${dir}`);
-  say('  npx boardmadang dev     혼자 양쪽을 둬보고, 썸네일을 찍습니다');
-  say('  npx boardmadang check   업로드할 때와 같은 검사');
-  say('  npx boardmadang pack    올릴 zip 만들기');
+  say('  npx boardmadang dev     play both sides and take a thumbnail');
+  say('  npx boardmadang check   run the same checks as the upload');
+  say('  npx boardmadang pack    make the zip to upload');
 }
 
 // ---- check ----
@@ -90,13 +92,13 @@ function newGame(dir) {
 /** 게임 모듈을 불러옵니다. index.js가 export를 쓰므로 ES 모듈로 읽혀야 합니다. */
 async function loadGame(folder) {
   const file = path.join(folder, 'index.js');
-  if (!fs.existsSync(file)) throw new Error(`${file}이 없습니다. 게임 폴더에서 실행하거나 폴더를 적으세요.`);
+  if (!fs.existsSync(file)) throw new Error(`${file} not found. Run this in your game folder, or name the folder.`);
   try {
     return (await import(pathToFileURL(file).href)).default;
   } catch (e) {
     const esm = /Cannot use import statement|Unexpected token 'export'|exports is not defined/.test(e.message);
-    throw new Error(`index.js를 불러오지 못했습니다: ${e.message}${esm
-      ? '\n    게임 폴더에 {"type": "module"}이 든 package.json을 두세요 (npx boardmadang new가 만드는 것과 같이).'
+    throw new Error(`Couldn't load index.js: ${e.message}${esm
+      ? '\n    Add a package.json with {"type": "module"} to your game folder (npx boardmadang new makes one).'
       : ''}`);
   }
 }
@@ -124,13 +126,13 @@ async function runCheck(folder, { games = 200 } = {}) {
   folder = path.resolve(folder);
   const problems = [];
   const fail = (s) => { problems.push(s); bad(s); };
-  say(`검사: ${folder}`);
+  say(`Checking ${folder}`);
 
   // 파일
   const files = codeFiles(folder);
   const bytes = files.reduce((n, f) => n + fs.statSync(path.join(folder, f)).size, 0);
-  if (bytes > GAME_LIMITS.codeBytes) fail(`게임 코드가 ${(bytes / 1024).toFixed(1)}KB입니다 (상한 ${GAME_LIMITS.codeBytes / 1024}KB)`);
-  else good(`코드 파일 ${files.length}개, ${(bytes / 1024).toFixed(1)}KB · 버전 ${codeVersion(folder)}`);
+  if (bytes > GAME_LIMITS.codeBytes) fail(`game code is ${(bytes / 1024).toFixed(1)}KB (limit ${GAME_LIMITS.codeBytes / 1024}KB)`);
+  else good(`${files.length} code file${files.length === 1 ? '' : 's'}, ${(bytes / 1024).toFixed(1)}KB · version ${codeVersion(folder)}`);
 
   let game;
   try {
@@ -142,14 +144,14 @@ async function runCheck(folder, { games = 200 } = {}) {
 
   // 등록 정보
   const listing = readJson(path.join(folder, 'listing.json'));
-  if (listing.error) fail(`listing.json이 깨졌습니다: ${listing.error}`);
-  else if (!listing.value) note('listing.json이 없습니다. 사이트 등록창에서 이름, 룰북, 언어를 입력해도 됩니다.');
+  if (listing.error) fail(`listing.json is not valid JSON: ${listing.error}`);
+  else if (!listing.value) note("no listing.json. That's OK: you can fill in the name, rules, and languages on the site.");
   else {
     const lp = validateListing(listing.value);
     const timer = listing.value.timer;
     if (timer && (timer.minutes !== null || timer.custom) && typeof game?.turn !== 'function') lp.push({ code: 'timer.needsTurn' });
     for (const p of lp) fail(`listing.json: ${LISTING_TEXT[p.code]?.(p) ?? p.code}`);
-    if (!lp.length) good('등록 정보 (listing.json)');
+    if (!lp.length) good('listing.json');
   }
 
   // 게임 실행
@@ -159,24 +161,24 @@ async function runCheck(folder, { games = 200 } = {}) {
   for (const w of result.warnings) note(w);
   if (result.stats) {
     const { n, tally, avgMoves, avgMs, maxMs } = result.stats;
-    if (!result.problems.length) good(`랜덤 대국 ${n}판 (언어 ${langs.join(', ')})`);
-    say(`    선공 승 ${tally[0]} · 후공 승 ${tally[1]} · 무승부 ${tally.draw + tally.maxActions} (maxActions ${tally.maxActions})`
-      + ` · 평균 ${avgMoves.toFixed(1)}수 · play() 평균 ${avgMs.toFixed(3)}ms, 최대 ${maxMs.toFixed(2)}ms`);
+    if (!result.problems.length) good(`${n} random games (languages: ${langs.join(', ')})`);
+    say(`    first player won ${tally[0]} · second player won ${tally[1]} · draws ${tally.draw + tally.maxActions} (hit maxActions ${tally.maxActions})`
+      + ` · ${avgMoves.toFixed(1)} moves on average · play() ${avgMs.toFixed(3)}ms average, ${maxMs.toFixed(2)}ms max`);
   }
 
   // 썸네일
   const thumb = readJson(path.join(folder, 'thumbnail.json'));
-  if (thumb.error) fail(`thumbnail.json이 깨졌습니다: ${thumb.error}`);
-  else if (!thumb.value) note('thumbnail.json이 없습니다. npx boardmadang dev에서 「썸네일로」를 누르면 찍힙니다. 없으면 시작 판을 보여줍니다.');
-  else if (game && !result.stats) note('게임 코드에 문제가 있어 썸네일은 검사하지 않았습니다.');
+  if (thumb.error) fail(`thumbnail.json is not valid JSON: ${thumb.error}`);
+  else if (!thumb.value) note('no thumbnail.json, so the game list will show the starting position. Take one with "Use as thumbnail" in npx boardmadang dev.');
+  else if (game && !result.stats) note('skipped the thumbnail check because the game code has problems.');
   else {
     const tp = checkThumbnail(game, thumb.value);
     for (const p of tp) fail(`thumbnail.json: ${p}`);
-    if (!tp.length) good(`썸네일 (플레이어 ${thumb.value.player} 화면, 기물 ${thumb.value.view.pieces.length}개)`);
+    if (!tp.length) good(`thumbnail.json (player ${thumb.value.player}'s board, ${thumb.value.view.pieces.length} pieces)`);
   }
 
   say();
-  say(problems.length ? `문제 ${problems.length}개를 고쳐야 올릴 수 있습니다.` : '통과했습니다.');
+  say(problems.length ? `Fix ${problems.length} problem${problems.length === 1 ? '' : 's'} before uploading.` : 'All checks passed.');
   return { problems, game, files };
 }
 
@@ -192,9 +194,9 @@ async function pack(folder, opts) {
   const out = path.resolve(opts.out ?? path.join(folder, `${game.id}.zip`));
   const data = zip(names.map((name) => ({ name, data: fs.readFileSync(path.join(folder, ...name.split('/'))) })));
   fs.writeFileSync(out, data);
-  say(`올릴 파일을 만들었습니다: ${out} (${(data.length / 1024).toFixed(1)}KB)`);
+  say(`Made ${out} (${(data.length / 1024).toFixed(1)}KB)`);
   for (const n of names) say(`    ${n}`);
-  say('사이트의 게임 등록에서 이 파일을 올립니다.');
+  say('Upload this file on boardmadang.com (game uploads are opening soon).');
   return true;
 }
 
@@ -202,13 +204,13 @@ async function pack(folder, opts) {
 
 async function dev(folder, { port = 5173 } = {}) {
   folder = path.resolve(folder);
-  if (!fs.existsSync(path.join(folder, 'index.js'))) throw new Error(`${folder}에 index.js가 없습니다. 게임 폴더에서 실행하거나 폴더를 적으세요.`);
+  if (!fs.existsSync(path.join(folder, 'index.js'))) throw new Error(`No index.js in ${folder}. Run this in your game folder, or name the folder.`);
   try {
     const { url, id } = await startDev({ folder, port: Number(port) });
-    say(`플레이그라운드: ${url}  (게임 ${id})`);
-    say('게임 코드를 고치고 새로고침하면 바로 반영됩니다. 끝내려면 Ctrl+C');
+    say(`Playground: ${url}  (game: ${id})`);
+    say('Edit your game code and refresh the page to see changes. Press Ctrl+C to stop.');
   } catch (e) {
-    if (e.code === 'EADDRINUSE') throw new Error(`${port}번 포트를 다른 프로그램이 쓰고 있습니다. --port 5174 처럼 다른 포트를 적으세요.`);
+    if (e.code === 'EADDRINUSE') throw new Error(`Port ${port} is already in use. Try another one, like --port 5174.`);
     throw e;
   }
 }
@@ -235,6 +237,6 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error(`오류: ${e.message}`);
+  console.error(`Error: ${e.message}`);
   process.exit(1);
 });

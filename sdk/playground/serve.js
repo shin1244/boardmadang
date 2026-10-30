@@ -6,7 +6,7 @@
 // 여기를 고치면 그쪽도 같이 고칩니다.
 // /api/games 의 version 은 게임 폴더의 코드 파일 해시입니다. 코드를 고치면 바뀝니다.
 // PUT /api/games/<id>/listing 은 개발용 등록창이 games/<id>/listing.json 에 저장할 때 씁니다.
-// PUT /api/games/<id>/thumbnail 은 플레이그라운드의 「썸네일로」가 games/<id>/thumbnail.json 에 저장할 때 씁니다.
+// PUT /api/games/<id>/thumbnail 은 플레이그라운드의 "Use as thumbnail"이 games/<id>/thumbnail.json 에 저장할 때 씁니다.
 //   DEV_COUNTRY=US node sdk/playground/serve.js  → 다른 나라에서 들어온 것처럼 확인
 //
 // 대전(/ws)과 신원(/api/me)은 Go 서버에 넘깁니다 (GO_SERVER, 기본 http://localhost:8080).

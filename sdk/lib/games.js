@@ -74,7 +74,7 @@ export const json = (res, status, body) => {
 export const isLocal = (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
 
 /**
- * PUT /api/games/<id>/thumbnail: 플레이그라운드의 「썸네일로」가 찍은 판을 게임 폴더의 thumbnail.json에 씁니다.
+ * PUT /api/games/<id>/thumbnail: 플레이그라운드의 "Use as thumbnail"이 찍은 판을 게임 폴더의 thumbnail.json에 씁니다.
  * 개발용이라 내 컴퓨터에서 온 JSON만 받습니다. 다른 사이트가 보내는 요청은 JSON 본문 때문에
  * 브라우저가 미리 확인(preflight)하는데, 개발 서버가 CORS 허가를 주지 않으므로 막힙니다.
  */

@@ -5,7 +5,7 @@
 //   /sdk/playground/…, /sdk/check.js   이 패키지의 플레이그라운드
 //   /games/<id>/…                  게임 폴더의 .js, .mjs, .json
 //   GET /api/games                 이 게임 하나 (사이트의 /api/games와 같은 모양)
-//   PUT /api/games/<id>/thumbnail  「썸네일로」가 찍은 판을 thumbnail.json에 저장
+//   PUT /api/games/<id>/thumbnail  "Use as thumbnail"이 찍은 판을 thumbnail.json에 저장
 
 import fs from 'node:fs';
 import http from 'node:http';
