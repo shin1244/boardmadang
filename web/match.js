@@ -19,14 +19,15 @@
 // 타이머가 있으면 서버가 대국 시계를 돌립니다. 누구 차례인지는 해시와 같이 보내는 게임의 turn()으로 알려 줍니다.
 // 화면의 시계는 서버가 보낸 clock을 받아 이 페이지에서 줄여 보여주기만 합니다. 시간이 다 됐는지는 서버가 정합니다.
 //
-// TODO: 업로드된 게임 코드는 별도 출처 iframe 안의 Web Worker에서 돌리기 (docs/architecture.md의 보안).
-//       지금은 플레이그라운드처럼 이 페이지에서 바로 import합니다.
+// 게임 코드는 이 페이지에서 돌리지 않고 게임 실행기(engine.js)의 샌드박스 Worker에서 돌립니다.
+// 판 상태는 Worker에만 있고, 이 페이지는 행동을 넘겨 해시, 차례, 결과, 화면을 받습니다.
+// 서버 메시지는 받은 순서대로 하나씩 처리합니다 (Worker의 답을 기다리는 동안 온 relay가 앞지르지 않게).
 
 import { BoardView, PLAYER_COLORS } from '/sdk/playground/board.js';
 import { NO_TIMER, gameLang, localize, timerOf } from '/sdk/playground/listing.js';
-import { hashOf, makeRng } from '/sdk/playground/platform.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { EMOTES, EMOTE_EVERY, emoteLabel, emoteSvg, emotesMuted, popEmote, setEmotesMuted } from './emotes.js';
+import { loadGame } from './engine.js';
 import { displayName, loadMe, renderMe } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -41,7 +42,7 @@ const RETRY_MS = 1_500;
 
 let me = null;
 let entry = null; // /api/games의 항목 (등록 정보 포함)
-let game = null;
+let runner = null; // 게임 실행기 (engine.js). runner.info: 판 설정, 기물, 특수 행동, maxActions, turn()/legal()이 있는지
 let board = null;
 
 /**
@@ -55,8 +56,9 @@ let note = ''; // 서버가 보낸 error처럼 잠깐 알려줄 글
 let ws = null;
 let seat = null; // 내 자리 (0 = 선공, 1 = 후공)
 let opponent = null;
-let state = null;
+let snap = null; // 지금 판: 실행기가 돌려준 { result, views, legal }
 let stateHash = '';
+let turn = null; // 지금 누구 차례인지 (게임의 turn()). 서버가 이걸로 시계를 넘깁니다
 let applied = 0; // 적용한 relay 수 = 다음 순번
 let effective = 0; // 상태를 바꾼 행동 수 (maxActions 기준)
 let reported = null; // 내가 서버에 보고한 결과. 서버의 ended를 기다리는 중
@@ -74,18 +76,19 @@ let drawBy = null; // 무승부를 제안해 둔 자리. 없으면 null
 let rematch = { mine: false, theirs: false, off: false }; // 끝난 대국의 재대결: 내가 원함, 상대가 원함, 할 수 없음
 let emoteCooling = false; // 이모티콘을 보낸 뒤 EMOTE_EVERY 동안 버튼을 잠급니다
 let muted = emotesMuted(); // 상대 이모티콘을 끔
+let queue = Promise.resolve(); // 서버 메시지를 받은 순서대로 하나씩 처리합니다
 
-const flip = () => game.board.flipForPlayer === seat;
+const flip = () => runner.info.board.flipForPlayer === seat;
 const playLang = () => gameLang(entry?.listing, lang);
 const nameOfGame = () => localize(entry?.listing?.name, lang).text || gameId;
 
 /** 이 게임이 실제로 쓰는 타이머. turn()이 없으면 시계를 돌릴 수 없어 없음입니다. */
-const timerOfGame = () => (game?.turn ? timerOf(entry?.listing) : NO_TIMER);
+const timerOfGame = () => (runner?.info.turn ? timerOf(entry?.listing) : NO_TIMER);
 
 /** 찾거나 만들 대국의 타이머(분). 방을 만들 때도 제작자가 커스텀을 막았으면 기본 타이머입니다. */
 function wantedMinutes() {
   const timer = timerOfGame();
-  if (mode !== 'create' || !timer.custom || !game.turn) return timer.minutes;
+  if (mode !== 'create' || !timer.custom || !runner.info.turn) return timer.minutes;
   const raw = params.get('minutes') ?? '';
   return /^\d+$/.test(raw) ? Number(raw) : null;
 }
@@ -100,16 +103,15 @@ function firstMessage() {
   return { type: 'join', game: gameId, minutes: wantedMinutes(), version };
 }
 
-/** 지금 누구 차례인지 (게임의 turn()). 서버가 이걸로 시계를 넘깁니다. */
-function turnNow() {
-  if (!game.turn) return null;
-  try {
-    const p = game.turn(state);
-    return p === 0 || p === 1 ? p : null;
-  } catch (e) {
-    console.error('turn()에서 오류:', e);
-    return null;
-  }
+/** 실행기에 물을 것: 내 화면, 화면 언어, 내가 둘 수 있는 수 */
+const lookOpts = () => ({ players: [seat], lang: playLang(), legalFor: seat });
+
+/** 게임 코드가 멈추거나 깨지면 더 둘 수 없습니다. */
+function codeFailed(err) {
+  console.error(err);
+  phase = 'error';
+  problem = t('match.codeFailed', { msg: err.message });
+  render();
 }
 
 // ---- 서버와 주고받기 ----
@@ -134,7 +136,10 @@ function openSocket() {
   const sock = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
   ws = sock;
   sock.addEventListener('open', () => send(firstMessage()));
-  sock.addEventListener('message', (e) => onMessage(JSON.parse(e.data)));
+  sock.addEventListener('message', (e) => {
+    const m = JSON.parse(e.data);
+    queue = queue.then(() => onMessage(m)).catch(codeFailed);
+  });
   sock.addEventListener('close', () => {
     if (ws !== sock) return;
     ws = null;
@@ -180,6 +185,7 @@ function findAgain() {
   seat = null;
   opponent = null;
   ended = null;
+  snap = null;
   if (ws?.readyState === WebSocket.OPEN) {
     phase = 'connecting';
     note = '';
@@ -196,7 +202,7 @@ function cancel() {
   render();
 }
 
-function onMessage(m) {
+async function onMessage(m) {
   switch (m.type) {
     case 'waiting':
       if (offlineUntil) {
@@ -226,10 +232,10 @@ function onMessage(m) {
       clock = { remaining: m.remaining, running: m.running, at: Date.now() };
       break;
     case 'matched':
-      start(m);
+      await start(m);
       break;
     case 'resumed':
-      resume(m);
+      await resume(m);
       break;
     case 'away':
       if (m.player !== seat) oppAwayUntil = Date.now() + m.seconds * 1000;
@@ -238,7 +244,7 @@ function onMessage(m) {
       oppAwayUntil = null;
       break;
     case 'relay':
-      apply(m);
+      await applyLog([m]);
       break;
     case 'desync':
       // 곧 ended(desync)가 따라옵니다.
@@ -290,14 +296,13 @@ function onMessage(m) {
   render();
 }
 
-function start(m) {
+async function start(m) {
   seat = m.player;
   opponent = m.opponent;
   minutes = m.minutes ?? null;
   clock = null;
   hostedRoom = null;
-  state = game.setup(makeRng(m.seed));
-  stateHash = hashOf(state);
+  snap = null;
   applied = 0;
   effective = 0;
   reported = null;
@@ -309,7 +314,11 @@ function start(m) {
   drawBy = null;
   rematch = { mine: false, theirs: false, off: false };
   phase = 'playing';
-  send({ type: 'hash', seq: -1, hash: stateHash, turn: turnNow() });
+  const s = await runner.start(m.seed, lookOpts());
+  stateHash = s.hash;
+  turn = s.turn;
+  snap = s.look;
+  send({ type: 'hash', seq: -1, hash: stateHash, turn });
   fit();
   checkResult();
 }
@@ -319,47 +328,47 @@ function start(m) {
  * 재생하면서 해시와 결과를 다시 보내는데, 이미 보고한 것은 서버가 무시합니다.
  * 기다리는 동안 대국이 끝났으면 바로 뒤에 ended가 옵니다.
  */
-function resume(m) {
+async function resume(m) {
   if (m.game !== gameId) {
     // 다른 게임 화면에서 들어왔으면 그 게임의 대전 화면으로 갑니다. 거기서 다시 붙으면 또 resumed가 옵니다.
     location.replace(`/web/match.html?game=${encodeURIComponent(m.game)}`);
     return;
   }
-  start(m);
+  await start(m);
   if (m.clock) clock = { remaining: m.clock.remaining, running: m.clock.running, at: Date.now() };
   drawBy = m.draw ?? null;
-  for (const r of m.log) apply(r);
+  await applyLog(m.log);
 }
 
-/** 순번이 붙은 행동을 게임 로직에 넣습니다. 양쪽이 같은 순서로 넣으므로 같은 판이 됩니다. */
-function apply(m) {
-  if (phase !== 'playing' || m.seq !== applied) return;
-  applied++;
-  let next = state;
-  try {
-    next = game.play(state, m.player, m.action);
-  } catch (e) {
-    // 상대 화면에서도 같은 오류가 납니다 (결정적). 상태를 그대로 두면 무시된 행동으로 셉니다.
-    console.error('play()에서 오류:', e);
+/**
+ * 순번이 붙은 행동들을 게임 로직에 넣습니다. 양쪽이 같은 순서로 넣으므로 같은 판이 됩니다.
+ * 행동마다 상태 해시와 차례를 서버에 보냅니다. play()가 오류를 던지면 실행기가 무시된 행동으로 다룹니다
+ * (상대 화면에서도 같은 오류가 나므로 결정적입니다).
+ */
+async function applyLog(list) {
+  if (phase !== 'playing') return;
+  const todo = [];
+  for (const m of list) {
+    if (m.seq === applied + todo.length) todo.push(m);
   }
-  const h = hashOf(next);
-  if (h !== stateHash) effective++;
-  state = next;
-  stateHash = h;
-  send({ type: 'hash', seq: m.seq, hash: h, turn: turnNow() });
+  if (!todo.length) return;
+  applied += todo.length;
+  const { steps, look } = await runner.play(todo.map((m) => ({ player: m.player, action: m.action })), lookOpts());
+  steps.forEach((s, i) => {
+    if (s.changed) effective++;
+    stateHash = s.hash;
+    turn = s.turn;
+    send({ type: 'hash', seq: todo[i].seq, hash: s.hash, turn: s.turn });
+  });
+  snap = look;
   checkResult();
 }
 
 /** 게임 로직이 끝났다고 하거나 maxActions에 이르면 결과를 한 번 보고합니다. */
 function checkResult() {
-  if (reported) return;
-  let r = null;
-  try {
-    r = game.result(state, playLang());
-  } catch (e) {
-    console.error('result()에서 오류:', e);
-  }
-  if (!r && effective >= game.maxActions) r = { winner: null, reason: 'maxActions' };
+  if (reported || !snap) return;
+  let r = snap.result;
+  if (!r && effective >= runner.info.maxActions) r = { winner: null, reason: 'maxActions' };
   if (!r) return;
   reported = r;
   send({ type: 'result', winner: r.winner ?? null, reason: r.reason });
@@ -368,12 +377,8 @@ function checkResult() {
 // ---- 화면 ----
 
 function legalNow() {
-  if (!game.legal || phase !== 'playing' || reported) return null;
-  try {
-    return game.legal(state, seat);
-  } catch {
-    return null;
-  }
+  if (!runner.info.legal || phase !== 'playing' || reported) return null;
+  return snap?.legal ?? null;
 }
 
 const sameClick = (a, cell) => a.kind === 'click' && a.row === cell.row && a.col === cell.col;
@@ -444,7 +449,7 @@ function renderStatus() {
 function renderTimerInfo() {
   const el = $('#timer-info');
   const known = seat !== null || phase === 'hosting';
-  el.hidden = !game || !(known || phase === 'waiting' || phase === 'connecting') || (mode === 'enter' && !known);
+  el.hidden = !runner || !(known || phase === 'waiting' || phase === 'connecting') || (mode === 'enter' && !known);
   if (el.hidden) return;
   const m = known ? minutes : wantedMinutes();
   el.textContent = m === null ? t('timer.none') : t('timer.each', { m });
@@ -499,15 +504,10 @@ function renderPlayers() {
 }
 
 function renderBoard() {
-  const show = state !== null && seat !== null && (phase === 'playing' || phase === 'ended');
+  const show = snap !== null && seat !== null && (phase === 'playing' || phase === 'ended');
   $('#board-wrap').hidden = !show;
   if (!show) return;
-  let view = { pieces: [] };
-  try {
-    view = game.view(state, seat, playLang()) ?? view;
-  } catch (e) {
-    console.error('view()에서 오류:', e);
-  }
+  const view = snap.views[seat] ?? { pieces: [] };
   board.draw(view, { flip: flip(), hover: phase === 'playing' ? hover : null });
   $('#message').textContent = phase === 'playing' ? view.message ?? '' : '';
 }
@@ -544,14 +544,14 @@ function renderActions() {
   renderOffers(playing);
   $('#resign').hidden = !playing;
   $('#cancel').hidden = !['waiting', 'hosting', 'connecting'].includes(phase);
-  $('#again').hidden = !['ended', 'idle', 'error'].includes(phase) || !game;
+  $('#again').hidden = !['ended', 'idle', 'error'].includes(phase) || !runner;
   $('#again').textContent = t({ quick: 'match.again', create: 'match.againRoom', enter: 'match.toRooms' }[mode]);
   $('#replay').hidden = phase !== 'ended' || !ended?.record;
   if (ended?.record) $('#replay').href = `/web/replay.html?id=${encodeURIComponent(ended.record)}`;
   const specials = $('#specials');
   specials.replaceChildren();
   if (!playing) return;
-  for (const kind of game.specialActions ?? []) {
+  for (const kind of runner.info.specialActions) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'btn ghost';
@@ -601,7 +601,7 @@ function render() {
   applyStatic();
   document.title = `${nameOfGame()} · ${t('match.title')} · ${t('site.name')}`;
   renderMe(me);
-  $('#title').textContent = game ? nameOfGame() : '';
+  $('#title').textContent = runner ? nameOfGame() : '';
   renderTimerInfo();
   renderStatus();
   renderHosting();
@@ -620,7 +620,7 @@ function fit() {
 
 function setupBoard() {
   const canvas = $('#board');
-  board = new BoardView(canvas, game.board, game.pieces);
+  board = new BoardView(canvas, runner.info.board, runner.info.pieces);
   canvas.addEventListener('click', (e) => {
     if (phase !== 'playing' || reported || offlineUntil) return;
     const cell = board.cellAt(e, flip());
@@ -646,7 +646,15 @@ function setupBoard() {
 }
 
 async function main() {
-  setupLangButtons(render);
+  // 언어를 바꾸면 게임 안 글자(message, 결과 이유)를 그 언어로 다시 받아 옵니다
+  setupLangButtons(() => {
+    render();
+    queue = queue.then(async () => {
+      if (!snap || phase !== 'playing') return;
+      snap = await runner.look(lookOpts());
+      render();
+    }).catch(codeFailed);
+  });
   setLang(await detectLang());
   render();
 
@@ -659,7 +667,7 @@ async function main() {
     render();
     return;
   }
-  game = (await import(entry.module)).default;
+  runner = await loadGame(entry);
   setupBoard();
   $('#emote-mute').addEventListener('click', () => {
     muted = !muted;

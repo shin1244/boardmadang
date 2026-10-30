@@ -6,6 +6,7 @@
 
 import { LANGS, LANG_NAMES, LIMITS, NO_TIMER, TIMER_MINUTES, isRtl, localize, validateListing } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
+import { loadGame } from './engine.js';
 import { isMember, loadMe, renderMe } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -140,15 +141,21 @@ function renderTimer() {
   line.textContent = blocked ? t('register.timer.noTurn') : '';
 }
 
-/** 게임 코드를 불러와 turn()이 있는지 봅니다. 그사이 다른 게임을 고르면 결과를 버립니다. */
+/**
+ * 게임 코드에 turn()이 있는지 봅니다. 코드는 실행기(engine.js)의 샌드박스에서만 불러옵니다.
+ * 그사이 다른 게임을 고르면 결과를 버립니다.
+ */
 async function checkTurn(entry) {
   hasTurn = null;
   let found = false;
+  let runner = null;
   try {
-    const game = (await import(entry.module)).default;
-    found = typeof game?.turn === 'function';
+    runner = await loadGame(entry);
+    found = runner.info.turn;
   } catch {
-    // 코드가 깨졌으면 플레이그라운드가 알려 줍니다. 여기서는 타이머만 막습니다.
+    // 코드가 깨졌으면 npx boardmadang check가 알려 줍니다. 여기서는 타이머만 막습니다.
+  } finally {
+    runner?.close();
   }
   if (current !== entry) return;
   hasTurn = found;
