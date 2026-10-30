@@ -1,0 +1,6 @@
+# gcloud builds submit 때 올리지 않을 것. .gitignore에 있는 것(.env, games/private, server/data)도 따릅니다.
+.gcloudignore
+.git
+.gitignore
+#!include:.gitignore
+trainer/
