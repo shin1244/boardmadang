@@ -26,6 +26,41 @@
   긴 대국마다 한 번씩 끊겼다 붙는 게 보이고, 그 순간 새 인스턴스로 붙으면 방이 없어 집니다.
 - 구성: `e2-small` VM 1대 (서울) + 컨테이너로 서버 실행 + Caddy로 HTTPS 자동 발급.
 
+## 도메인과 HTTPS (boardmadang.com)
+
+Go 서버 하나가 API, 웹소켓, 화면(`web/`), 게임 코드(`games/`), SDK(`sdk/`), `/api/games`, `/api/locale`을 모두 맡습니다
+(`server/internal/site`). 등록창의 저장(`PUT /api/games/<id>/listing`)만 아직 개발 서버에 있어서, 운영에서는 저장이 404입니다.
+
+1. **고정 IP**: VM에 고정 외부 IP를 예약해 붙입니다 (VPC 네트워크 → IP 주소 → 외부 고정 주소 예약).
+2. **DNS**: 도메인을 산 곳(또는 Cloud DNS)에서 레코드를 넣습니다.
+
+   | 이름 | 종류 | 값 |
+   |---|---|---|
+   | `boardmadang.com` (`@`) | A | VM의 고정 IP |
+   | `www` | CNAME | `boardmadang.com` |
+
+3. **HTTPS**: VM에서 Caddy가 인증서를 자동으로 받고 갱신합니다. 방화벽에서 80, 443을 열어 둡니다 (80은 인증서 발급에 씁니다).
+
+   ```
+   # /etc/caddy/Caddyfile
+   boardmadang.com {
+       reverse_proxy localhost:8080
+   }
+   www.boardmadang.com {
+       redir https://boardmadang.com{uri} permanent
+   }
+   ```
+
+   Caddy는 웹소켓을 그대로 넘기고, `X-Forwarded-Proto: https`를 붙여 줍니다. 서버는 이것을 보고 쿠키에 `Secure`를 붙입니다.
+   Host도 그대로 넘기므로 웹소켓의 같은 출처 확인이 통과합니다 (`ALLOWED_ORIGINS`는 비워 둡니다).
+4. **서버 환경변수**: `PUBLIC_URL=https://boardmadang.com`, `SESSION_SECRET`(32자 이상), `DATA_DIR`(영구 디스크),
+   소셜 로그인 ID와 비밀값. `DEV_LOGIN`은 넣지 않습니다.
+5. **소셜 로그인**: 운영용 OAuth 앱은 개발용과 따로 둡니다.
+   - GitHub: 새 OAuth App. Homepage `https://boardmadang.com`, callback `https://boardmadang.com/auth/github/callback`
+   - Google: 웹 클라이언트에 리디렉션 URI `https://boardmadang.com/auth/google/callback`을 더합니다.
+     동의 화면(브랜딩)에 홈페이지, 개인정보처리방침 주소, 승인된 도메인 `boardmadang.com`을 넣고 앱을 게시해야
+     테스트 사용자가 아닌 사람도 로그인할 수 있습니다. 도메인 소유 확인은 Google Search Console에서 합니다.
+
 ## 단일 인스턴스의 한계와 다음 단계
 
 - **서버가 재시작되면 진행 중인 대국이 사라집니다.** MVP에서는 감수합니다.
@@ -42,10 +77,14 @@ GPU가 있고 싼 리전에서 **Spot VM**으로 돌리면 비용을 크게 줄�
 
 ## 컨테이너 빌드
 
+레포 루트에서 빌드합니다. 이미지에 서버와 함께 `web/`, `sdk/`, `games/`가 `/site`로 들어갑니다.
+
 ```bash
-cd server
-docker build -t boardmadang-server .
-docker run --rm -p 8080:8080 -v boardmadang-data:/data boardmadang-server
+docker build -t boardmadang .
+docker run --rm -p 8080:8080 -v boardmadang-data:/data --env-file .env boardmadang
 ```
 
-- 기보는 컨테이너 안의 `/data`에 씁니다. 볼륨(`-v boardmadang-data:/data`)을 붙이지 않으면 컨테이너를 지울 때 같이 사라집니다.
+- http://localhost:8080 을 열면 로비가 보입니다.
+- 기보와 계정은 컨테이너 안의 `/data`에 씁니다. 볼륨(`-v boardmadang-data:/data`)을 붙이지 않으면 컨테이너를 지울 때 같이 사라집니다.
+- 게임을 더하거나 고치면 이미지를 다시 빌드합니다. `games/private/`는 깃허브에 올라가지 않으므로, 깨끗하게 클론한 곳에서 빌드하면 들어가지 않습니다.
+- `.env`는 이미지에 넣지 않습니다 (`.dockerignore`). 비밀값은 실행할 때 `--env-file`이나 환경변수로 넘깁니다.

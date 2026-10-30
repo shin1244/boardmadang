@@ -200,3 +200,24 @@ func TestRequireMember(t *testing.T) {
 		}
 	}
 }
+
+func TestSignData(t *testing.T) {
+	is := NewIssuer(secret)
+	token := is.SignData("signup", []byte(`{"a":1}`))
+	if data, ok := is.VerifyData("signup", token); !ok || string(data) != `{"a":1}` {
+		t.Fatalf("VerifyData = %q, %v", data, ok)
+	}
+	if _, ok := is.VerifyData("other", token); ok {
+		t.Error("accepted with another purpose")
+	}
+	if _, ok := is.VerifyData("signup", strings.Replace(token, "signup.", "signup.x", 1)); ok {
+		t.Error("accepted tampered data")
+	}
+	// 세션 토큰과 섞이지 않습니다
+	if _, ok := is.Verify(token); ok {
+		t.Error("data token accepted as a session")
+	}
+	if _, ok := is.VerifyData(tokenVersion, is.Sign(Member("m_x", ""))); ok {
+		t.Error("session token accepted as data")
+	}
+}

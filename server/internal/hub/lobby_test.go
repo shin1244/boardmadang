@@ -87,6 +87,7 @@ func TestGuestCannotCreate(t *testing.T) {
 	// 거절당한 뒤에도 빠른 매칭은 됩니다
 	other := connect(t, srv)
 	guest.send(protocol.Join{Type: protocol.TypeJoin, Game: "tictactoe"})
+	guest.expect(protocol.TypeWaiting, nil)
 	other.send(protocol.Join{Type: protocol.TypeJoin, Game: "tictactoe"})
 	var m protocol.Matched
 	other.expect(protocol.TypeMatched, &m)

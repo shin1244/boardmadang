@@ -1,0 +1,13 @@
+# 이미지에 넣지 않는 것. 비밀값, 개발 중에 쌓인 데이터, 학습 결과물.
+.git
+.github
+.env
+.env.*
+**/node_modules
+server/data
+server/bin
+trainer
+docs
+**/*.test.js
+**/*.test.mjs
+**/*_test.go

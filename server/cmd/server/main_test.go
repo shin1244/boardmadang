@@ -9,12 +9,13 @@ import (
 	"github.com/shin1244/boardmadang/server/internal/config"
 	"github.com/shin1244/boardmadang/server/internal/hub"
 	"github.com/shin1244/boardmadang/server/internal/identity"
+	"github.com/shin1244/boardmadang/server/internal/site"
 )
 
 func newTestServer() *httptest.Server {
 	ids := identity.NewIssuer([]byte("test-secret-test-secret-test-secret"))
 	login := &auth.Handler{IDs: ids}
-	return httptest.NewServer(routes(hub.New(config.Config{Port: "0"}, ids, nil), ids, nil, nil, login))
+	return httptest.NewServer(routes(hub.New(config.Config{Port: "0"}, ids, nil), ids, nil, nil, login, site.Site{Root: "../../.."}))
 }
 
 func TestHealthz(t *testing.T) {
@@ -62,5 +63,34 @@ func TestWSNeedsSession(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode == http.StatusUnauthorized {
 		t.Fatal("with cookie: still 401")
+	}
+}
+
+// 서버 하나가 화면, 게임 코드, 게임 목록까지 답합니다 (레포의 web/, games/를 씁니다).
+func TestServesSite(t *testing.T) {
+	srv := newTestServer()
+	defer srv.Close()
+	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+
+	for path, want := range map[string]int{
+		"/web/":                     http.StatusOK,
+		"/web/match.js":             http.StatusOK,
+		"/games/tictactoe/index.js": http.StatusOK,
+		"/sdk/playground/board.js":  http.StatusOK,
+		"/api/games":                http.StatusOK,
+		"/api/locale":               http.StatusOK,
+		"/":                         http.StatusFound,
+		"/server/go.mod":            http.StatusNotFound,
+		"/.env.example":             http.StatusNotFound,
+		"/api/me":                   http.StatusOK, // API는 그대로
+	} {
+		res, err := noRedirect.Get(srv.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != want {
+			t.Errorf("%s: %d, want %d", path, res.StatusCode, want)
+		}
 	}
 }

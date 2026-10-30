@@ -26,6 +26,7 @@ import { BoardView, PLAYER_COLORS } from '/sdk/playground/board.js';
 import { NO_TIMER, gameLang, localize, timerOf } from '/sdk/playground/listing.js';
 import { hashOf, makeRng } from '/sdk/playground/platform.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
+import { EMOTES, EMOTE_EVERY, emoteLabel, emoteSvg, emotesMuted, popEmote, setEmotesMuted } from './emotes.js';
 import { displayName, loadMe, renderMe } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -71,6 +72,8 @@ let bumpEvery = 60; // 초
 let nextBumpAt = 0; // 이 시각(ms)부터 다시 올릴 수 있습니다
 let drawBy = null; // 무승부를 제안해 둔 자리. 없으면 null
 let rematch = { mine: false, theirs: false, off: false }; // 끝난 대국의 재대결: 내가 원함, 상대가 원함, 할 수 없음
+let emoteCooling = false; // 이모티콘을 보낸 뒤 EMOTE_EVERY 동안 버튼을 잠급니다
+let muted = emotesMuted(); // 상대 이모티콘을 끔
 
 const flip = () => game.board.flipForPlayer === seat;
 const playLang = () => gameLang(entry?.listing, lang);
@@ -262,6 +265,10 @@ function onMessage(m) {
     case 'rematchOff':
       rematch.off = true;
       break;
+    case 'emote':
+      if (m.player === seat) popEmote($('#my-emote'), m.emote);
+      else if (!muted) popEmote($('#opp-emote'), m.emote);
+      return; // 말풍선만 바뀌므로 화면 전체를 다시 그리지 않습니다
     case 'error':
       if (phase === 'connecting') {
         // 시작하지 못했습니다 (없어진 방, 잘못된 타이머, 다른 버전의 코드 등)
@@ -554,6 +561,42 @@ function renderActions() {
   }
 }
 
+/** 이모티콘 줄: 대국 중과 끝난 뒤(다음 대국을 찾기 전)에 보입니다. 버튼은 한 번만 만들고 글만 바꿉니다. */
+function renderEmotes() {
+  const bar = $('#emote-bar');
+  bar.hidden = seat === null || !['playing', 'ended'].includes(phase) || !!offlineUntil;
+  const box = $('#emote-buttons');
+  if (!box.children.length) {
+    for (const e of EMOTES) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'emote-btn';
+      b.dataset.emote = e.id;
+      b.append(emoteSvg(e.id, ''));
+      b.addEventListener('click', () => sendEmote(e.id));
+      box.append(b);
+    }
+  }
+  for (const b of box.children) {
+    const label = emoteLabel(b.dataset.emote);
+    b.title = label;
+    b.setAttribute('aria-label', label);
+    b.disabled = emoteCooling;
+  }
+  $('#emote-mute').textContent = t(muted ? 'emote.unmute' : 'emote.mute');
+}
+
+function sendEmote(id) {
+  if (emoteCooling) return;
+  send({ type: 'emote', emote: id });
+  emoteCooling = true;
+  renderEmotes();
+  setTimeout(() => {
+    emoteCooling = false;
+    renderEmotes();
+  }, EMOTE_EVERY);
+}
+
 function render() {
   applyStatic();
   document.title = `${nameOfGame()} · ${t('match.title')} · ${t('site.name')}`;
@@ -565,6 +608,7 @@ function render() {
   renderPlayers();
   if (board) renderBoard();
   renderActions();
+  renderEmotes();
   $('#note').hidden = !note;
   $('#note').textContent = note;
 }
@@ -617,6 +661,12 @@ async function main() {
   }
   game = (await import(entry.module)).default;
   setupBoard();
+  $('#emote-mute').addEventListener('click', () => {
+    muted = !muted;
+    setEmotesMuted(muted);
+    if (muted) $('#opp-emote').hidden = true;
+    renderEmotes();
+  });
 
   $('#resign').addEventListener('click', () => {
     if (confirm(t('match.resign.confirm'))) send({ type: 'resign' });

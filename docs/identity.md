@@ -28,8 +28,13 @@
 | `tag` | id에서 계산한 네 자리 숫자. 이름이 같은 사람을 구분하고, 게스트는 화면에 "게스트 4821"로 나옵니다 |
 | `name` | 계정만. 게스트 이름은 화면 언어로 브라우저가 만듭니다 ("게스트 4821" / "Guest 4821") |
 
-계정 이름은 처음 로그인할 때 정합니다. GitHub은 아이디(`login`), Google은 이름(`given_name`, 성은 뺍니다)이고,
-20글자에서 자릅니다. 로그인한 곳에서 이름을 바꿔도 여기 이름은 그대로입니다 (이름 바꾸기는 예정).
+계정 이름은 처음 로그인할 때 사람이 직접 정합니다 (`/web/signup.html`). 이름 칸의 기본값은 GitHub 아이디(`login`)나
+Google 이름(`given_name`, 성은 뺍니다)입니다. 로그인한 곳에서 이름을 바꿔도 여기 이름은 그대로입니다 (이름 바꾸기는 예정).
+
+- 2~12글자. 글자(한글, 영문 등), 숫자, `_` `-` `.`만 됩니다. 띄어쓰기와 이모지는 안 됩니다.
+- 운영자나 게스트를 사칭할 수 있는 말(`admin`, `moderator`, `official`, `boardmadang`, `guest`, 운영자, 관리자, 보드마당, 공식, 게스트)이
+  들어가면 안 됩니다. 대소문자를 가리지 않습니다.
+- 같은 이름이 있어도 됩니다.
 
 ## 세션 토큰
 
@@ -74,11 +79,15 @@ OAuth 2.0 authorization code 방식입니다 (`server/internal/auth`). 외부 �
 2. GitHub이 `/auth/github/callback?code=…&state=…`로 돌려보냅니다. 쿠키의 `state`와 주소의 `state`가 같아야 합니다
    (다른 사이트가 남의 계정으로 로그인시키는 것을 막습니다). 쿠키는 한 번 쓰고 지웁니다.
 3. `code`를 토큰으로 바꾸고, 그 토큰으로 사용자 번호(GitHub `id`, Google `sub`)와 이름만 읽습니다. 토큰은 저장하지 않습니다.
-4. (로그인한 곳, 사용자 번호)로 계정을 찾고, 없으면 만듭니다 (`m_…`). `DATA_DIR/accounts.jsonl`에 남깁니다.
-   비밀번호, 이메일, 토큰은 저장하지 않습니다.
+4. (로그인한 곳, 사용자 번호)로 계정을 찾습니다. 있으면 5로 갑니다.
+   처음 온 사람이면 가입 정보(로그인한 곳, 사용자 번호, 이름 기본값, `next`)를 서명해 `bm_signup` 쿠키
+   (`Path=/auth/`, 30분, `HttpOnly`)에 넣고 이름을 정하는 화면(`/web/signup.html`)으로 보냅니다.
+   화면은 `GET /auth/signup`으로 기본값을 받고, `POST /auth/signup {"name":"…"}`로 계정(`m_…`)을 만듭니다.
+   이름이 규칙에 맞지 않으면 `400 {"error":"name length" | "name chars" | "name reserved"}`, 쿠키가 없거나 시간이 지났으면
+   `401 {"error":"expired"}`입니다. 계정은 `DATA_DIR/accounts.jsonl`에 남깁니다. 비밀번호, 이메일, 토큰은 저장하지 않습니다.
 5. 쓰던 쿠키가 게스트면 그 게스트로 둔 대국을 계정으로 옮깁니다. 기보의 자리를 계정으로 바꾸고,
    게스트의 대국 목록을 계정의 목록에 끝난 순서대로 합칩니다. 의견(`comments`)은 옮기지 않습니다.
-6. 쿠키를 계정 토큰으로 바꾸고 `next`로 돌려보냅니다. `next`는 이 사이트 안의 경로만 받습니다.
+6. 쿠키를 계정 토큰으로 바꾸고 `next`로 돌려보냅니다 (가입했으면 화면이 `next`로 갑니다). `next`는 이 사이트 안의 경로만 받습니다.
 
 실패하면 `next`에 `?login_error=<이유>`를 붙여 돌려보내고, 화면이 로그인 메뉴에 이유를 보여줍니다.
 
@@ -103,7 +112,7 @@ ID와 비밀값이 둘 다 있는 곳만 켜집니다 (`.env.example`). 하나�
 | GitHub | [GitHub → Settings → Developer settings → OAuth Apps](https://github.com/settings/developers) → New OAuth App | `<PUBLIC_URL>/auth/github/callback` |
 
 ```bash
-PUBLIC_URL=https://boardmadang.example \
+PUBLIC_URL=https://boardmadang.com \
 GOOGLE_CLIENT_ID=… GOOGLE_CLIENT_SECRET=… \
 GITHUB_CLIENT_ID=… GITHUB_CLIENT_SECRET=… \
 go run ./cmd/server
@@ -111,7 +120,9 @@ go run ./cmd/server
 
 개발할 때는 개발 서버(`node sdk/playground/serve.js`)가 `/auth/…`를 Go 서버로 넘기므로 돌아올 주소를
 `http://localhost:5173/auth/<google|github>/callback`으로 등록하고 `PUBLIC_URL=http://localhost:5173`을 넣습니다.
-GitHub OAuth App은 돌아올 주소를 하나만 받으므로 개발용 앱을 따로 만듭니다.
+개발용 OAuth 앱은 운영용과 따로 만듭니다. GitHub과 Google 모두 돌아올 주소를 여러 개 받지만, 운영 앱에 localhost 주소를 넣으면
+운영 앱의 비밀값이 개발하는 컴퓨터와 `.env`에도 퍼지게 됩니다.
+Go 서버만 켜고(개발 서버 없이) 시험하면 돌아올 주소는 `http://localhost:8080/auth/<google|github>/callback`입니다.
 
 OAuth 앱 없이 계정 기능(의견, 방 만들기)을 시험하려면 Go 서버를 `DEV_LOGIN=1`로 켭니다. 로그인 메뉴에
 "개발용 로그인"이 생기고, 누르면 바로 `dev` 계정으로 들어옵니다. **운영에서는 절대 켜지 않습니다** (누구나 같은 계정으로 들어옵니다).

@@ -20,6 +20,7 @@ const (
 	TypeDecline = "decline" // 무승부 제안 거절 (제안한 쪽이 보내면 철회)
 	TypeRematch = "rematch" // 끝난 대국의 재대결 요청. 상대도 보내면 자리를 바꿔 시작
 	TypeWatch   = "watch"   // 진행 중인 대국 관전
+	TypeEmote   = "emote"   // 이모티콘. 서버는 보낸 자리를 붙여 양쪽과 관전자에게 보냅니다
 )
 
 // 서버 → 클라이언트
@@ -229,6 +230,21 @@ type Watching struct {
 	Clock   *Clock        `json:"clock,omitempty"`
 	Draw    *int          `json:"draw,omitempty"`
 	Log     []Relay       `json:"log"`
+}
+
+// Emote는 이모티콘 하나입니다. 채팅 대신 정해진 그림(Emotes)만 주고받습니다.
+// 클라이언트는 {"type":"emote","emote":"hello"}를 보내고, 서버는 보낸 자리(Player)를 붙여 양쪽 플레이어와 관전자에게 보냅니다.
+// 대국 중과, 끝난 뒤 다음 대국을 찾기 전까지 보낼 수 있습니다. 기보에는 남기지 않습니다.
+type Emote struct {
+	Type   string `json:"type"`
+	Player int    `json:"player"`
+	Emote  string `json:"emote"`
+}
+
+// Emotes는 보낼 수 있는 이모티콘 id입니다. 그림은 web/emotes.js에 있고, 목록은 둘이 같아야 합니다.
+var Emotes = map[string]bool{
+	"hello": true, "please": true, "think": true, "wow": true,
+	"haha": true, "oops": true, "sad": true, "gg": true,
 }
 
 // Draw는 Player가 무승부를 제안했다는 알림입니다. 제안한 쪽에게도 갑니다.
