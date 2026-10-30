@@ -1,0 +1,10 @@
+{
+  "name": "__ID__",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx boardmadang dev",
+    "check": "npx boardmadang check",
+    "pack": "npx boardmadang pack"
+  }
+}

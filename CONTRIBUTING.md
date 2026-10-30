@@ -21,7 +21,7 @@ I have read the CLA Document and I hereby sign the CLA
 
 ```bash
 cd server && go vet ./... && go test ./...
-node --test sdk/playground/*.test.js games/*/*.test.js
+node --test sdk/test/*.test.js sdk/playground/*.test.js games/*/*.test.js
 ```
 
 - 주변 코드와 같은 모양으로 씁니다. 주석과 문서는 한국어로, 쉬운 말로 씁니다.

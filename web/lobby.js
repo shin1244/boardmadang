@@ -10,7 +10,7 @@ import { displayName, isMember, loadMe, renderMe } from './me.js';
 const $ = (sel) => document.querySelector(sel);
 
 const BANNERS = [
-  { key: 'banner.make', cta: '/sdk/playground/', tone: 'tone-a' },
+  { key: 'banner.make', cta: '/web/register.html', tone: 'tone-a' },
   { key: 'banner.soon', tone: 'tone-b' },
 ];
 
@@ -160,9 +160,22 @@ function fillTags(ul, entry) {
   }));
 }
 
-/** 시작 화면 그림. 그리지 못하면 false */
+/**
+ * 게임 그림. 제작자가 혼자 두던 판을 그대로 찍은 썸네일(thumbnail.json)이 있으면 그 판을, 없으면 시작 판을 그립니다.
+ * 썸네일은 이미지가 아니라 판 설정, 기물 세트, 화면 데이터라서 같은 보드 렌더러로 그립니다. 그리지 못하면 false
+ */
 function drawThumb(canvas, entry, size) {
-  const { game } = entry;
+  const { game, thumbnail: shot } = entry;
+  if (shot) {
+    try {
+      const board = new BoardView(canvas, shot.board, shot.pieces);
+      board.resize(size);
+      board.draw(shot.view, { flip: shot.board.flipForPlayer === shot.player });
+      return true;
+    } catch {
+      // 깨진 썸네일이면 시작 판을 그립니다
+    }
+  }
   try {
     const board = new BoardView(canvas, game.board, game.pieces);
     board.resize(size);
@@ -225,7 +238,7 @@ function renderCard(entry) {
 }
 
 // ---- 게임 창 ----
-// 왼쪽: 그림, 이름, 대전 찾기, 방 만들기, 혼자 둬보기, 그리고 남은 자리를 채우는 의견 칸.
+// 왼쪽: 그림, 이름, 대전 찾기, 방 만들기, 그리고 남은 자리를 채우는 의견 칸.
 // 오른쪽: 소개 (방 만들기를 누르면 방 만들기, 의견 칸을 누르면 의견, 의견이나 게임을 신고하면 신고).
 // 열려 있는 동안 주소에 ?game=<id>&tab=<메뉴>를 붙여 두므로 링크로 바로 열 수 있습니다.
 
@@ -284,7 +297,6 @@ function fillDialog() {
   if (listing) meta.push(t('tag.difficulty', { d: t(`difficulty.${listing.difficulty}`) }));
   $('#gd-meta').textContent = meta.join(' · ');
   $('#gd-match').href = `/web/match.html?game=${id}`;
-  $('#gd-try').href = `/sdk/playground/?game=${id}&lang=${gameLang(listing, lang)}`;
   $('#gd-create').setAttribute('aria-pressed', String(tab === 'create'));
 
   // 오른쪽

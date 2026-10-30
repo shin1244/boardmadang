@@ -2,8 +2,12 @@
 // 실제 플랫폼이 하는 일(시드, 행동 기록, 상태 해시, maxActions)을 서버 없이 흉내 냅니다.
 // 두 플레이어의 화면을 나란히 보여주므로 혼자서 양쪽을 둘 수 있습니다.
 //
+// 판 아래 「썸네일로」를 누르면 그 화면을 그대로 찍어 게임 폴더의 thumbnail.json에 저장합니다.
+// 사이트의 게임 목록은 이미지 대신 이 데이터를 보드 렌더러로 다시 그립니다.
+//
 // 실제 플랫폼과 다른 점: 게임 코드를 Web Worker가 아니라 이 페이지에서 바로 실행합니다.
 
+import { checkGame, checkMembers, checkThumbnail, findNonJson, makeThumbnail, sameAction } from '../check.js';
 import { BoardView } from './board.js';
 import { LANGS, LANG_NAMES, fullLangs, localize } from './listing.js';
 import { hashOf, makeRng } from './platform.js';
@@ -11,62 +15,7 @@ import { hashOf, makeRng } from './platform.js';
 const $ = (sel) => document.querySelector(sel);
 const gameId = new URLSearchParams(location.search).get('game') || 'tictactoe';
 
-// ---- 플랫폼 도구 ----
-
-/** JSON으로 그대로 옮길 수 없는 값의 위치. 문제없으면 null */
-function findNonJson(v, where = 'state') {
-  if (v === null || typeof v === 'string' || typeof v === 'boolean') return null;
-  if (typeof v === 'number') return Number.isFinite(v) ? null : `${where} (${v})`;
-  if (Array.isArray(v)) {
-    for (let i = 0; i < v.length; i++) {
-      const w = findNonJson(v[i], `${where}[${i}]`);
-      if (w) return w;
-    }
-    return null;
-  }
-  if (typeof v === 'object') {
-    const proto = Object.getPrototypeOf(v);
-    if (proto !== Object.prototype && proto !== null) return `${where} (${v.constructor?.name ?? '객체'})`;
-    for (const [k, x] of Object.entries(v)) {
-      const w = findNonJson(x, `${where}.${k}`);
-      if (w) return w;
-    }
-    return null;
-  }
-  return `${where} (${typeof v})`;
-}
-
-/** 필수 멤버와 제한값 검사. 업로드 검사의 첫 단계와 같습니다. */
-function checkMembers(g) {
-  const p = [];
-  const fn = (k) => typeof g[k] === 'function';
-  if (typeof g.id !== 'string' || !/^[a-z0-9-]+$/.test(g.id)) p.push('id: 영문 소문자, 숫자, -로 된 문자열이어야 합니다');
-  const b = g.board;
-  if (!b || typeof b !== 'object') {
-    p.push('board: 객체가 필요합니다');
-  } else {
-    if (!['cells', 'points', 'both'].includes(b.places)) p.push("board.places: 'cells' 또는 'points'여야 합니다");
-    for (const k of ['rows', 'cols']) {
-      if (!Number.isInteger(b[k]) || b[k] < 1 || b[k] > 32) p.push(`board.${k}: 1~32의 정수여야 합니다`);
-    }
-  }
-  const pc = g.pieces;
-  const okPieces = ['chess', 'go-stones', 'xo'].includes(pc)
-    || (Array.isArray(pc) && pc.length <= 32 && pc.every((x) => typeof x === 'string'));
-  if (!okPieces) p.push("pieces: 'chess', 'go-stones', 'xo' 또는 문자열 배열(32개 이하)이어야 합니다");
-  if (!Number.isInteger(g.maxActions) || g.maxActions < 1 || g.maxActions > 2000) {
-    p.push('maxActions: 1~2,000의 정수여야 합니다');
-  }
-  for (const k of ['setup', 'play', 'result', 'view']) if (!fn(k)) p.push(`${k}(): 함수가 필요합니다`);
-  for (const k of ['legal', 'observe', 'turn']) if (k in g && !fn(k)) p.push(`${k}: 있다면 함수여야 합니다`);
-  if ('specialActions' in g
-    && !(Array.isArray(g.specialActions) && g.specialActions.every((x) => typeof x === 'string' && x !== 'click'))) {
-    p.push("specialActions: 'click'이 아닌 문자열 배열이어야 합니다");
-  }
-  return p;
-}
-
-const sameAction = (a, b) => a.kind === b.kind && (a.kind !== 'click' || (a.row === b.row && a.col === b.col));
+// ---- 플랫폼 도구 (검사는 ../check.js에 있고 명령줄과 같이 씁니다) ----
 
 function fmtAction(a) {
   return a.kind === 'click' ? `클릭 (${a.row}, ${a.col})` : a.kind;
@@ -231,81 +180,65 @@ function legalOf(player) {
   }
 }
 
-// ---- 랜덤 대국: 업로드 검사의 "종료" 단계를 미리 해봅니다 ----
+// ---- 랜덤 대국: 업로드 검사의 실행 단계를 그대로 해봅니다 (npx boardmadang check와 같음) ----
 
 function randomGames(n) {
-  const tally = { 0: 0, 1: 0, draw: 0, maxActions: 0, stuck: 0, noLegal: 0 };
-  let totalMoves = 0;
-  let maxMs = 0;
-  let sumMs = 0;
-  let calls = 0;
-  let legalIgnored = 0;
-  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  // 지금 고른 언어를 먼저 두고, 나머지 완전 번역 언어로 판 그림과 승자가 같은지도 봅니다
+  const { problems, warnings: more, stats } = checkGame(game, { n, langs: [lang, ...langs.filter((l) => l !== lang)] });
+  for (const w of [...problems, ...more]) warn(w);
+  if (!stats) return render();
 
-  for (let g = 0; g < n; g++) {
-    let s = game.setup(makeRng((Math.random() * 2 ** 32) >>> 0));
-    let h = hashOf(s);
-    let eff = 0;
-    let raw = 0;
-    let r = game.result(s, lang);
-    while (!r) {
-      if (eff >= game.maxActions) { tally.maxActions++; break; }
-      if (raw > game.maxActions * 20) { tally.stuck++; break; }
-
-      const choices = [];
-      for (const p of [0, 1]) {
-        if (game.legal) {
-          for (const a of game.legal(s, p)) choices.push([p, a]);
-        } else {
-          const { rows, cols } = game.board;
-          choices.push([p, { kind: 'click', row: Math.floor(Math.random() * rows), col: Math.floor(Math.random() * cols) }]);
-          for (const k of game.specialActions ?? []) choices.push([p, { kind: k }]);
-        }
-      }
-      if (!choices.length) { tally.noLegal++; break; }
-
-      const [p, a] = pick(choices);
-      const t = performance.now();
-      const next = game.play(s, p, a);
-      const ms = performance.now() - t;
-      sumMs += ms;
-      maxMs = Math.max(maxMs, ms);
-      calls++;
-      raw++;
-      const h2 = hashOf(next);
-      if (h2 !== h) eff++;
-      else if (game.legal) legalIgnored++;
-      s = next;
-      h = h2;
-      r = game.result(s, lang);
-    }
-    if (r) {
-      if (r.winner === null) tally.draw++;
-      else tally[r.winner]++;
-    }
-    totalMoves += eff;
-  }
-
-  if (legalIgnored) warn(`legal()이 돌려준 행동인데 play()가 무시한 경우가 ${legalIgnored}번 있습니다. 두 함수의 규칙이 서로 다릅니다.`);
-  if (tally.noLegal) warn(`끝나지 않았는데 양쪽 모두 legal()이 비어 있는 판이 ${tally.noLegal}번 나왔습니다.`);
-  if (tally.stuck) warn(`행동이 계속 무시되기만 해서 진행되지 않은 판이 ${tally.stuck}번 있습니다.`);
-
-  const avg = calls ? sumMs / calls : 0;
-  if (avg > 2 || maxMs > 50) warn(`play()가 느립니다. 평균 ${avg.toFixed(2)}ms, 최대 ${maxMs.toFixed(1)}ms (상한: 평균 2ms, 최대 50ms)`);
-
-  const pct = (x) => `${Math.round((x / n) * 100)}%`;
+  const { tally } = stats;
+  const pct = (x) => `${Math.round((x / stats.n) * 100)}%`;
   $('#random-result').innerHTML = `
     <table>
-      <tr><th>판 수</th><td>${n}</td></tr>
+      <tr><th>판 수</th><td>${stats.n}</td></tr>
       <tr><th>플레이어 0 승</th><td>${tally[0]} (${pct(tally[0])})</td></tr>
       <tr><th>플레이어 1 승</th><td>${tally[1]} (${pct(tally[1])})</td></tr>
       <tr><th>무승부</th><td>${tally.draw} (${pct(tally.draw)})</td></tr>
       <tr><th>maxActions 도달</th><td>${tally.maxActions}</td></tr>
       <tr><th>진행 불가</th><td>${tally.stuck + tally.noLegal}</td></tr>
-      <tr><th>평균 길이</th><td>${(totalMoves / n).toFixed(1)}수</td></tr>
-      <tr><th>play() 시간</th><td>평균 ${avg.toFixed(3)}ms · 최대 ${maxMs.toFixed(2)}ms</td></tr>
+      <tr><th>평균 길이</th><td>${stats.avgMoves.toFixed(1)}수</td></tr>
+      <tr><th>play() 시간</th><td>평균 ${stats.avgMs.toFixed(3)}ms · 최대 ${stats.maxMs.toFixed(2)}ms</td></tr>
     </table>`;
   render();
+}
+
+// ---- 썸네일: 지금 화면을 그대로 찍어 thumbnail.json에 저장합니다 ----
+
+/** 썸네일 미리보기. 게임 목록과 같은 방법으로 thumbnail.json만 보고 그립니다. */
+function showThumbnail(thumb, note) {
+  const canvas = $('#thumb');
+  canvas.hidden = !thumb;
+  if (thumb) {
+    const board = new BoardView(canvas, thumb.board, thumb.pieces);
+    board.resize(220);
+    board.draw(thumb.view, { flip: thumb.board.flipForPlayer === thumb.player });
+  }
+  $('#thumb-status').textContent = note;
+}
+
+async function snapshot(player) {
+  let view;
+  try {
+    view = game.view(state, player, lang);
+  } catch (e) {
+    warn(`view()에서 오류: ${e.message}`);
+    return render();
+  }
+  const thumb = makeThumbnail(game, player, view);
+  try {
+    const res = await fetch(`/api/games/${encodeURIComponent(gameId)}/thumbnail`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(thumb),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.problems?.join(' / ') ?? body.error ?? `HTTP ${res.status}`);
+    showThumbnail(thumb, `플레이어 ${player} 화면을 썸네일로 저장했습니다 (thumbnail.json, 행동 ${log.length}개 둔 판).`);
+  } catch (e) {
+    $('#thumb-status').textContent = `썸네일을 저장하지 못했습니다: ${e.message}`;
+  }
 }
 
 // ---- 화면 ----
@@ -321,7 +254,7 @@ function render() {
     }
     boards[p].draw(view, { flip: game.board.flipForPlayer === p, hover: hover[p] });
     panel.querySelector('.message').textContent = view.message ?? '';
-    for (const b of panel.querySelectorAll('button')) b.disabled = !!ended;
+    for (const b of panel.querySelectorAll('button:not(.snapshot)')) b.disabled = !!ended;
   }
 
   const status = $('#status');
@@ -397,6 +330,12 @@ function buildPanels() {
     r.className = 'secondary';
     r.addEventListener('click', () => resign(p));
     actions.append(r);
+    const shot = document.createElement('button');
+    shot.textContent = '썸네일로';
+    shot.className = 'secondary snapshot';
+    shot.title = '이 플레이어 화면을 그대로 찍어 게임 목록의 썸네일로 씁니다';
+    shot.addEventListener('click', () => snapshot(p));
+    actions.append(shot);
     wrap.append(panel);
 
     const canvas = panel.querySelector('canvas');
@@ -468,7 +407,7 @@ async function main() {
   if (!/^[a-z0-9-]+$/.test(gameId)) throw new Error('game 이름은 영문 소문자, 숫자, -만 됩니다');
   // 개발 서버가 games/<id>와 깃허브에 올리지 않는 games/private/<id>를 찾아 등록 정보와 같이 알려줍니다.
   const entry = (await (await fetch('/api/games')).json()).find((g) => g.id === gameId);
-  if (!entry) throw new Error('games/ 와 games/private/ 에 이 게임이 없습니다');
+  if (!entry) throw new Error('개발 서버가 이 게임을 찾지 못했습니다');
   listing = entry.listing;
   game = (await import(entry.module)).default;
   const problems = checkMembers(game ?? {});
@@ -479,9 +418,12 @@ async function main() {
   }
 
   setupLang(new URLSearchParams(location.search).get('lang'));
+  if (entry.thumbnail) {
+    showThumbnail(entry.thumbnail, '지금 썸네일입니다. 다른 화면으로 바꾸려면 판 아래 「썸네일로」를 누르세요.');
+    for (const p of checkThumbnail(game, entry.thumbnail)) warn(p);
+  }
 
   buildPanels();
-  if (game.board.places === 'both') warn("board.places 'both'는 플레이그라운드에서 아직 칸 모드로만 그립니다.");
 
   $('#restart').addEventListener('click', () => newGame(Number($('#seed').value) || 0));
   $('#newseed').addEventListener('click', () => newGame((Math.random() * 2 ** 32) >>> 0));
@@ -495,5 +437,5 @@ async function main() {
 
 main().catch((e) => {
   $('#fatal').hidden = false;
-  $('#fatal').textContent = `게임을 불러오지 못했습니다 (games/${gameId}/index.js 또는 games/private/${gameId}/index.js): ${e.message}`;
+  $('#fatal').textContent = `게임을 불러오지 못했습니다 (${gameId}/index.js): ${e.message}`;
 });

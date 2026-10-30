@@ -40,12 +40,15 @@ func TestSiteRoutes(t *testing.T) {
 	}{
 		{"/", http.StatusFound, "/web/"},
 		{"/web", http.StatusMovedPermanently, "/web/"},
-		{"/sdk/playground?game=tictactoe", http.StatusMovedPermanently, "/sdk/playground/?game=tictactoe"},
+		{"/games/tictactoe?lang=en", http.StatusMovedPermanently, "/games/tictactoe/?lang=en"},
 		{"/web/", http.StatusOK, ""},
 		{"/web/match.html", http.StatusOK, ""},
 		{"/sdk/playground/board.js", http.StatusOK, ""},
 		{"/games/tictactoe/index.js", http.StatusOK, ""},
 		{"/sdk/playground/serve.js", http.StatusNotFound, ""},
+		{"/sdk/playground/", http.StatusNotFound, ""}, // 플레이그라운드는 사이트에 없습니다
+		{"/sdk/playground/listing.js", http.StatusOK, ""},
+		{"/sdk/playground/platform.js", http.StatusOK, ""},
 		{"/server/go.mod", http.StatusNotFound, ""},
 		{"/README.md", http.StatusNotFound, ""},
 		{"/api/locale", http.StatusOK, ""},

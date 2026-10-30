@@ -30,13 +30,17 @@ A가 클릭 → 플랫폼이 (row, col)로 변환 → 서버는 순번만 붙여
 | 6 | 로직은 **순수 함수**입니다. 화면, 네트워크, 저장소에 접근할 수 없습니다 | 업로드된 코드를 Web Worker에 가둡니다 |
 | 7 | **최대 행동 수**(`maxActions`)가 있어야 합니다. 상태를 바꾼 행동만 셉니다 | 게임이 반드시 끝나야 AI 학습이 됩니다 |
 
-게임 API 명세는 [sdk/README.md](sdk/README.md)에 있습니다.
+게임 API 명세는 [sdk/README.md](sdk/README.md)에 있습니다. 게임은 npm 패키지 `boardmadang`으로 만듭니다.
+
+```bash
+npx boardmadang new my-game
+```
 
 ## 폴더 구조
 
 ```
 server/    Go 백엔드: 매칭, 클릭 중계, 결과 기록          (AGPL-3.0)
-sdk/       게임 API 명세와 타입, 나중에 로컬 실행기         (MIT)
+sdk/       게임 제작 도구 (npm 패키지 boardmadang): API 타입, 플레이그라운드, 검사, 묶기   (MIT)
 games/     예제 게임: 틱택토, 바둑, 체스                    (MIT)
 trainer/   (예정) AlphaZero 방식 AI 학습 파이프라인
 docs/      설계 문서

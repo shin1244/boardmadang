@@ -6,6 +6,7 @@
 // 여기를 고치면 그쪽도 같이 고칩니다.
 // /api/games 의 version 은 게임 폴더의 코드 파일 해시입니다. 코드를 고치면 바뀝니다.
 // PUT /api/games/<id>/listing 은 개발용 등록창이 games/<id>/listing.json 에 저장할 때 씁니다.
+// PUT /api/games/<id>/thumbnail 은 플레이그라운드의 「썸네일로」가 games/<id>/thumbnail.json 에 저장할 때 씁니다.
 //   DEV_COUNTRY=US node sdk/playground/serve.js  → 다른 나라에서 들어온 것처럼 확인
 //
 // 대전(/ws)과 신원(/api/me)은 Go 서버에 넘깁니다 (GO_SERVER, 기본 http://localhost:8080).
@@ -18,12 +19,12 @@
 // 돌아올 주소는 http://localhost:5173/auth/<google|github>/callback 입니다 (docs/identity.md).
 //   DEV_AS=guest node sdk/playground/serve.js    → Go 서버가 꺼져 있을 때 게스트로 보이게 (등록창이 막히는지 확인)
 
-import crypto from 'node:crypto';
 import http from 'node:http';
 import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { gameEntry, json, isLocal, saveThumbnail } from '../lib/games.js';
 import { normalizeListing, validateListing } from './listing.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -39,7 +40,10 @@ const TYPES = {
   '.svg': 'image/svg+xml',
 };
 
-/** games/<id>/index.js 와 games/private/<id>/index.js 를 찾아 목록으로 만듭니다. 등록 정보가 있으면 같이 넣습니다. */
+/**
+ * games/<id>/index.js 와 games/private/<id>/index.js 를 찾아 목록으로 만듭니다. 등록 정보와 썸네일이 있으면 같이 넣습니다.
+ * folder는 /api/games에 넣지 않고 이 서버 안에서만 씁니다 (썸네일 저장).
+ */
 function listGames() {
   const list = [];
   for (const [dir, isPrivate] of [['games', false], ['games/private', true]]) {
@@ -49,49 +53,12 @@ function listGames() {
       if (!d.isDirectory() || !/^[a-z0-9-]+$/.test(d.name)) continue;
       if (!fs.existsSync(path.join(base, d.name, 'index.js'))) continue;
       const folder = path.join(base, d.name);
-      list.push({ id: d.name, module: `/${dir}/${d.name}/index.js`, version: codeVersion(folder), private: isPrivate, ...readListing(folder) });
+      const entry = gameEntry(folder, { id: d.name, module: `/${dir}/${d.name}/index.js`, private: isPrivate });
+      Object.defineProperty(entry, 'folder', { value: folder }); // JSON에는 나가지 않습니다
+      list.push(entry);
     }
   }
   return list;
-}
-
-/**
- * 게임 코드의 버전: 폴더 안 .js 파일(테스트 제외)의 경로와 내용을 이은 SHA-256 앞 16글자.
- * 같은 버전끼리만 매칭하고 기보에도 남깁니다. 등록 정보(listing.json)는 판에 영향이 없어 넣지 않습니다.
- * 운영의 Go 서버(server/internal/site의 codeVersion)와 결과가 같아야 합니다.
- * 그래서 경로는 운영체제와 상관없이 /로 구분한 상대 경로로 정렬합니다 (윈도우의 \로 정렬하면 순서가 달라질 수 있습니다).
- */
-function codeVersion(folder) {
-  const files = [];
-  (function walk(dir) {
-    for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
-      const p = path.join(dir, d.name);
-      if (d.isDirectory()) {
-        if (d.name !== 'node_modules') walk(p);
-      } else if (/\.m?js$/.test(d.name) && !/\.test\.m?js$/.test(d.name)) {
-        files.push(path.relative(folder, p).split(path.sep).join('/'));
-      }
-    }
-  })(folder);
-  const hash = crypto.createHash('sha256');
-  for (const rel of files.sort()) {
-    hash.update(rel);
-    hash.update('\0');
-    hash.update(fs.readFileSync(path.join(folder, rel)));
-    hash.update('\0');
-  }
-  return hash.digest('hex').slice(0, 16);
-}
-
-/** listing.json 을 읽습니다. 없으면 listing: null (등록 전), 깨졌으면 listingError. */
-function readListing(dir) {
-  const file = path.join(dir, 'listing.json');
-  if (!fs.existsSync(file)) return { listing: null };
-  try {
-    return { listing: JSON.parse(fs.readFileSync(file, 'utf8')) };
-  } catch (e) {
-    return { listing: null, listingError: e.message };
-  }
 }
 
 /** 개발용 가짜 신원 (Go 서버가 꺼져 있을 때). 기본은 계정이라 등록창을 쓸 수 있습니다. */
@@ -181,19 +148,13 @@ function proxyWS(req, socket, head) {
   socket.on('error', () => up.destroy());
 }
 
-const json = (res, status, body) => {
-  res.writeHead(status, { 'Content-Type': TYPES['.json'], 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(body));
-};
-
 /**
  * 개발용 등록 정보 저장. 내 컴퓨터에서 온 요청만 받습니다 (같은 와이파이의 다른 기기가 파일을 못 쓰게).
  * 다른 사이트가 보내는 요청은 JSON 본문 때문에 브라우저가 미리 확인(preflight)하는데,
  * 이 서버가 CORS 허가를 주지 않으므로 막힙니다.
  */
 function saveListing(req, res, id) {
-  const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
-  if (!local) return json(res, 403, { error: 'local only' });
+  if (!isLocal(req)) return json(res, 403, { error: 'local only' });
   if (DEV_ME.kind !== 'member') return json(res, 403, { error: 'member only' });
   if (!/^application\/json\b/.test(req.headers['content-type'] ?? '')) return json(res, 415, { error: 'JSON only' });
   const game = listGames().find((g) => g.id === id);
@@ -220,7 +181,7 @@ function saveListing(req, res, id) {
       if ((saved.timer.minutes !== null || saved.timer.custom) && !ok) {
         return json(res, 422, { problems: [{ code: 'timer.needsTurn' }] });
       }
-      const file = path.join(ROOT, path.dirname(game.module), 'listing.json');
+      const file = path.join(game.folder, 'listing.json');
       fs.writeFileSync(file, JSON.stringify(saved, null, 2) + '\n');
       json(res, 200, { listing: saved });
     });
@@ -269,6 +230,11 @@ const server = http.createServer((req, res) => {
   if (/^\/api\/games\/[a-z0-9-]+\/comments(\/[A-Z0-9]+)?$/.test(url.pathname) || url.pathname === '/api/reports') return proxyGo(req, res, url);
   const m = url.pathname.match(/^\/api\/games\/([a-z0-9-]+)\/listing$/);
   if (m && req.method === 'PUT') return saveListing(req, res, m[1]);
+  const th = url.pathname.match(/^\/api\/games\/([a-z0-9-]+)\/thumbnail$/);
+  if (th && req.method === 'PUT') {
+    const game = listGames().find((g) => g.id === th[1]);
+    return game ? saveThumbnail(req, res, game.folder) : json(res, 404, { error: 'no such game' });
+  }
 
   let file = path.join(ROOT, decodeURIComponent(url.pathname));
   // ../ 로 레포 밖을 읽지 못하게 막습니다.
