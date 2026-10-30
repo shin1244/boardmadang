@@ -38,10 +38,11 @@ type Client struct {
 	done      chan struct{} // 닫히면 연결을 정리 중입니다. send 채널은 닫지 않습니다 (닫힌 채널에 보내면 패닉).
 	closeOnce sync.Once
 
-	// 아래 셋은 hub.mu를 잡고만 읽고 씁니다. 상대의 고루틴이 매칭하면서 바꾸기 때문입니다.
-	queued string // 기다리는 게임 id. 대기열에 없으면 ""
-	room   *Room
-	player int // 방 안에서의 번호 (0 = 선공, 1 = 후공)
+	// 아래 넷은 hub.mu를 잡고만 읽고 씁니다. 상대의 고루틴이 매칭하면서 바꾸기 때문입니다.
+	queued  string // 빠른 매칭 대기열의 키 (게임|타이머). 없으면 ""
+	hosting string // 방 목록에 올린 내 방 코드. 없으면 ""
+	room    *Room
+	player  int // 방 안에서의 번호 (0 = 선공, 1 = 후공)
 
 	// 초당 행동 수 제한. readPump 고루틴만 씁니다.
 	windowStart time.Time
@@ -76,6 +77,11 @@ func (c *Client) Send(msg any) {
 	default:
 		c.close()
 	}
+}
+
+// busy는 이미 대기열, 방 목록, 대국 중 하나에 있는지입니다. hub.mu를 잡고 부릅니다.
+func (c *Client) busy() bool {
+	return c.room != nil || c.queued != "" || c.hosting != ""
 }
 
 func (c *Client) sendError(msg string) {
@@ -126,13 +132,33 @@ func (c *Client) handle(data []byte) {
 		return
 	}
 
-	if typ == protocol.TypeJoin {
+	switch typ {
+	case protocol.TypeJoin:
 		var m protocol.Join
 		if json.Unmarshal(data, &m) != nil {
 			c.sendError("bad message")
 			return
 		}
-		c.hub.join(c, m.Game)
+		c.hub.join(c, m.Game, m.Minutes)
+		return
+	case protocol.TypeCreate:
+		var m protocol.Create
+		if json.Unmarshal(data, &m) != nil {
+			c.sendError("bad message")
+			return
+		}
+		c.hub.create(c, m.Game, m.Minutes)
+		return
+	case protocol.TypeEnter:
+		var m protocol.Enter
+		if json.Unmarshal(data, &m) != nil {
+			c.sendError("bad message")
+			return
+		}
+		c.hub.enter(c, m.Room)
+		return
+	case protocol.TypeBump:
+		c.hub.bump(c)
 		return
 	}
 
@@ -155,11 +181,11 @@ func (c *Client) handle(data []byte) {
 		room.relay(player, m.Action)
 	case protocol.TypeHash:
 		var m protocol.Hash
-		if json.Unmarshal(data, &m) != nil || m.Hash == "" || len(m.Hash) > 64 {
+		if json.Unmarshal(data, &m) != nil || m.Hash == "" || len(m.Hash) > 64 || (m.Turn != nil && *m.Turn != 0 && *m.Turn != 1) {
 			c.sendError("bad hash")
 			return
 		}
-		room.reportHash(player, m.Seq, m.Hash)
+		room.reportHash(player, m.Seq, m.Hash, m.Turn)
 	case protocol.TypeResult:
 		var m protocol.Result
 		if json.Unmarshal(data, &m) != nil || (m.Winner != nil && *m.Winner != 0 && *m.Winner != 1) {

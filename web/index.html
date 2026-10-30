@@ -16,6 +16,7 @@
       </a>
       <nav class="menu" data-i18n-attr="aria-label:menu.label" aria-label="메뉴">
         <a href="/web/" aria-current="page" data-i18n="menu.games">게임</a>
+        <a href="/web/rooms.html" data-i18n="menu.rooms">방 목록</a>
         <span class="soon" data-i18n="menu.ranking" data-i18n-attr="title:soon" title="준비 중">랭킹</span>
         <a href="/web/register.html" data-i18n="menu.register">게임 등록</a>
         <a href="/sdk/playground/" data-i18n="menu.playground">플레이그라운드</a>
@@ -90,6 +91,22 @@
     </header>
     <p class="rulebook-notes"></p>
     <div class="rulebook-text"></div>
+  </dialog>
+
+  <!-- 방 만들기: 제작자가 커스텀 타이머를 허용한 게임만 이 창이 뜹니다. 아니면 바로 기본 타이머로 만듭니다. -->
+  <dialog id="create-room" class="rulebook create-room" aria-labelledby="create-title">
+    <header>
+      <h2 id="create-title"></h2>
+      <form method="dialog"><button class="close" data-i18n-attr="aria-label:rulebook.close" aria-label="닫기">×</button></form>
+    </header>
+    <form id="create-form" class="create-form">
+      <p class="hint" data-i18n="create.lead"></p>
+      <label class="pick"><input type="radio" name="create-timer" value="none"> <span data-i18n="timer.none">타이머 없음</span></label>
+      <label class="pick"><input type="radio" name="create-timer" value="on"> <span data-i18n="register.timer.each">각자</span>
+        <input id="create-minutes" type="number" min="1" max="180" step="1" inputmode="numeric" required>
+        <span data-i18n="timer.minutesUnit">분</span></label>
+      <button class="btn" type="submit" data-i18n="create.submit">방 만들기</button>
+    </form>
   </dialog>
 
   <script type="module" src="lobby.js"></script>

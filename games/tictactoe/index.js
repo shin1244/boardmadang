@@ -52,6 +52,11 @@ function play(state, player, action) {
   return { board, turn: 1 - player, last: i };
 }
 
+/** 누구 차례인지. 끝났으면 null (대국 시계가 멈춥니다) */
+function turn(state) {
+  return result(state) ? null : state.turn;
+}
+
 function legal(state, player) {
   if (result(state) || player !== state.turn) return [];
   const actions = [];
@@ -99,4 +104,5 @@ export default {
   result,
   view,
   legal,
+  turn,
 };

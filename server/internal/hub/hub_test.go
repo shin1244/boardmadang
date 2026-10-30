@@ -24,6 +24,7 @@ func newServer(t *testing.T) *httptest.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/me", ids.HandleMe)
 	mux.HandleFunc("GET /ws", h.ServeWS)
+	mux.HandleFunc("GET /api/rooms", h.ServeRooms)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -122,7 +123,7 @@ func (p *player) expectEnded(winner *int, reason string) {
 	p.t.Helper()
 	var e protocol.Ended
 	p.expect(protocol.TypeEnded, &e)
-	if e.Reason != reason || !sameWinner(e.Winner, winner) {
+	if e.Reason != reason || !samePlayer(e.Winner, winner) {
 		p.t.Fatalf("ended = winner %v reason %q, want winner %v reason %q", ptr(e.Winner), e.Reason, ptr(winner), reason)
 	}
 }

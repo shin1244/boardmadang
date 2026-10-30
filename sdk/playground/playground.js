@@ -58,7 +58,7 @@ function checkMembers(g) {
     p.push('maxActions: 1~2,000의 정수여야 합니다');
   }
   for (const k of ['setup', 'play', 'result', 'view']) if (!fn(k)) p.push(`${k}(): 함수가 필요합니다`);
-  for (const k of ['legal', 'observe']) if (k in g && !fn(k)) p.push(`${k}: 있다면 함수여야 합니다`);
+  for (const k of ['legal', 'observe', 'turn']) if (k in g && !fn(k)) p.push(`${k}: 있다면 함수여야 합니다`);
   if ('specialActions' in g
     && !(Array.isArray(g.specialActions) && g.specialActions.every((x) => typeof x === 'string' && x !== 'click'))) {
     p.push("specialActions: 'click'이 아닌 문자열 배열이어야 합니다");
@@ -146,8 +146,23 @@ function dispatch(player, action) {
 
   checkReplay();
   checkResult();
+  checkTurn();
   checkLangs();
   render();
+}
+
+/** turn()은 0, 1, null만 돌려줘야 합니다. 플랫폼이 대국 시계를 이걸로 돌립니다. */
+function checkTurn() {
+  if (!game.turn) return;
+  let t;
+  try {
+    t = game.turn(state);
+  } catch (e) {
+    warn(`turn()에서 오류: ${e.message}`);
+    return;
+  }
+  if (t !== 0 && t !== 1 && t !== null) warn(`turn()은 0, 1, null 중 하나여야 합니다 (받은 값: ${JSON.stringify(t)})`);
+  if (ended && t !== null) warn('끝난 판에서는 turn()이 null이어야 시계가 멈춥니다.');
 }
 
 /** 끝났는지 확인합니다. maxActions에 이르면 플랫폼이 무승부로 끝냅니다. */

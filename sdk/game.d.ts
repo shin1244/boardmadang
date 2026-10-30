@@ -75,8 +75,8 @@ export interface Rng {
   int(n: number): number;
 }
 
-/** 플랫폼이 지원하는 언어 */
-export type Lang = 'ko' | 'en';
+/** 플랫폼이 지원하는 언어 (많이 쓰는 언어 10개) */
+export type Lang = 'ko' | 'en' | 'ja' | 'zh' | 'es' | 'fr' | 'de' | 'pt' | 'ru' | 'ar';
 
 /** 언어별 글자 */
 export type Localized = Partial<Record<Lang, string>>;
@@ -93,6 +93,17 @@ export type Difficulty = 'easy' | 'normal' | 'hard';
 export type Support = 'full' | 'rulebook';
 
 /**
+ * 타이머. 각 플레이어가 자기 차례에 쓸 수 있는 총 시간입니다 (체스 시계). 다 쓰면 집니다.
+ * 타이머를 쓰려면 게임에 turn()이 있어야 합니다.
+ */
+export interface Timer {
+  /** 기본 타이머 (분, 1~180). null이면 타이머 없음. 빠른 매칭은 이 시간으로 합니다. */
+  minutes: number | null;
+  /** true면 방 만들기에서 방장이 시간을 정할 수 있습니다 (분 단위, 타이머 없음도 가능). */
+  custom: boolean;
+}
+
+/**
  * 등록 정보. 게임 코드에 넣지 않고 등록창에서 입력합니다 (개발 서버는 games/<id>/listing.json).
  * 코드를 다시 올리지 않아도 소개, 룰북, 번역을 고칠 수 있습니다.
  */
@@ -100,6 +111,7 @@ export interface Listing {
   /** 지원하는 언어와 수준. 완전 번역 언어가 하나 이상 있어야 합니다. */
   languages: Partial<Record<Lang, Support>>;
   difficulty: Difficulty;
+  timer: Timer;
   /** 아래 셋은 지원하는 언어마다 씁니다. */
   name: Localized;
   /** 게임 목록에 보일 한두 줄 소개 */
@@ -140,6 +152,13 @@ export interface Game<S> {
 
   /** 이 플레이어 화면에 보일 것. message 같은 글자는 lang으로 씁니다 (result와 같은 규칙). 그 밖의 내용은 lang과 상관없이 같아야 합니다. */
   view(state: S, player: Player, lang: Lang): View;
+
+  /**
+   * (선택) 지금 누구 차례인지. 끝났거나 아무도 차례가 아니면 null.
+   * 플랫폼은 이걸로 대국 시계를 돌립니다. 없으면 이 게임은 타이머를 쓸 수 없습니다.
+   * 선택 → 이동처럼 한 차례에 클릭이 여러 번이어도, 차례가 넘어갈 때만 바뀌면 됩니다.
+   */
+  turn?(state: S): Player | null;
 
   /** (선택) 지금 둘 수 있는 행동 목록. AI 학습의 행동 마스크와 호버 표시에 쓰입니다. */
   legal?(state: S, player: Player): Action[];

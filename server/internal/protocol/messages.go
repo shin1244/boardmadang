@@ -9,6 +9,9 @@ import "encoding/json"
 // 클라이언트 → 서버
 const (
 	TypeJoin   = "join"
+	TypeCreate = "create"
+	TypeEnter  = "enter"
+	TypeBump   = "bump"
 	TypeAction = "action"
 	TypeHash   = "hash"
 	TypeResult = "result"
@@ -18,7 +21,10 @@ const (
 // 서버 → 클라이언트
 const (
 	TypeWaiting = "waiting"
+	TypeCreated = "created"
+	TypeBumped  = "bumped"
 	TypeMatched = "matched"
+	TypeClock   = "clock"
 	TypeResumed = "resumed"
 	TypeAway    = "away"
 	TypeBack    = "back"
@@ -37,6 +43,7 @@ const (
 	ReasonDisagree = "disagree" // 양쪽 결과 보고가 다름
 	ReasonSpam     = "spam"     // 한쪽이 무시된 행동을 너무 많이 보냄 → 상대 승
 	ReasonLimit    = "limit"    // 행동 기록이 상한에 닿음 → 무효
+	ReasonTimeout  = "timeout"  // 한쪽이 시간을 다 씀 → 상대 승
 )
 
 // Action은 플레이어의 행동 하나입니다. 서버는 내용을 해석하지 않고 그대로 전달합니다.
@@ -49,9 +56,30 @@ type Action struct {
 
 // ---- 클라이언트 → 서버 ----
 
+// Join은 빠른 매칭입니다. Minutes는 타이머(분), null이면 타이머 없음.
+// 같은 게임, 같은 타이머끼리만 매칭합니다. 브라우저는 등록 정보의 기본 타이머를 넣어 보냅니다.
 type Join struct {
+	Type    string `json:"type"`
+	Game    string `json:"game"`
+	Minutes *int   `json:"minutes"`
+}
+
+// Create는 방 만들기입니다. 방 목록(GET /api/rooms)에 올라가고, 누가 Enter하면 대국이 시작됩니다.
+type Create struct {
+	Type    string `json:"type"`
+	Game    string `json:"game"`
+	Minutes *int   `json:"minutes"`
+}
+
+// Enter는 방 목록의 방에 들어가기입니다.
+type Enter struct {
 	Type string `json:"type"`
-	Game string `json:"game"`
+	Room string `json:"room"`
+}
+
+// Bump는 방장이 자기 방을 목록 맨 위로 올리는 것입니다. BumpEvery마다 한 번 됩니다.
+type Bump struct {
+	Type string `json:"type"`
 }
 
 // ActionMsg에는 순번이 없습니다. 순번은 서버가 받은 순서대로 붙입니다.
@@ -60,10 +88,13 @@ type ActionMsg struct {
 	Action Action `json:"action"`
 }
 
+// Hash의 Turn은 그 상태에서 누구 차례인지입니다 (게임의 turn(), 없으면 null).
+// 서버는 먼저 온 보고의 Turn으로 대국 시계를 넘기고, 양쪽 Turn이 다르면 해시가 다른 것처럼 무효로 합니다.
 type Hash struct {
 	Type string `json:"type"`
 	Seq  int    `json:"seq"`
 	Hash string `json:"hash"`
+	Turn *int   `json:"turn"`
 }
 
 // Result의 Winner가 nil이면 무승부입니다.
@@ -85,6 +116,38 @@ type Waiting struct {
 	Game string `json:"game"`
 }
 
+// Created는 방을 만들었다는 알림입니다. 누가 들어오면 Matched가 갑니다.
+// BumpEvery초마다 Bump로 방을 목록 맨 위에 다시 올릴 수 있습니다.
+type Created struct {
+	Type      string `json:"type"`
+	Room      string `json:"room"`
+	Game      string `json:"game"`
+	Minutes   *int   `json:"minutes"`
+	BumpEvery int    `json:"bumpEvery"`
+}
+
+// Bumped는 방을 목록 맨 위로 올렸다는 알림입니다.
+type Bumped struct {
+	Type string `json:"type"`
+}
+
+// Clock은 대국 시계입니다. 시계가 넘어갈 때마다 보냅니다.
+// Remaining은 보낸 순간의 남은 시간(ms)이고, Running의 시계는 그 뒤로 줄어듭니다. Running이 null이면 멈춤.
+type Clock struct {
+	Type      string   `json:"type"`
+	Remaining [2]int64 `json:"remaining"`
+	Running   *int     `json:"running"`
+}
+
+// OpenRoom은 방 목록(GET /api/rooms)의 한 줄입니다. Age는 마지막으로 올린 뒤 지난 초입니다.
+type OpenRoom struct {
+	Room    string     `json:"room"`
+	Game    string     `json:"game"`
+	Minutes *int       `json:"minutes"`
+	Host    PlayerInfo `json:"host"`
+	Age     int        `json:"age"`
+}
+
 // Seed는 32비트입니다. JS 숫자는 2^53을 넘으면 정밀도를 잃기 때문입니다.
 type Matched struct {
 	Type     string     `json:"type"`
@@ -93,6 +156,7 @@ type Matched struct {
 	Player   int        `json:"player"`
 	Seed     uint32     `json:"seed"`
 	Opponent PlayerInfo `json:"opponent"`
+	Minutes  *int       `json:"minutes"` // 타이머(분). null이면 없음
 }
 
 // PlayerInfo는 상대에게 보여줄 신원입니다. id는 넣지 않습니다 (docs/identity.md).
@@ -112,6 +176,8 @@ type Resumed struct {
 	Player   int        `json:"player"`
 	Seed     uint32     `json:"seed"`
 	Opponent PlayerInfo `json:"opponent"`
+	Minutes  *int       `json:"minutes"`
+	Clock    *Clock     `json:"clock,omitempty"` // 타이머가 있으면 지금 시계
 	Log      []Relay    `json:"log"`
 }
 

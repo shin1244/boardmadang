@@ -72,6 +72,7 @@ func routes(h *hub.Hub, ids *identity.Issuer) http.Handler {
 	mux.HandleFunc("GET /healthz", healthz)
 	mux.HandleFunc("GET /api/me", ids.HandleMe)
 	mux.HandleFunc("GET /ws", h.ServeWS)
+	mux.HandleFunc("GET /api/rooms", h.ServeRooms)
 	// TODO: 업로드와 등록 정보 저장은 계정만 됩니다. 붙일 때 ids.RequireMember로 감쌉니다.
 	//   mux.Handle("PUT /api/games/{id}/listing", ids.RequireMember(...))
 	return mux

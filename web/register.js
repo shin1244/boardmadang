@@ -1,15 +1,17 @@
 // 게임 등록창: 두 단계로 나눕니다.
-//   1단계: 게임, 난이도, 지원 언어 (일부 번역 / 완전 번역으로 나눠 언어를 고릅니다)
+//   1단계: 게임, 난이도, 타이머, 지원 언어 (일부 번역 / 완전 번역으로 나눠 언어를 고릅니다)
 //   2단계: 고른 언어마다 이름, 소개, 룰북
 // 게임 코드에는 규칙만 두고 이 정보는 플랫폼이 따로 저장하므로, 코드를 다시 올리지 않아도 고칠 수 있습니다.
 // 개발 서버에서는 PUT /api/games/<id>/listing 으로 games/<id>/listing.json 에 저장합니다.
 
-import { LANGS, LANG_NAMES, LIMITS, isRtl, localize, validateListing } from '/sdk/playground/listing.js';
+import { LANGS, LANG_NAMES, LIMITS, NO_TIMER, TIMER_MINUTES, isRtl, localize, validateListing } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { isMember, loadMe, renderMe } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
 const TEXT_FIELDS = ['name', 'description', 'rulebook'];
+/** 타이머를 정한 적 없는 게임에 처음 보여주는 값 */
+const DEFAULT_TIMER = { minutes: 10, custom: true };
 
 let me = null;
 let games = [];
@@ -23,6 +25,8 @@ let problems = [];
 /** @type {{ kind: 'saving' | 'saved' | 'failed', msg?: string } | null} */
 let saveState = null;
 let dirty = false;
+/** 고른 게임 코드에 turn()이 있는지. 불러오는 중이면 null */
+let hasTurn = null;
 
 // ---- 1단계: 언어 고르기 ----
 
@@ -104,10 +108,58 @@ function changed() {
   }
 }
 
+// ---- 타이머 ----
+
+function fillTimer(timer) {
+  const on = timer.minutes !== null;
+  for (const r of document.querySelectorAll('input[name=timer]')) r.checked = r.value === (on ? 'on' : 'none');
+  $('#timer-minutes').value = on ? timer.minutes : DEFAULT_TIMER.minutes;
+  $('#timer-custom').checked = timer.custom;
+}
+
+function readTimer() {
+  // turn()이 없는 게임은 타이머를 쓸 수 없습니다 (불러오는 중이면 고른 대로 둡니다. 서버가 다시 검사합니다)
+  if (hasTurn === false) return { ...NO_TIMER };
+  const on = document.querySelector('input[name=timer]:checked')?.value === 'on';
+  const raw = $('#timer-minutes').value.trim();
+  return {
+    minutes: on ? (/^\d+$/.test(raw) ? Number(raw) : NaN) : null,
+    custom: $('#timer-custom').checked,
+  };
+}
+
+function renderTimer() {
+  const blocked = hasTurn === false;
+  const on = document.querySelector('input[name=timer]:checked')?.value === 'on';
+  for (const el of document.querySelectorAll('#timer input')) el.disabled = blocked;
+  $('#timer-minutes').disabled = blocked || !on;
+  $('#timer-minutes').min = TIMER_MINUTES.min;
+  $('#timer-minutes').max = TIMER_MINUTES.max;
+  const line = $('#timer-status');
+  line.className = 'status-line';
+  line.textContent = blocked ? t('register.timer.noTurn') : '';
+}
+
+/** 게임 코드를 불러와 turn()이 있는지 봅니다. 그사이 다른 게임을 고르면 결과를 버립니다. */
+async function checkTurn(entry) {
+  hasTurn = null;
+  let found = false;
+  try {
+    const game = (await import(entry.module)).default;
+    found = typeof game?.turn === 'function';
+  } catch {
+    // 코드가 깨졌으면 플레이그라운드가 알려 줍니다. 여기서는 타이머만 막습니다.
+  }
+  if (current !== entry) return;
+  hasTurn = found;
+  renderTimer();
+}
+
 // ---- 폼 ↔ 등록 정보 ----
 
 function fill(listing) {
   for (const r of document.querySelectorAll('input[name=difficulty]')) r.checked = r.value === listing?.difficulty;
+  fillTimer(listing?.timer ?? DEFAULT_TIMER);
   support = new Map(Object.entries(listing?.languages ?? {}).filter(([l]) => LANGS.includes(l)));
   texts = { name: {}, description: {}, rulebook: {} };
   for (const field of TEXT_FIELDS) Object.assign(texts[field], listing?.[field]);
@@ -122,6 +174,7 @@ function readForm() {
   const listing = {
     languages: {},
     difficulty: document.querySelector('input[name=difficulty]:checked')?.value ?? null,
+    timer: readTimer(),
     name: {},
     description: {},
     rulebook: {},
@@ -134,8 +187,8 @@ function readForm() {
   return listing;
 }
 
-/** 1단계에서 고칠 문제인지 (난이도, 지원 언어) */
-const isStep1Problem = (p) => p.code.startsWith('languages.') || p.code.startsWith('difficulty.');
+/** 1단계에서 고칠 문제인지 (난이도, 타이머, 지원 언어) */
+const isStep1Problem = (p) => ['languages.', 'difficulty.', 'timer.'].some((s) => p.code.startsWith(s));
 
 // ---- 화면 ----
 
@@ -143,6 +196,7 @@ function problemText(p) {
   return t(`problem.${p.code}`, {
     lang: LANG_NAMES[p.lang] ?? '',
     field: p.field ? t(`field.${p.field}`) : '',
+    min: p.min,
     max: p.max,
   });
 }
@@ -159,6 +213,7 @@ function renderProblems() {
   for (const el of document.querySelectorAll('[aria-invalid]')) el.removeAttribute('aria-invalid');
   for (const p of problems) {
     if (p.code === 'difficulty.invalid') $('#difficulty').setAttribute('aria-invalid', 'true');
+    if (p.code.startsWith('timer.')) $('#timer').setAttribute('aria-invalid', 'true');
     if (p.code.startsWith('languages.')) $('#langs').setAttribute('aria-invalid', 'true');
     if (p.field) {
       document.querySelector(`.text-block[data-lang="${p.lang}"] [data-field="${p.field}"]`)?.setAttribute('aria-invalid', 'true');
@@ -222,6 +277,7 @@ function render() {
   $('#need-account').hidden = !me || isMember(me);
   $('#member-only').hidden = !isMember(me);
   renderGame();
+  renderTimer();
   renderChips();
   if (step === 2) renderTexts();
   renderStep();
@@ -238,6 +294,7 @@ function choose(id) {
   history.replaceState(null, '', `?game=${encodeURIComponent(current.id)}`);
   fill(current.listing);
   render();
+  checkTurn(current);
 }
 
 function goStep(n) {
@@ -319,8 +376,10 @@ async function main() {
     choose(e.target.value);
   });
   $('#form').addEventListener('change', (e) => {
-    if (e.target.name === 'difficulty') changed();
+    if (e.target.name === 'difficulty' || e.target.closest('#timer')) changed();
+    if (e.target.name === 'timer') renderTimer();
   });
+  $('#timer-minutes').addEventListener('input', changed);
   $('#next').addEventListener('click', next);
   $('#back').addEventListener('click', () => goStep(1));
   $('#form').addEventListener('submit', save);

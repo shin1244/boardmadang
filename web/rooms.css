@@ -1,0 +1,42 @@
+/* 방 목록. 색과 상단 메뉴는 lobby.css를 같이 씁니다. */
+
+.rooms {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 28px 24px 64px;
+}
+.rooms .list-head { flex-wrap: wrap; gap: 10px; margin-bottom: 6px; }
+.rooms-tools { display: flex; align-items: center; gap: 10px; }
+.rooms-tools .btn { flex: none; padding: 6px 14px; }
+.rooms-lead { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
+
+.room-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.room {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.room-info { flex: 1; min-width: 0; }
+.room-game { display: block; overflow: hidden; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.room-sub { display: block; margin-top: 2px; color: var(--muted); font-size: 13px; }
+.room-timer {
+  flex: none;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.room-timer.none { color: var(--muted); border-style: dashed; }
+.room .btn { flex: none; padding: 8px 18px; text-decoration: none; }
+
+@media (max-width: 760px) {
+  .rooms { padding: 20px 16px 48px; }
+  .room { flex-wrap: wrap; }
+  .room .btn { flex-basis: 100%; text-align: center; }
+}

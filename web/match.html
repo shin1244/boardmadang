@@ -16,6 +16,7 @@
     </a>
     <nav class="menu" data-i18n-attr="aria-label:menu.label" aria-label="메뉴">
       <a href="/web/" data-i18n="menu.games">게임</a>
+      <a href="/web/rooms.html" data-i18n="menu.rooms">방 목록</a>
       <span class="soon" data-i18n="menu.ranking" data-i18n-attr="title:soon" title="준비 중">랭킹</span>
       <a href="/web/register.html" data-i18n="menu.register">게임 등록</a>
       <a href="/sdk/playground/" data-i18n="menu.playground">플레이그라운드</a>
@@ -30,15 +31,24 @@
 
   <main class="match">
     <h1 id="title"></h1>
+    <p id="timer-info" class="timer-info" hidden></p>
 
     <!-- 대국이 시작되면 보입니다: 나 vs 상대 -->
     <div id="players" class="players" hidden>
-      <span class="who"><i class="dot" id="my-dot"></i><b id="my-name"></b> <small id="my-seat"></small></span>
+      <span class="who"><i class="dot" id="my-dot"></i><b id="my-name"></b> <small id="my-seat"></small> <time id="my-clock" class="clock" hidden></time></span>
       <span class="vs" aria-hidden="true">vs</span>
-      <span class="who"><i class="dot" id="opp-dot"></i><b id="opp-name"></b> <small id="opp-seat"></small></span>
+      <span class="who"><i class="dot" id="opp-dot"></i><b id="opp-name"></b> <small id="opp-seat"></small> <time id="opp-clock" class="clock" hidden></time></span>
     </div>
 
     <p id="status" class="match-status" role="status"></p>
+
+    <!-- 방을 만들고 상대를 기다리는 동안 -->
+    <div id="hosting" class="hosting" hidden>
+      <p><span data-i18n="match.roomCode">방 코드</span> <b id="room-code"></b></p>
+      <button id="bump" class="btn ghost" type="button" data-i18n="match.bump">목록 맨 위로 올리기</button>
+      <small id="bump-wait" class="bump-wait"></small>
+      <a href="/web/rooms.html" data-i18n="match.seeRooms">방 목록 보기</a>
+    </div>
 
     <div id="board-wrap" class="board-wrap" hidden>
       <canvas id="board"></canvas>

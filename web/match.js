@@ -1,4 +1,8 @@
 // 대전 화면: 매칭 → 대국 → 결과.
+// 들어오는 길은 셋입니다.
+//   ?game=x                       빠른 매칭. 등록 정보의 기본 타이머로 같은 타이머끼리 만납니다.
+//   ?game=x&create=1&minutes=N    방 만들기. 방 목록에 올라가고 누가 들어오면 시작합니다. minutes=none이면 타이머 없음.
+//   ?game=x&room=CODE             방 목록에서 그 방에 들어가기.
 // 서버는 규칙을 모르고 행동에 순번만 붙여 양쪽에 보냅니다 (docs/protocol.md).
 // 이 페이지가 게임 로직을 돌려 판을 계산하고, 행동마다 상태 해시를, 끝나면 결과를 서버에 보고합니다.
 //
@@ -8,17 +12,23 @@
 // 대국 중에 연결이 끊기면 15초 동안 다시 붙어 봅니다. 서버도 그동안 자리를 비워 두고,
 // 돌아오면 시드와 행동 기록(resumed)을 보내 주므로 처음부터 재생해서 판을 복원합니다. 새로고침해도 같습니다.
 //
+// 타이머가 있으면 서버가 대국 시계를 돌립니다. 누구 차례인지는 해시와 같이 보내는 게임의 turn()으로 알려 줍니다.
+// 화면의 시계는 서버가 보낸 clock을 받아 이 페이지에서 줄여 보여주기만 합니다. 시간이 다 됐는지는 서버가 정합니다.
+//
 // TODO: 업로드된 게임 코드는 별도 출처 iframe 안의 Web Worker에서 돌리기 (docs/architecture.md의 보안).
 //       지금은 플레이그라운드처럼 이 페이지에서 바로 import합니다.
 
 import { BoardView, PLAYER_COLORS } from '/sdk/playground/board.js';
-import { gameLang, localize } from '/sdk/playground/listing.js';
+import { NO_TIMER, gameLang, localize, timerOf } from '/sdk/playground/listing.js';
 import { hashOf, makeRng } from '/sdk/playground/platform.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { displayName, loadMe, renderMe } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
-const gameId = new URLSearchParams(location.search).get('game') ?? '';
+const params = new URLSearchParams(location.search);
+const gameId = params.get('game') ?? '';
+/** quick = 빠른 매칭, create = 방 만들기, enter = 방 목록의 방에 들어가기 */
+const mode = params.has('room') ? 'enter' : params.get('create') === '1' ? 'create' : 'quick';
 
 // 끊긴 뒤 다시 붙어 볼 시간. 서버의 ReconnectGrace와 같습니다.
 const RECONNECT_MS = 15_000;
@@ -29,7 +39,10 @@ let entry = null; // /api/games의 항목 (등록 정보 포함)
 let game = null;
 let board = null;
 
-/** loading → connecting → waiting → playing → ended. 중간에 idle(취소), error로 빠질 수 있습니다. */
+/**
+ * loading → connecting → waiting(빠른 매칭) 또는 hosting(방 만들기) → playing → ended.
+ * 중간에 idle(취소), error로 빠질 수 있습니다.
+ */
 let phase = 'loading';
 let problem = ''; // phase가 error일 때 보여줄 글
 let note = ''; // 서버가 보낸 error처럼 잠깐 알려줄 글
@@ -47,10 +60,47 @@ let hover = null;
 let offlineUntil = null; // 내 연결이 끊겨 다시 붙는 중이면 마감 시각 (ms)
 let oppAwayUntil = null; // 상대 연결이 끊겨 기다리는 중이면 마감 시각 (ms)
 let retryTimer = null;
+let minutes = null; // 이 대국의 타이머(분). null이면 없음
+let clock = null; // 서버가 보낸 시계 { remaining: [ms, ms], running, at: 받은 시각 }
+let hostedRoom = null; // 방을 만들었으면 방 코드
+let bumpEvery = 60; // 초
+let nextBumpAt = 0; // 이 시각(ms)부터 다시 올릴 수 있습니다
 
 const flip = () => game.board.flipForPlayer === seat;
 const playLang = () => gameLang(entry?.listing, lang);
 const nameOfGame = () => localize(entry?.listing?.name, lang).text || gameId;
+
+/** 이 게임이 실제로 쓰는 타이머. turn()이 없으면 시계를 돌릴 수 없어 없음입니다. */
+const timerOfGame = () => (game?.turn ? timerOf(entry?.listing) : NO_TIMER);
+
+/** 찾거나 만들 대국의 타이머(분). 방을 만들 때도 제작자가 커스텀을 막았으면 기본 타이머입니다. */
+function wantedMinutes() {
+  const timer = timerOfGame();
+  if (mode !== 'create' || !timer.custom || !game.turn) return timer.minutes;
+  const raw = params.get('minutes') ?? '';
+  return /^\d+$/.test(raw) ? Number(raw) : null;
+}
+
+/** 서버에 처음 보낼 메시지 */
+function firstMessage() {
+  // 대국 중에 끊겨 다시 붙을 때는 항상 join: 서버가 끊긴 대국으로 돌려보내고(resumed), 유예가 지났으면 대기열(waiting)로 넣습니다.
+  if (offlineUntil) return { type: 'join', game: gameId, minutes };
+  if (mode === 'create') return { type: 'create', game: gameId, minutes: wantedMinutes() };
+  if (mode === 'enter') return { type: 'enter', room: params.get('room') };
+  return { type: 'join', game: gameId, minutes: wantedMinutes() };
+}
+
+/** 지금 누구 차례인지 (게임의 turn()). 서버가 이걸로 시계를 넘깁니다. */
+function turnNow() {
+  if (!game.turn) return null;
+  try {
+    const p = game.turn(state);
+    return p === 0 || p === 1 ? p : null;
+  } catch (e) {
+    console.error('turn()에서 오류:', e);
+    return null;
+  }
+}
 
 // ---- 서버와 주고받기 ----
 
@@ -66,14 +116,14 @@ function connect() {
 }
 
 /**
- * 웹소켓을 열고 join을 보냅니다. 끊긴 대국이 있으면 서버가 대기열 대신 resumed로 답합니다.
+ * 웹소켓을 열고 join(또는 create, enter)을 보냅니다. 끊긴 대국이 있으면 서버가 그 대신 resumed로 답합니다.
  * 처음 붙을 때와 다시 붙을 때 모두 씁니다.
  */
 function openSocket() {
   clearTimeout(retryTimer);
   const sock = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
   ws = sock;
-  sock.addEventListener('open', () => send({ type: 'join', game: gameId }));
+  sock.addEventListener('open', () => send(firstMessage()));
   sock.addEventListener('message', (e) => onMessage(JSON.parse(e.data)));
   sock.addEventListener('close', () => {
     if (ws !== sock) return;
@@ -82,9 +132,11 @@ function openSocket() {
       // 대국 중이면 바로 포기하지 않고 다시 붙어 봅니다.
       offlineUntil ??= Date.now() + RECONNECT_MS;
       retrySoon();
-    } else if (phase === 'connecting' || phase === 'waiting') {
+    } else if (phase === 'connecting' || phase === 'waiting' || phase === 'hosting') {
+      // 방장의 연결이 끊기면 서버가 방을 바로 지웁니다.
       problem = t(phase === 'connecting' ? 'match.noServer' : 'match.disconnected');
       phase = 'error';
+      hostedRoom = null;
     }
     render();
   });
@@ -106,15 +158,22 @@ function onVisible() {
   if (document.visibilityState === 'visible' && offlineUntil && !ws) openSocket();
 }
 
-/** 대국이 끝나도 연결은 그대로 두고 같은 연결로 다시 찾습니다. 끊겼으면 다시 붙습니다. */
+/**
+ * 대국이 끝나도 연결은 그대로 두고 같은 연결로 다시 찾습니다. 끊겼으면 다시 붙습니다.
+ * 방 만들기로 왔으면 같은 타이머로 방을 다시 만들고, 남의 방에 들어왔으면 방 목록으로 갑니다.
+ */
 function findAgain() {
+  if (mode === 'enter') {
+    location.href = '/web/rooms.html';
+    return;
+  }
   seat = null;
   opponent = null;
   ended = null;
   if (ws?.readyState === WebSocket.OPEN) {
     phase = 'connecting';
     note = '';
-    send({ type: 'join', game: gameId });
+    send(firstMessage());
     render();
   } else {
     connect();
@@ -142,6 +201,20 @@ function onMessage(m) {
       }
       phase = 'waiting';
       break;
+    case 'created':
+      phase = 'hosting';
+      hostedRoom = m.room;
+      minutes = m.minutes;
+      bumpEvery = m.bumpEvery;
+      nextBumpAt = Date.now() + bumpEvery * 1000;
+      break;
+    case 'bumped':
+      nextBumpAt = Date.now() + bumpEvery * 1000;
+      note = t('match.bumped');
+      break;
+    case 'clock':
+      clock = { remaining: m.remaining, running: m.running, at: Date.now() };
+      break;
     case 'matched':
       start(m);
       break;
@@ -167,6 +240,12 @@ function onMessage(m) {
       oppAwayUntil = null;
       break;
     case 'error':
+      if (phase === 'connecting') {
+        // 시작하지 못했습니다 (없어진 방, 잘못된 타이머 등)
+        phase = 'error';
+        problem = m.message === 'room not found' ? t('match.roomGone') : t('match.serverError', { msg: m.message });
+        break;
+      }
       note = t('match.serverError', { msg: m.message });
       break;
   }
@@ -176,6 +255,9 @@ function onMessage(m) {
 function start(m) {
   seat = m.player;
   opponent = m.opponent;
+  minutes = m.minutes ?? null;
+  clock = null;
+  hostedRoom = null;
   state = game.setup(makeRng(m.seed));
   stateHash = hashOf(state);
   applied = 0;
@@ -187,7 +269,7 @@ function start(m) {
   offlineUntil = null;
   oppAwayUntil = null;
   phase = 'playing';
-  send({ type: 'hash', seq: -1, hash: stateHash });
+  send({ type: 'hash', seq: -1, hash: stateHash, turn: turnNow() });
   fit();
   checkResult();
 }
@@ -204,6 +286,7 @@ function resume(m) {
     return;
   }
   start(m);
+  if (m.clock) clock = { remaining: m.clock.remaining, running: m.clock.running, at: Date.now() };
   for (const r of m.log) apply(r);
 }
 
@@ -222,7 +305,7 @@ function apply(m) {
   if (h !== stateHash) effective++;
   state = next;
   stateHash = h;
-  send({ type: 'hash', seq: m.seq, hash: h });
+  send({ type: 'hash', seq: m.seq, hash: h, turn: turnNow() });
   checkResult();
 }
 
@@ -272,6 +355,7 @@ function reasonText() {
       return reported?.reason ?? '';
     case 'resign':
     case 'spam':
+    case 'timeout':
       return t(`match.reason.${reason}.${mine ? 'opp' : 'me'}`);
     default:
       return t(`match.reason.${reason}`);
@@ -302,6 +386,7 @@ function renderStatus() {
     loading: t('match.loading'),
     connecting: t('match.connecting'),
     waiting: t('match.waiting'),
+    hosting: t('match.hosting'),
     playing: offlineUntil ? t('match.reconnecting', { s: secondsLeft(offlineUntil) })
       : oppAwayUntil ? t('match.oppAway', { s: secondsLeft(oppAwayUntil) })
         : reported ? t('match.reporting') : '',
@@ -309,7 +394,52 @@ function renderStatus() {
     error: problem,
   }[phase];
   el.textContent = text;
-  if (phase === 'waiting' || phase === 'connecting' || offlineUntil || oppAwayUntil) el.classList.add('waiting');
+  if (['waiting', 'hosting', 'connecting'].includes(phase) || offlineUntil || oppAwayUntil) el.classList.add('waiting');
+}
+
+/** 타이머 안내 한 줄 ("각자 10분" / "타이머 없음"). 대국이 정해지기 전에는 찾는 타이머를 보여줍니다. */
+function renderTimerInfo() {
+  const el = $('#timer-info');
+  const known = seat !== null || phase === 'hosting';
+  el.hidden = !game || !(known || phase === 'waiting' || phase === 'connecting') || (mode === 'enter' && !known);
+  if (el.hidden) return;
+  const m = known ? minutes : wantedMinutes();
+  el.textContent = m === null ? t('timer.none') : t('timer.each', { m });
+}
+
+/** 남은 시간(ms). 가는 쪽은 받은 뒤로 흐른 시간을 뺍니다. */
+function clockLeft(p) {
+  if (!clock) return minutes * 60_000;
+  const ms = clock.remaining[p] - (clock.running === p ? Date.now() - clock.at : 0);
+  return Math.max(0, ms);
+}
+
+/** 5:07처럼 분:초. 남은 시간을 올림해서 0:00은 정말 다 썼을 때만 보입니다. */
+function formatClock(ms) {
+  const s = Math.ceil(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function renderClocks() {
+  for (const [id, p] of [['#my-clock', seat], ['#opp-clock', 1 - seat]]) {
+    const el = $(id);
+    el.hidden = minutes === null || seat === null;
+    if (el.hidden) continue;
+    const ms = clockLeft(p);
+    el.textContent = formatClock(ms);
+    el.classList.toggle('running', clock?.running === p && phase === 'playing');
+    el.classList.toggle('low', ms < 30_000);
+    el.setAttribute('aria-label', t('match.clock', { time: formatClock(ms) }));
+  }
+}
+
+function renderHosting() {
+  $('#hosting').hidden = phase !== 'hosting';
+  if (phase !== 'hosting') return;
+  $('#room-code').textContent = hostedRoom;
+  const wait = Math.max(0, Math.ceil((nextBumpAt - Date.now()) / 1000));
+  $('#bump').disabled = wait > 0;
+  $('#bump-wait').textContent = wait > 0 ? t('match.bump.wait', { s: wait }) : '';
 }
 
 function renderPlayers() {
@@ -322,6 +452,7 @@ function renderPlayers() {
   $('#opp-name').textContent = displayName(opponent);
   $('#my-seat').textContent = t(seat === 0 ? 'match.first' : 'match.second');
   $('#opp-seat').textContent = t(seat === 0 ? 'match.second' : 'match.first');
+  renderClocks();
 }
 
 function renderBoard() {
@@ -341,8 +472,9 @@ function renderBoard() {
 function renderActions() {
   const playing = phase === 'playing' && !reported && !offlineUntil;
   $('#resign').hidden = !playing;
-  $('#cancel').hidden = !(phase === 'waiting' || phase === 'connecting');
+  $('#cancel').hidden = !['waiting', 'hosting', 'connecting'].includes(phase);
   $('#again').hidden = !['ended', 'idle', 'error'].includes(phase) || !game;
+  $('#again').textContent = t({ quick: 'match.again', create: 'match.againRoom', enter: 'match.toRooms' }[mode]);
   const specials = $('#specials');
   specials.replaceChildren();
   if (!playing) return;
@@ -361,7 +493,9 @@ function render() {
   document.title = `${nameOfGame()} · ${t('match.title')} · ${t('site.name')}`;
   renderMe(me);
   $('#title').textContent = game ? nameOfGame() : '';
+  renderTimerInfo();
   renderStatus();
+  renderHosting();
   renderPlayers();
   if (board) renderBoard();
   renderActions();
@@ -423,6 +557,7 @@ async function main() {
   });
   $('#cancel').addEventListener('click', cancel);
   $('#again').addEventListener('click', findAgain);
+  $('#bump').addEventListener('click', () => send({ type: 'bump' }));
   window.addEventListener('resize', () => {
     fit();
     render();
@@ -431,7 +566,11 @@ async function main() {
   // 남은 시간 표시
   setInterval(() => {
     if (offlineUntil || oppAwayUntil) renderStatus();
+    if (phase === 'hosting') renderHosting();
   }, 1000);
+  setInterval(() => {
+    if (phase === 'playing' && clock?.running != null) renderClocks();
+  }, 200);
   window.addEventListener('beforeunload', (e) => {
     if (phase === 'playing' && !reported) e.preventDefault();
   });

@@ -1,9 +1,9 @@
 // 로비: 게임 목록, 이벤트 배너, 필터.
-// 이름, 소개, 룰북, 난이도, 지원 언어는 등록 정보(listing)에서, 보드 모양은 게임 모듈에서 읽어 옵니다.
+// 이름, 소개, 룰북, 난이도, 지원 언어, 타이머는 등록 정보(listing)에서, 보드 모양은 게임 모듈에서 읽어 옵니다.
 // 썸네일은 게임의 setup()이 만든 시작 화면을 플랫폼 렌더러로 그린 것입니다.
 
 import { BoardView } from '/sdk/playground/board.js';
-import { DIFFICULTIES, LANGS, LANG_NAMES, fullLangs, gameLang, localize } from '/sdk/playground/listing.js';
+import { DIFFICULTIES, LANGS, LANG_NAMES, NO_TIMER, fullLangs, gameLang, localize, timerOf } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { loadMe, renderMe } from './me.js';
 
@@ -96,6 +96,10 @@ function sizeClass(board) {
 
 const nameOf = (e) => localize(e.listing?.name, lang).text || e.id;
 
+/** 이 게임이 실제로 쓰는 타이머. turn()이 없으면 시계를 돌릴 수 없어 없음입니다 (match.js와 같음). */
+const timerOfEntry = (e) => (e.game?.turn ? timerOf(e.listing) : NO_TIMER);
+const timerText = (m) => (m === null ? t('timer.none') : t('timer.each', { m }));
+
 /** 검색에는 화면 언어와 상관없이 모든 언어의 이름과 소개를 씁니다. */
 function searchText(e) {
   const all = (v) => (v ? Object.values(v) : []);
@@ -183,6 +187,12 @@ function renderCard(entry) {
   match.href = `/web/match.html?game=${encodeURIComponent(entry.id)}`;
   match.textContent = t('card.match');
   actions.append(match);
+  const create = document.createElement('button');
+  create.type = 'button';
+  create.className = 'btn ghost';
+  create.textContent = t('card.createRoom');
+  create.addEventListener('click', () => createRoom(entry));
+  actions.append(create);
 
   const tags = [
     [`${game.board.rows}×${game.board.cols}`],
@@ -191,6 +201,8 @@ function renderCard(entry) {
   ];
   if (listing) {
     tags.push([t('tag.difficulty', { d: t(`difficulty.${listing.difficulty}`) }), `diff-${listing.difficulty}`]);
+    const timer = timerOfEntry(entry);
+    tags.push([`⏱ ${timerText(timer.minutes)}`, timer.custom ? 'timer-tag custom' : 'timer-tag', timer.custom ? t('tag.timer.custom') : '']);
     // 완전 번역 언어는 한데 묶고(KO · EN), 일부 번역 언어는 따로 점선 태그로
     const full = fullLangs(listing);
     tags.push([full.map((l) => l.toUpperCase()).join(' · '), 'lang-tag full', full.map((l) => t('tag.lang.full', { lang: LANG_NAMES[l] })).join(', ')]);
@@ -242,6 +254,45 @@ function openRulebook(entry) {
   }));
   dlg.showModal();
   text.scrollTop = 0;
+}
+
+// ---- 방 만들기 ----
+
+let creating = null; // 방 만들기 창에서 고르는 게임
+
+const roomUrl = (entry, minutes) => `/web/match.html?game=${encodeURIComponent(entry.id)}&create=1&minutes=${minutes ?? 'none'}`;
+
+/** 제작자가 커스텀 타이머를 허용했으면 시간을 고르는 창을, 아니면 바로 기본 타이머로 방을 만듭니다. */
+function createRoom(entry) {
+  const timer = timerOfEntry(entry);
+  if (!timer.custom) {
+    location.href = roomUrl(entry, timer.minutes);
+    return;
+  }
+  creating = entry;
+  $('#create-title').textContent = t('create.title', { name: nameOf(entry) });
+  const on = timer.minutes !== null;
+  for (const r of document.querySelectorAll('input[name=create-timer]')) r.checked = r.value === (on ? 'on' : 'none');
+  $('#create-minutes').value = timer.minutes ?? 10;
+  syncCreateForm();
+  $('#create-room').showModal();
+}
+
+function syncCreateForm() {
+  const on = document.querySelector('input[name=create-timer]:checked')?.value === 'on';
+  $('#create-minutes').disabled = !on;
+}
+
+function setupCreateForm() {
+  $('#create-form').addEventListener('change', syncCreateForm);
+  $('#create-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const on = document.querySelector('input[name=create-timer]:checked')?.value === 'on';
+    const input = $('#create-minutes');
+    // 범위는 input의 min/max로 브라우저가 먼저 막고, 서버도 다시 봅니다
+    if (on && !input.reportValidity()) return;
+    location.href = roomUrl(creating, on ? Number(input.value) : null);
+  });
 }
 
 // ---- 필터 ----
@@ -336,6 +387,7 @@ function render() {
 
 setupBanner();
 setupFilters();
+setupCreateForm();
 setLang(await detectLang());
 render();
 me = await loadMe();

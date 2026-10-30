@@ -81,3 +81,10 @@ test('게임 안 글자는 lang으로 나오고, 승자와 판은 lang과 상관
   const { message: _en, ...en } = game.view(s, 1, 'en');
   assert.deepEqual(ko, en);
 });
+
+test('turn()은 둘 차례를 알려주고, 끝나면 null', () => {
+  assert.equal(game.turn(game.setup()), 0);
+  assert.equal(game.turn(replay([[0, 0, 0]])), 1);
+  assert.equal(game.turn(replay([[1, 0, 0]])), 0); // 무시된 행동은 차례를 바꾸지 않음
+  assert.equal(game.turn(replay([[0, 0, 0], [1, 1, 0], [0, 0, 1], [1, 1, 1], [0, 0, 2]])), null);
+});

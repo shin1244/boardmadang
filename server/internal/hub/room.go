@@ -18,32 +18,48 @@ type Room struct {
 	ID      string
 	Game    string
 	Seed    uint32
+	Minutes *int // 타이머(분). nil이면 없음
 	Players [2]*Client
 
 	mu  sync.Mutex
 	Log []protocol.Relay // 인덱스 = 순번
 
-	hashes  map[int][2]string // 순번 → 양쪽이 보고한 상태 해시. -1은 시작 상태. 양쪽이 모이면 agreed로 옮깁니다
-	agreed  map[int]string    // 순번 → 양쪽이 같다고 확인한 해시. 직전 것만 남깁니다
-	ignored [2]int            // 플레이어별 무시된 행동 수 (해시가 직전과 같았던 행동)
+	hashes  map[int][2]*report // 순번 → 양쪽이 보고한 상태 해시와 차례. -1은 시작 상태. 양쪽이 모이면 agreed로 옮깁니다
+	agreed  map[int]string     // 순번 → 양쪽이 같다고 확인한 해시. 직전 것만 남깁니다
+	ignored [2]int             // 플레이어별 무시된 행동 수 (해시가 직전과 같았던 행동)
 	results [2]*protocol.Result
 	ended   bool
 	final   *protocol.Ended // 끝난 결과. 끊긴 채로 끝난 대국에 돌아온 플레이어에게 보여줍니다
 
 	away    [2]*time.Timer // 연결이 끊긴 자리의 유예 타이머. nil이면 연결돼 있습니다
 	awayGen [2]int         // 타이머가 늦게 울려도 지난 끊김에 반응하지 않게 세는 번호
+
+	clock    *clock // 대국 시계 (clock.go). 타이머가 없으면 nil
+	clockSeq int    // 시계에 반영한 가장 최근 순번
 }
 
-func newRoom(h *Hub, id, game string, seed uint32, players [2]*Client) *Room {
-	return &Room{
-		hub:     h,
-		ID:      id,
-		Game:    game,
-		Seed:    seed,
-		Players: players,
-		hashes:  make(map[int][2]string),
-		agreed:  make(map[int]string),
+// report는 한 플레이어가 보고한 상태 해시와 그 상태에서 누구 차례인지입니다.
+type report struct {
+	hash string
+	turn *int
+}
+
+func newRoom(h *Hub, id, game string, seed uint32, minutes *int, players [2]*Client) *Room {
+	r := &Room{
+		hub:      h,
+		ID:       id,
+		Game:     game,
+		Seed:     seed,
+		Minutes:  minutes,
+		Players:  players,
+		hashes:   make(map[int][2]*report),
+		agreed:   make(map[int]string),
+		clockSeq: -2,
 	}
+	if minutes != nil {
+		r.clock = newClock(time.Duration(*minutes) * MinuteUnit)
+	}
+	return r
 }
 
 // relay는 player의 행동에 다음 순번을 붙여 기록하고 양쪽에 보냅니다.
@@ -65,10 +81,13 @@ func (r *Room) relay(player int, a protocol.Action) {
 	}
 }
 
-// reportHash는 player가 보고한 seq번째 상태 해시를 기록합니다.
+// reportHash는 player가 보고한 seq번째 상태 해시와 차례를 기록합니다.
 //
 // 각 클라이언트는 순번 차례대로 해시를 보내므로, 양쪽의 seq 해시가 모였을 때는 seq-1도 이미 확인돼 있습니다.
-func (r *Room) reportHash(player, seq int, hash string) {
+//
+// 시계는 양쪽을 기다리지 않고 먼저 온 보고의 차례로 넘깁니다. 늦은 쪽의 네트워크 지연을 둔 사람이 떠안지 않게 하려는 것입니다.
+// 거짓 차례를 먼저 보내도 상대 보고와 다르면 대국이 무효가 되므로 얻는 게 없습니다.
+func (r *Room) reportHash(player, seq int, hash string, turn *int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.ended || seq < -1 || seq >= len(r.Log) {
@@ -78,17 +97,24 @@ func (r *Room) reportHash(player, seq int, hash string) {
 		return
 	}
 	got := r.hashes[seq]
-	if got[player] != "" {
+	if got[player] != nil {
 		return // 같은 순번을 두 번 보내면 처음 것만 씁니다
 	}
-	got[player] = hash
-	if got[1-player] == "" {
+	got[player] = &report{hash: hash, turn: turn}
+	if seq > r.clockSeq {
+		r.clockSeq = seq
+		r.setTurn(turn)
+		if r.ended { // 시간이 이미 다 됐음
+			return
+		}
+	}
+	if got[1-player] == nil {
 		r.hashes[seq] = got
 		return
 	}
 
 	delete(r.hashes, seq)
-	if got[0] != got[1] {
+	if got[0].hash != got[1].hash || !samePlayer(got[0].turn, got[1].turn) {
 		r.broadcast(protocol.Desync{Type: protocol.TypeDesync, Seq: seq})
 		r.end(nil, protocol.ReasonDesync)
 		return
@@ -122,7 +148,7 @@ func (r *Room) reportResult(player int, res protocol.Result) {
 	if a == nil || b == nil {
 		return
 	}
-	if sameWinner(a.Winner, b.Winner) {
+	if samePlayer(a.Winner, b.Winner) {
 		r.end(a.Winner, protocol.ReasonResult)
 	} else {
 		r.end(nil, protocol.ReasonDisagree)
@@ -195,6 +221,8 @@ func (r *Room) resume(c *Client) bool {
 		Player:   seat,
 		Seed:     r.Seed,
 		Opponent: protocol.PlayerInfo{Kind: opp.Kind, Tag: opp.Tag, Name: opp.Name},
+		Minutes:  r.Minutes,
+		Clock:    r.clockMsg(),
 		Log:      slices.Clone(r.Log),
 	})
 	if r.ended {
@@ -213,6 +241,7 @@ func (r *Room) end(winner *int, reason string) {
 		return
 	}
 	r.ended = true
+	r.stopClock()
 	r.final = &protocol.Ended{Type: protocol.TypeEnded, Winner: winner, Reason: reason}
 	r.broadcast(*r.final)
 	r.hub.removeRoom(r) // 락 순서 r.mu → h.mu
@@ -229,7 +258,8 @@ func other(player int) *int {
 	return &o
 }
 
-func sameWinner(a, b *int) bool {
+// samePlayer는 두 플레이어 번호(nil = 없음)가 같은지입니다. 승자와 차례를 비교할 때 씁니다.
+func samePlayer(a, b *int) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}

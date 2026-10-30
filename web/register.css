@@ -148,6 +148,20 @@ fieldset[aria-invalid="true"], #langs[aria-invalid="true"] { border-color: #d94f
 }
 .problems ul { margin: 6px 0 0; padding-left: 20px; }
 
+/* 타이머 */
+.timer-row { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 8px; }
+.pick { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.pick:has(input:disabled) { opacity: 0.5; }
+#timer-minutes {
+  width: 72px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
 .form-actions { display: flex; align-items: center; gap: 14px; }
 .form-actions .btn { flex: none; padding: 10px 28px; }
 .form-actions .status-line { margin: 0; }

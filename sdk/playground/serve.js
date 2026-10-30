@@ -17,7 +17,7 @@ import http from 'node:http';
 import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { normalizeListing, validateListing } from './listing.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -90,6 +90,24 @@ function proxyMe(req, res) {
   up.on('timeout', () => up.destroy());
 }
 
+/** GET /api/rooms: 방 목록은 Go 서버에만 있습니다. 꺼져 있으면 빈 목록. */
+function proxyRooms(req, res) {
+  const up = http.get(new URL('/api/rooms', GO), { timeout: 1000 }, (r) => {
+    let body = '';
+    r.setEncoding('utf8');
+    r.on('data', (c) => (body += c));
+    r.on('end', () => {
+      try {
+        json(res, 200, JSON.parse(body));
+      } catch {
+        json(res, 200, []);
+      }
+    });
+  });
+  up.on('error', () => json(res, 200, []));
+  up.on('timeout', () => up.destroy());
+}
+
 /** /ws 웹소켓을 Go 서버로 그대로 잇습니다. Host와 Origin을 바꾸지 않으므로 Go 서버는 같은 출처로 봅니다. */
 function proxyWS(req, socket, head) {
   const up = net.connect(Number(GO.port) || 80, GO.hostname, () => {
@@ -137,10 +155,27 @@ function saveListing(req, res, id) {
     const problems = validateListing(listing);
     if (problems.length) return json(res, 422, { problems });
     const saved = normalizeListing(listing);
-    const file = path.join(ROOT, path.dirname(game.module), 'listing.json');
-    fs.writeFileSync(file, JSON.stringify(saved, null, 2) + '\n');
-    json(res, 200, { listing: saved });
+    hasTurn(game).then((ok) => {
+      // 타이머는 누구 시계가 가는지 알아야 하므로 turn()이 있는 게임만 쓸 수 있습니다
+      if ((saved.timer.minutes !== null || saved.timer.custom) && !ok) {
+        return json(res, 422, { problems: [{ code: 'timer.needsTurn' }] });
+      }
+      const file = path.join(ROOT, path.dirname(game.module), 'listing.json');
+      fs.writeFileSync(file, JSON.stringify(saved, null, 2) + '\n');
+      json(res, 200, { listing: saved });
+    });
   });
+}
+
+/** 게임 코드에 turn()이 있는지. 불러오지 못하면 false. 저장할 때마다 새로 읽도록 쿼리를 붙입니다. */
+async function hasTurn(game) {
+  try {
+    const url = pathToFileURL(path.join(ROOT, game.module));
+    url.search = `?t=${Date.now()}`;
+    return typeof (await import(url.href)).default?.turn === 'function';
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -166,6 +201,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/games') return json(res, 200, listGames());
   if (url.pathname === '/api/locale') return json(res, 200, detectLocale(req));
   if (url.pathname === '/api/me') return proxyMe(req, res);
+  if (url.pathname === '/api/rooms') return proxyRooms(req, res);
   const m = url.pathname.match(/^\/api\/games\/([a-z0-9-]+)\/listing$/);
   if (m && req.method === 'PUT') return saveListing(req, res, m[1]);
 

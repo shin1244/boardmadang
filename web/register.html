@@ -16,6 +16,7 @@
     </a>
     <nav class="menu" data-i18n-attr="aria-label:menu.label" aria-label="메뉴">
       <a href="/web/" data-i18n="menu.games">게임</a>
+      <a href="/web/rooms.html" data-i18n="menu.rooms">방 목록</a>
       <span class="soon" data-i18n="menu.ranking" data-i18n-attr="title:soon" title="준비 중">랭킹</span>
       <a href="/web/register.html" aria-current="page" data-i18n="menu.register">게임 등록</a>
       <a href="/sdk/playground/" data-i18n="menu.playground">플레이그라운드</a>
@@ -67,6 +68,21 @@
             <label class="choice"><input type="radio" name="difficulty" value="normal"><span><b data-i18n="difficulty.normal">중</b><small data-i18n="difficulty.normal.hint"></small></span></label>
             <label class="choice"><input type="radio" name="difficulty" value="hard"><span><b data-i18n="difficulty.hard">상</b><small data-i18n="difficulty.hard.hint"></small></span></label>
           </div>
+        </fieldset>
+
+        <!-- 타이머를 쓰려면 게임 코드에 turn()이 있어야 합니다. 없으면 register.js가 이 칸을 막습니다. -->
+        <fieldset class="block" id="timer">
+          <legend class="block-title" data-i18n="register.timer">타이머</legend>
+          <p class="hint" data-i18n="register.timer.lead"></p>
+          <div class="timer-row">
+            <label class="pick"><input type="radio" name="timer" value="none"> <span data-i18n="timer.none">타이머 없음</span></label>
+            <label class="pick"><input type="radio" name="timer" value="on"> <span data-i18n="register.timer.each">각자</span>
+              <input id="timer-minutes" type="number" min="1" max="180" step="1" inputmode="numeric">
+              <span data-i18n="timer.minutesUnit">분</span></label>
+          </div>
+          <label class="pick"><input id="timer-custom" type="checkbox"> <span data-i18n="register.timer.custom">방장이 시간을 정할 수 있음</span></label>
+          <p class="hint" data-i18n="register.timer.custom.hint"></p>
+          <p id="timer-status" class="status-line"></p>
         </fieldset>
 
         <section class="block" id="langs">

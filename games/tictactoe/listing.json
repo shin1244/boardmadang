@@ -4,6 +4,10 @@
     "en": "full"
   },
   "difficulty": "easy",
+  "timer": {
+    "minutes": 10,
+    "custom": true
+  },
   "name": {
     "ko": "틱택토",
     "en": "Tic-tac-toe"

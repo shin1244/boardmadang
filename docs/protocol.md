@@ -8,12 +8,16 @@
 | `GET /api/games` | 게임 목록 `[{"id":"tictactoe","module":"/games/tictactoe/index.js","private":false,"listing":{...}}]` |
 | `GET /api/locale` | 접속 나라와 화면 언어 `{"country":"KR","lang":"ko"}` |
 | `GET /api/me` | 지금 신원 `{"id":"g_…","kind":"guest","tag":"4821"}`. 쿠키가 없으면 게스트를 새로 발급합니다 |
+| `GET /api/rooms` | 상대를 기다리는 방 목록. 최근에 만들거나 올린 방이 먼저 `[{"room":"K3P9QX","game":"tictactoe","minutes":10,"host":{"kind":"guest","tag":"4821"},"age":42}]` |
 
-- `listing`은 등록 정보(이름, 소개, 룰북, 난이도, 지원 언어)입니다. 등록 전이면 `null`입니다.
+- `listing`은 등록 정보(이름, 소개, 룰북, 난이도, 지원 언어, 타이머)입니다. 등록 전이면 `null`입니다.
   보드 크기 같은 규칙 정보는 넣지 않습니다. 브라우저가 `module`을 import해서 게임 모듈에서 직접 읽습니다.
 - `PUT /api/games/<id>/listing`: 개발 서버 전용. 등록창이 등록 정보를 `games/<id>/listing.json`에 저장합니다.
   내 컴퓨터에서 온 요청과 계정만 받고(게스트면 `403 {"error":"member only"}`), 검사에 걸리면 `422 {"problems":[...]}`를 돌려줍니다.
   검사 규칙은 [sdk/playground/listing.js](../sdk/playground/listing.js)에 있고, 운영 서버도 같은 규칙으로 검사합니다.
+  타이머를 켰는데 게임 코드에 `turn()`이 없으면 `422 {"problems":[{"code":"timer.needsTurn"}]}`입니다.
+- `/api/rooms`: 방 목록은 Go 서버의 메모리에만 있습니다. 개발 서버는 Go 서버에 물어 그대로 넘깁니다.
+  `age`는 마지막으로 만들거나 올린 뒤 지난 초, `minutes`가 `null`이면 타이머 없음입니다. 최대 200개입니다.
 - `/api/locale`: 나라는 GCP 부하 분산기의 커스텀 요청 헤더 `X-Client-Region: {client_region}`에서 읽습니다.
   KR이면 `ko`, 다른 나라면 `en`, 나라를 모르면 `Accept-Language`로 정합니다. 화면 언어 고르기에만 쓰므로
   헤더를 위조해도 문제 없습니다. 유저가 로비에서 직접 고른 언어가 있으면 브라우저가 이 요청보다 그걸 먼저 씁니다.
@@ -32,21 +36,28 @@
 
 | type | 언제 | 예시 |
 |---|---|---|
-| `join` | 매칭 대기열에 들어갈 때. 대국이 끝나면 같은 연결로 다시 보낼 수 있습니다 | `{"type":"join","game":"tictactoe"}` |
+| `join` | 빠른 매칭 대기열에 들어갈 때. 같은 게임, 같은 타이머끼리 만납니다. 대국이 끝나면 같은 연결로 다시 보낼 수 있습니다 | `{"type":"join","game":"tictactoe","minutes":10}` |
+| `create` | 방을 만들어 방 목록에 올릴 때 | `{"type":"create","game":"tictactoe","minutes":5}` |
+| `enter` | 방 목록의 방에 들어갈 때. 먼저 들어온 한 명만 됩니다 | `{"type":"enter","room":"K3P9QX"}` |
+| `bump` | 방장이 자기 방을 목록 맨 위로 다시 올릴 때 (1분에 한 번) | `{"type":"bump"}` |
 | `action` | 내 행동 (클릭, 패스 등) | `{"type":"action","action":{"kind":"click","row":0,"col":2}}` |
-| `hash` | 행동을 적용한 뒤 상태 해시. 시작 상태는 `seq: -1` | `{"type":"hash","seq":4,"hash":"9f2c…"}` |
+| `hash` | 행동을 적용한 뒤 상태 해시와 그 상태에서 누구 차례인지(`turn()`, 없으면 `null`). 시작 상태는 `seq: -1` | `{"type":"hash","seq":4,"hash":"9f2c…","turn":1}` |
 | `result` | 게임 로직이 끝났다고 판정했을 때 | `{"type":"result","winner":0,"reason":"5목"}` |
 | `resign` | 기권 (게임 로직이 아니라 플랫폼이 처리) | `{"type":"resign"}` |
 
-- 대기열에서 빠지려면 연결을 닫습니다. 대기열은 끊기는 즉시 빠집니다.
+- 대기열이나 방 목록에서 빠지려면 연결을 닫습니다. 끊기는 즉시 빠지고, 방장이 끊기면 방도 바로 없어집니다.
+- `minutes`는 타이머(분, 1~180)이고 `null`이면 타이머 없음입니다. 브라우저는 빠른 매칭에 등록 정보의 기본 타이머를,
+  방 만들기에는 방장이 고른 시간을 넣습니다 (제작자가 커스텀을 막았으면 기본 타이머).
+  서버는 아직 등록 정보를 몰라서 범위만 봅니다. 다른 값을 보내도 같은 값을 보낸 사람끼리만 만납니다.
 - **대국 중에 끊기면 15초를 기다립니다.** 와이파이가 잠깐 끊기거나 휴대폰 화면이 꺼진 정도는 버티게 하려는 것입니다.
   - 상대에게 `away`가 갑니다. 그동안 상대는 계속 둘 수 있고, 행동은 기록에 쌓입니다.
-  - 같은 신원(세션 쿠키)으로 다시 붙어 `join`을 보내면 대기열 대신 `resumed`가 옵니다. 게임 id가 달라도 끊긴 대국이 먼저입니다.
+  - 같은 신원(세션 쿠키)으로 다시 붙어 `join`(또는 `create`, `enter`)을 보내면 대기열 대신 `resumed`가 옵니다. 게임 id가 달라도 끊긴 대국이 먼저입니다.
     클라이언트는 `seed`로 `setup()`한 뒤 `log`를 처음부터 재생합니다. 재생하면서 보내는 `hash`, `result` 중 이미 보고한 것은 서버가 무시합니다.
   - 상대에게 `back`이 갑니다.
   - 기다리는 동안 대국이 끝났으면(상대 기권 등) `resumed` 바로 뒤에 `ended`가 옵니다.
   - 15초 안에 안 돌아오면 상대가 이깁니다 (`left`). 그 뒤에 `join`하면 평범하게 대기열에 들어갑니다.
   - 새로고침도 같은 흐름이라 대국이 이어집니다.
+  - 타이머가 있으면 기다리는 동안에도 그 사람 차례면 시계가 갑니다. 15초보다 먼저 시간이 다 되면 `timeout`으로 끝납니다.
 - `action`에는 **순번을 넣지 않습니다.** 순번은 서버가 받은 순서대로 붙입니다.
 - `winner`가 `null`이면 무승부입니다.
 - `matched`를 받으면 `setup()`한 시작 상태의 해시를 `seq: -1`로 보냅니다.
@@ -59,10 +70,13 @@
 | type | 언제 | 예시 |
 |---|---|---|
 | `waiting` | 대기열에 들어갔을 때 | `{"type":"waiting","game":"tictactoe"}` |
-| `resumed` | 끊겼다가 15초 안에 돌아와 `join`했을 때 | `{"type":"resumed","room":"K3P9QX","game":"tictactoe","player":1,"seed":3141592653,"opponent":{…},"log":[{"type":"relay","seq":0,…}]}` |
+| `created` | 방을 만들었을 때. 누가 들어오면 `matched`가 옵니다 | `{"type":"created","room":"K3P9QX","game":"tictactoe","minutes":5,"bumpEvery":60}` |
+| `bumped` | 방을 목록 맨 위로 올렸을 때 | `{"type":"bumped"}` |
+| `resumed` | 끊겼다가 15초 안에 돌아와 `join`했을 때 | `{"type":"resumed","room":"K3P9QX","game":"tictactoe","player":1,"seed":3141592653,"opponent":{…},"minutes":10,"clock":{…},"log":[{"type":"relay","seq":0,…}]}` |
 | `away` | 상대 연결이 끊겼을 때 | `{"type":"away","player":0,"seconds":15}` |
 | `back` | 끊겼던 상대가 돌아왔을 때 | `{"type":"back","player":0}` |
-| `matched` | 상대가 정해졌을 때 | `{"type":"matched","room":"K3P9QX","game":"tictactoe","player":1,"seed":3141592653,"opponent":{"kind":"guest","tag":"4821"}}` |
+| `matched` | 상대가 정해졌을 때. 방에 들어왔으면 `room`은 그 방 코드입니다 | `{"type":"matched","room":"K3P9QX","game":"tictactoe","player":1,"seed":3141592653,"opponent":{"kind":"guest","tag":"4821"},"minutes":10}` |
+| `clock` | 대국 시계가 넘어가거나 멈출 때 (타이머가 있을 때만) | `{"type":"clock","remaining":[598512,600000],"running":1}` |
 | `relay` | 누군가의 행동 (내 행동도 포함) | `{"type":"relay","seq":4,"player":0,"action":{"kind":"click","row":1,"col":1}}` |
 | `desync` | 양쪽 해시가 달랐을 때 | `{"type":"desync","seq":4}` |
 | `ended` | 대국이 끝났을 때 | `{"type":"ended","winner":0,"reason":"result"}` |
@@ -85,6 +99,7 @@
 | `disagree` | 양쪽 결과 보고가 다름 (`winner`는 `null`, 분쟁으로 기록) |
 | `spam` | 한쪽이 무시된 행동을 너무 많이 보냄 → 상대 승 |
 | `limit` | 행동 기록이 상한(3,000)에 닿음 → 무효 (`winner`는 `null`) |
+| `timeout` | 한쪽이 시간을 다 씀 → 상대 승 |
 
 ### `error`의 `message`
 
@@ -92,13 +107,27 @@
 |---|---|
 | `bad message` | JSON이 아니거나 모양이 틀림 |
 | `unknown game` | 게임 id 모양이 틀림 (영문 소문자, 숫자, `-`, 40자 이하) |
-| `already joined` | 이미 대기 중이거나 대국 중인데 `join`을 보냄 |
+| `already joined` | 이미 대기 중이거나, 방을 만들었거나, 대국 중인데 `join`, `create`, `enter`를 보냄 |
+| `bad minutes` | 타이머가 1~180분도 `null`도 아님 |
+| `room not found` | 들어가려는 방이 없음 (이미 시작했거나 방장이 나감) |
+| `not hosting` / `too soon` | 방이 없는데 `bump`를 보냄 / 마지막으로 올린 지 1분이 안 됨 |
 | `not in a room` | 대국 중이 아닌데 `action`, `hash`, `result`, `resign`을 보냄 |
-| `bad action` / `bad hash` / `bad result` | 값이 틀림. 클릭 좌표는 0~31, 해시는 64자 이하, `winner`는 0, 1, `null` |
+| `bad action` / `bad hash` / `bad result` | 값이 틀림. 클릭 좌표는 0~31, 해시는 64자 이하, `turn`과 `winner`는 0, 1, `null` |
 | `too many actions` | 초당 행동 수 제한(20)을 넘음. 그 행동은 버립니다 |
 
 - 메시지 하나는 1 KB까지입니다. 넘으면 연결을 끊습니다.
 - 서버가 보낼 메시지가 64개 넘게 밀리면(느린 연결) 연결을 끊습니다.
+
+## 대국 시계
+
+타이머가 있는 대국은 서버가 체스 시계를 돌립니다. 각자 자기 차례에만 자기 시간이 줄고, 다 쓰면 집니다 (`timeout`).
+
+- 서버는 규칙을 몰라서 누구 차례인지 모릅니다. 클라이언트가 `hash`에 같이 보내는 `turn`(게임의 `turn()`)으로 압니다.
+- 시계는 그 순번의 **먼저 온** 보고로 넘깁니다. 늦은 쪽의 네트워크 지연을 둔 사람이 떠안지 않게 하려는 것입니다.
+  양쪽 `turn`이 다르면 해시가 다른 것과 같이 `desync`로 무효입니다. 그래서 거짓 차례를 먼저 보내도 얻는 게 없습니다.
+- `turn`이 `null`이면 시계가 멈춥니다. 게임이 끝나면 `turn()`이 `null`이어야 합니다.
+- `clock`의 `remaining`은 보낸 순간의 남은 시간(ms)이고, `running`의 시계는 그 뒤로 줄어듭니다. 화면은 이걸 받아 줄여 보여주기만 하고,
+  시간이 다 됐는지는 서버가 정합니다. 대국이 끝날 때 멈춘 시계(`running: null`)가 `ended` 바로 앞에 한 번 더 옵니다.
 
 ## 흐름 예시 (틱택토)
 

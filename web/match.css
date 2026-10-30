@@ -51,11 +51,36 @@
 .match-actions [hidden] { display: none; }
 .specials { display: contents; }
 
+.timer-info { margin: -6px 0 12px; color: var(--muted); font-size: 14px; }
+.timer-info[hidden] { display: none; }
+
+/* 대국 시계. 가는 쪽은 강조하고, 30초 아래로 떨어지면 빨갛게 */
+.clock {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.clock[hidden] { display: none; }
+.clock.running { border-color: var(--accent); color: var(--text); }
+.clock.low { border-color: #d94f4f; color: #c13f3f; }
+
+.hosting { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px 14px; margin: 0 0 14px; }
+.hosting[hidden] { display: none; }
+.hosting p { flex-basis: 100%; margin: 0; }
+.hosting b { font-family: ui-monospace, monospace; font-size: 18px; letter-spacing: 0.08em; }
+.hosting .btn { flex: none; padding: 8px 18px; }
+.hosting a { color: var(--accent); font-size: 14px; }
+.bump-wait { color: var(--muted); font-size: 13px; }
+
 .match-note { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
 
 @media (prefers-color-scheme: dark) {
   .match-status.win { color: #6cc98f; }
   .match-status.lose { color: #ee8080; }
+  .clock.low { color: #ee8080; }
 }
 
 @media (max-width: 760px) {

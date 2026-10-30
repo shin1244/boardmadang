@@ -12,6 +12,7 @@ package hub
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -39,7 +40,25 @@ var (
 	// 대국 중에 연결이 끊긴 플레이어를 기다리는 시간. 와이파이가 잠깐 끊기거나 휴대폰 화면이 꺼진 정도는 버팁니다.
 	// 그 안에 같은 신원으로 다시 join하면 대국을 이어 가고, 못 오면 상대가 이깁니다 (left).
 	ReconnectGrace = 15 * time.Second
+	// 방장이 방을 목록 맨 위로 다시 올릴 수 있는 간격
+	BumpEvery = time.Minute
+	// 타이머 1분의 길이. 테스트에서만 줄입니다.
+	MinuteUnit = time.Minute
 )
+
+// 타이머 범위(분). sdk/playground/listing.js의 TIMER_MINUTES와 같습니다.
+const (
+	minMinutes = 1
+	maxMinutes = 180
+)
+
+// validMinutes는 타이머 시간이 범위 안인지 봅니다. nil(타이머 없음)도 됩니다.
+//
+// TODO: Go 서버가 등록 정보를 알게 되면, 빠른 매칭은 기본 타이머만, 방 만들기는 custom을 허용한 게임만 받기.
+// 지금은 브라우저가 등록 정보대로 보낸다고 믿습니다. 다른 값을 보내도 같은 값을 보낸 사람끼리만 만납니다.
+func validMinutes(m *int) bool {
+	return m == nil || (*m >= minMinutes && *m <= maxMinutes)
+}
 
 var gameIDPattern = regexp.MustCompile(`^[a-z0-9-]{1,40}$`)
 
@@ -49,9 +68,10 @@ type Hub struct {
 	upgrader websocket.Upgrader
 
 	mu    sync.Mutex
-	queue map[string]*Client // 게임 id별로 상대를 기다리는 한 명
-	rooms map[string]*Room   // 방 코드 → 방
-	away  map[string]*Room   // 연결이 끊겨 돌아오기를 기다리는 user.ID → 그 방 (끝난 방일 수도 있습니다)
+	queue map[string]*Client   // 게임 id별로 상대를 기다리는 한 명
+	rooms map[string]*Room     // 방 코드 → 진행 중인 대국
+	open  map[string]*openRoom // 방 코드 → 방 목록에서 상대를 기다리는 방 (lobby.go)
+	away  map[string]*Room     // 연결이 끊겨 돌아오기를 기다리는 user.ID → 그 방 (끝난 방일 수도 있습니다)
 }
 
 func New(cfg config.Config, ids *identity.Issuer) *Hub {
@@ -60,6 +80,7 @@ func New(cfg config.Config, ids *identity.Issuer) *Hub {
 		ids:   ids,
 		queue: make(map[string]*Client),
 		rooms: make(map[string]*Room),
+		open:  make(map[string]*openRoom),
 		away:  make(map[string]*Room),
 	}
 	h.upgrader = websocket.Upgrader{CheckOrigin: h.checkOrigin}
@@ -107,54 +128,77 @@ func (h *Hub) seat(c *Client) (*Room, int) {
 	return c.room, c.player
 }
 
-// join은 c를 게임 대기열에 넣고, 기다리던 상대가 있으면 방을 만듭니다.
-// 같은 신원이 끊긴 채로 기다리는 방이 있으면 대기열 대신 그 방으로 돌려보냅니다 (게임 id가 달라도).
-//
-// 같은 신원끼리도 매칭합니다. 탭 두 개로 혼자 둬볼 수 있어 개발할 때 편합니다.
-// TODO: 랭킹이 생기면 같은 user.ID끼리는 매칭하지 않기
-// TODO: Go 서버가 게임 목록을 알게 되면 모르는 게임 id를 거절하기 (지금은 모양만 봅니다)
-func (h *Hub) join(c *Client, game string) {
-	if !gameIDPattern.MatchString(game) {
-		c.sendError("unknown game")
-		return
-	}
-
+// begin은 c가 새 대국을 찾기 전(join, create, enter)에 부릅니다.
+// 같은 신원이 끊긴 채로 기다리는 대국이 있으면 그리로 돌려보내고 false입니다 (게임 id가 달라도 끊긴 대국이 먼저).
+// true면 h.mu를 잡은 채로 돌아옵니다. 부른 쪽이 풀어야 합니다.
+func (h *Hub) begin(c *Client) bool {
 	h.mu.Lock()
-	if c.room != nil || c.queued != "" {
+	if c.busy() {
 		h.mu.Unlock()
 		c.sendError("already joined")
-		return
+		return false
 	}
 	if r := h.away[c.user.ID]; r != nil {
 		// r.mu는 h.mu를 놓은 뒤에 잡습니다 (락 순서). 그 사이에 유예 시간이 끝났으면 resume이 false입니다.
 		h.mu.Unlock()
 		if r.resume(c) {
-			return
+			return false
 		}
 		h.mu.Lock()
-		if c.room != nil || c.queued != "" {
+		if c.busy() {
 			h.mu.Unlock()
-			return
+			return false
 		}
+	}
+	return true
+}
+
+// join은 c를 빠른 매칭 대기열에 넣고, 같은 게임·같은 타이머로 기다리던 상대가 있으면 대국을 시작합니다.
+//
+// 같은 신원끼리도 매칭합니다. 탭 두 개로 혼자 둬볼 수 있어 개발할 때 편합니다.
+// TODO: 랭킹이 생기면 같은 user.ID끼리는 매칭하지 않기
+// TODO: Go 서버가 게임 목록을 알게 되면 모르는 게임 id를 거절하기 (지금은 모양만 봅니다)
+func (h *Hub) join(c *Client, game string, minutes *int) {
+	if !gameIDPattern.MatchString(game) {
+		c.sendError("unknown game")
+		return
+	}
+	if !validMinutes(minutes) {
+		c.sendError("bad minutes")
+		return
+	}
+	if !h.begin(c) {
+		return
 	}
 	defer h.mu.Unlock()
 
-	other := h.queue[game]
+	key := queueKey(game, minutes)
+	other := h.queue[key]
 	if other == nil {
-		h.queue[game] = c
-		c.queued = game
+		h.queue[key] = c
+		c.queued = key
 		c.Send(protocol.Waiting{Type: protocol.TypeWaiting, Game: game})
 		return
 	}
-	delete(h.queue, game)
+	delete(h.queue, key)
 	other.queued = ""
+	h.start(h.newRoomID(), game, minutes, [2]*Client{other, c})
+}
 
-	// 선후공은 랜덤
-	players := [2]*Client{other, c}
+// 대기열은 게임과 타이머가 같아야 만납니다.
+func queueKey(game string, minutes *int) string {
+	if minutes == nil {
+		return game + "|-"
+	}
+	return fmt.Sprintf("%s|%d", game, *minutes)
+}
+
+// start는 두 사람의 대국을 시작합니다. 선후공은 랜덤입니다. h.mu를 잡고 부릅니다.
+func (h *Hub) start(id, game string, minutes *int, players [2]*Client) {
 	if randUint32()%2 == 1 {
 		players[0], players[1] = players[1], players[0]
 	}
-	r := newRoom(h, h.newRoomID(), game, randUint32(), players)
+	r := newRoom(h, id, game, randUint32(), minutes, players)
 	h.rooms[r.ID] = r
 	for i, p := range players {
 		p.room = r
@@ -167,11 +211,12 @@ func (h *Hub) join(c *Client, game string) {
 			Player:   i,
 			Seed:     r.Seed,
 			Opponent: protocol.PlayerInfo{Kind: opp.Kind, Tag: opp.Tag, Name: opp.Name},
+			Minutes:  minutes,
 		})
 	}
 }
 
-// leave는 연결이 끊긴 c를 정리합니다. 대기열에 있었으면 바로 빼고,
+// leave는 연결이 끊긴 c를 정리합니다. 대기열이나 방 목록에 있었으면 바로 빼고,
 // 대국 중이었으면 ReconnectGrace만큼 돌아오기를 기다립니다 (Room.playerLeft).
 func (h *Hub) leave(c *Client) {
 	h.mu.Lock()
@@ -179,6 +224,10 @@ func (h *Hub) leave(c *Client) {
 		delete(h.queue, c.queued)
 	}
 	c.queued = ""
+	if c.hosting != "" {
+		delete(h.open, c.hosting)
+		c.hosting = ""
+	}
 	room, player := c.room, c.player
 	h.mu.Unlock()
 
@@ -240,7 +289,7 @@ func (h *Hub) newRoomID() string {
 		for i := range b {
 			b[i] = roomAlphabet[int(b[i])%len(roomAlphabet)]
 		}
-		if id := string(b); h.rooms[id] == nil {
+		if id := string(b); h.rooms[id] == nil && h.open[id] == nil {
 			return id
 		}
 	}
