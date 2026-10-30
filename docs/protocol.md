@@ -17,7 +17,8 @@
 | `DELETE /api/games/{id}/comments/{comment}` | 내 의견 지우기 → `{"ok":true}` |
 | `POST /api/reports` | 신고 `{"game":"tictactoe","comment":"RN92MFYW","reason":"spam","detail":"…"}` → `{"ok":true,"hidden":false}`. `comment`가 없으면 게임 신고 |
 
-- `version`은 게임 코드 버전입니다. 개발 서버가 게임 폴더의 `.js`, `.mjs` 파일(테스트 제외)을 경로 순으로 이어 SHA-256을 구하고 앞 16글자를 씁니다.
+- `version`은 게임 코드 버전입니다. 게임 폴더의 `.js`, `.mjs` 파일(테스트와 `node_modules` 제외)을 `/`로 구분한 상대 경로 순으로
+  "경로\0내용\0"씩 이어 SHA-256을 구하고 앞 16글자를 씁니다. 개발 서버와 Go 서버의 계산이 같아야 합니다.
   코드를 한 글자라도 고치면 바뀝니다. 대전할 때 서버에 같이 보내고, 기보에도 남습니다.
 - `listing`은 등록 정보(이름, 소개, 룰북, 난이도, 지원 언어, 타이머)입니다. 등록 전이면 `null`입니다.
   보드 크기 같은 규칙 정보는 넣지 않습니다. 브라우저가 `module`을 import해서 게임 모듈에서 직접 읽습니다.
@@ -44,12 +45,15 @@
   - `author`에는 쓴 사람의 `kind`, `tag`, `name`만 들어갑니다. `mine`은 보는 사람이 쓴 의견, `reported`는 보는 사람이 이미 신고한 의견입니다.
 - 기보의 `version`이 지금 게임 코드와 다르면 다시보기 화면이 "판이 다르게 보일 수 있다"고 알립니다.
   예전 코드를 보관해 그 코드로 재생하는 건 아직 하지 않습니다.
-- `/api/locale`: 나라는 GCP 부하 분산기의 커스텀 요청 헤더 `X-Client-Region: {client_region}`에서 읽습니다.
+- `/api/locale`: 나라는 앞에 선 프록시가 넣어 주는 헤더에서 읽습니다. GCP 부하 분산기의 커스텀 요청 헤더
+  `X-Client-Region: {client_region}`, 없으면 Cloudflare의 `CF-IPCountry`(모르는 나라인 `XX`는 빼고)입니다.
   KR이면 `ko`, 다른 나라면 `en`, 나라를 모르면 `Accept-Language`로 정합니다. 화면 언어 고르기에만 쓰므로
   헤더를 위조해도 문제 없습니다. 유저가 로비에서 직접 고른 언어가 있으면 브라우저가 이 요청보다 그걸 먼저 씁니다.
 - `/api/me`: 게스트와 계정, 세션 쿠키는 [identity.md](identity.md)에 정리했습니다.
   Go 서버는 서명한 쿠키로 신원을 정합니다. 개발 서버는 늘 같은 가짜 신원을 돌려주고, `DEV_AS=guest`로 게스트를 흉내 냅니다.
-- `/api/games`, `/api/locale`은 지금 개발 서버(`sdk/playground/serve.js`)만 제공합니다. Go 서버도 같은 모양으로 제공할 예정입니다.
+- `/api/games`, `/api/locale`은 개발 서버(`sdk/playground/serve.js`)와 Go 서버(`server/internal/site`)가 같은 모양으로 제공합니다.
+  Go 서버는 화면(`/web/`), SDK 모듈과 플레이그라운드(`/sdk/playground/`, `serve.js` 제외), 게임 코드(`/games/`)도 내보냅니다.
+  테스트 파일과 점으로 시작하는 파일은 내보내지 않습니다. 개발 서버에만 있는 것은 `PUT /api/games/<id>/listing`(등록창 저장)뿐입니다.
 
 # 웹소켓
 

@@ -28,8 +28,8 @@
 
 ## 도메인과 HTTPS (boardmadang.com)
 
-> **아직 Go 서버만으로는 사이트가 뜨지 않습니다.** 화면(`web/`), 게임 코드(`games/`), `/api/games`, `/api/locale`은
-> 지금 개발 서버(`sdk/playground/serve.js`)에만 있습니다. 운영 전에 Go 서버가 이것들도 맡아야 합니다 (TODO).
+운영에서는 Go 서버 하나가 화면(`web/`), 게임 코드(`games/`), `/api/games`, `/api/locale`까지 전부 맡습니다 (`server/internal/site`).
+컨테이너 이미지에 같이 들어가므로 개발 서버(`sdk/playground/serve.js`)는 띄우지 않습니다.
 
 1. **고정 IP**: VM에 고정 외부 IP를 예약해 붙입니다 (VPC 네트워크 → IP 주소 → 외부 고정 주소 예약).
 2. **DNS**: 도메인을 산 곳(또는 Cloud DNS)에서 레코드를 넣습니다.
@@ -38,6 +38,12 @@
    |---|---|---|
    | `boardmadang.com` (`@`) | A | VM의 고정 IP |
    | `www` | CNAME | `boardmadang.com` |
+
+   boardmadang.com의 DNS는 Cloudflare에 있습니다. 처음에는 두 레코드를 **DNS only**(회색 구름)로 넣어 Caddy가 인증서를 받게 합니다.
+   나중에 프록시(주황 구름)를 켜려면 SSL/TLS 모드를 **Full (strict)**로 둡니다. 웹소켓도 그대로 지나가고,
+   서버가 50초마다 핑을 보내므로 Cloudflare의 유휴 연결 제한(100초)에 걸리지 않습니다.
+   프록시를 켜면 Cloudflare가 `CF-IPCountry`로 접속 나라를 알려 주고, `/api/locale`이 이것으로 화면 언어를 고릅니다.
+   켜지 않으면 브라우저의 `Accept-Language`로 고릅니다 (GCP 부하 분산기의 `X-Client-Region`은 VM 구성에는 없습니다).
 
 3. **HTTPS**: VM에서 Caddy가 인증서를 자동으로 받고 갱신합니다. 방화벽에서 80, 443을 열어 둡니다 (80은 인증서 발급에 씁니다).
 
@@ -77,10 +83,15 @@ GPU가 있고 싼 리전에서 **Spot VM**으로 돌리면 비용을 크게 줄�
 
 ## 컨테이너 빌드
 
+레포 루트에서 빌드합니다. 서버와 함께 화면, SDK 모듈, 게임 코드가 이미지의 `/site`(`SITE_DIR`)에 들어갑니다.
+
 ```bash
-cd server
-docker build -t boardmadang-server .
-docker run --rm -p 8080:8080 -v boardmadang-data:/data boardmadang-server
+docker build -t boardmadang .
+docker run --rm -p 8080:8080 -v boardmadang-data:/data boardmadang
 ```
 
+http://localhost:8080 에서 로비가 뜹니다.
+
 - 기보는 컨테이너 안의 `/data`에 씁니다. 볼륨(`-v boardmadang-data:/data`)을 붙이지 않으면 컨테이너를 지울 때 같이 사라집니다.
+- 비공개 게임(`games/private/`), `.env`, 개발 중에 쌓인 `server/data/`는 `.dockerignore`로 빼서 이미지에 들어가지 않습니다.
+  비공개 게임을 이미지에 넣으면 사이트에서 누구나 그 코드를 받아 갈 수 있습니다.

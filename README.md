@@ -54,6 +54,9 @@ go run ./cmd/server
 curl http://localhost:8080/healthz
 ```
 
+Go 서버는 화면과 게임 코드도 내보내므로, 운영과 같은 모양 그대로 http://localhost:8080 에서 로비와 대전이 됩니다.
+게임 등록창의 저장(`PUT /api/games/<id>/listing`)만 아래의 개발 서버에서 됩니다.
+
 설정은 환경변수로 합니다. [.env.example](.env.example)을 참고하세요.
 
 로비(게임 목록)와 [플레이그라운드](sdk/README.md#내-컴퓨터에서-돌려보기-플레이그라운드)는 Go 서버 없이 개발 서버로 띄웁니다.

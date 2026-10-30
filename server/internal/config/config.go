@@ -16,6 +16,8 @@ type Config struct {
 	SessionSecret string
 	// 기보를 저장할 폴더 (internal/record). 운영에서는 VM의 영구 디스크에 둡니다.
 	DataDir string
+	// 화면(web/)과 게임 코드(games/)가 있는 폴더, 곧 레포 루트 (internal/site). 비어 있으면 ..(server 폴더에서 켠 기준).
+	SiteDir string
 
 	// 브라우저가 보는 사이트 주소 (https://boardmadang.com). 소셜 로그인에서 돌아올 주소를 만듭니다.
 	// 비어 있으면 요청의 Host로 만듭니다.
@@ -32,6 +34,7 @@ func Load() Config {
 		Port:          os.Getenv("PORT"),
 		SessionSecret: os.Getenv("SESSION_SECRET"),
 		DataDir:       os.Getenv("DATA_DIR"),
+		SiteDir:       os.Getenv("SITE_DIR"),
 		PublicURL:     os.Getenv("PUBLIC_URL"),
 
 		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
@@ -45,6 +48,9 @@ func Load() Config {
 	}
 	if cfg.DataDir == "" {
 		cfg.DataDir = "data"
+	}
+	if cfg.SiteDir == "" {
+		cfg.SiteDir = ".."
 	}
 
 	for _, origin := range strings.Split(os.Getenv("ALLOWED_ORIGINS"), ",") {
