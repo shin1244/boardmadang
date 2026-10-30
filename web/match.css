@@ -10,15 +10,17 @@
 
 .players {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   align-items: center;
-  gap: 14px;
+  gap: 6px 14px;
   margin-bottom: 8px;
   font-size: 15px;
 }
 .players[hidden] { display: none; }
 .who { display: inline-flex; align-items: center; gap: 6px; }
 .who small { color: var(--muted); }
+.who b, .who small { white-space: nowrap; }
 .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }
 .vs { color: var(--muted); font-size: 13px; }
 
@@ -99,4 +101,78 @@
 
 @media (max-width: 760px) {
   .match { padding: 20px 16px 48px; }
+}
+
+/* ---- 이모티콘 (emotes.js) ---- */
+
+/* 보낸 사람의 이름 위에 뜨는 말풍선 */
+.who { position: relative; }
+.emote-bubble {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 5;
+  width: 68px;
+  height: 68px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.16);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.emote-bubble::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border: solid var(--border);
+  border-width: 0 1px 1px 0;
+  background: var(--surface);
+  transform: translate(-50%, -5px) rotate(45deg);
+}
+.emote-bubble[hidden] { display: none; }
+.emote-bubble svg { display: block; width: 100%; height: 100%; }
+.emote-bubble.pop { animation: emote-life 3s ease-out forwards; }
+@keyframes emote-life {
+  0% { opacity: 0; transform: translateX(-50%) translateY(6px) scale(0.5); }
+  8% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1.12); }
+  14% { transform: translateX(-50%) scale(1); }
+  85% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(-50%); }
+}
+
+/* 좁은 화면: 두 사람을 나란히 두 칸으로 (줄이 바뀌어 말풍선이 다른 사람 이름을 가리지 않게) */
+@media (max-width: 480px) {
+  .players { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: start; }
+  .players[hidden] { display: none; }
+  .who { flex-wrap: wrap; justify-content: center; row-gap: 2px; }
+  .vs { padding-top: 2px; }
+}
+
+/* 보드 아래의 이모티콘 줄 */
+.emote-bar { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 14px; }
+.emote-bar[hidden] { display: none; }
+.emote-buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px; }
+.emote-btn {
+  width: 42px;
+  height: 42px;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+}
+.emote-btn svg { display: block; width: 100%; height: 100%; }
+.emote-btn:hover:not(:disabled), .emote-btn:focus-visible { border-color: var(--border); background: var(--thumb); }
+.emote-btn:hover:not(:disabled) svg { transform: scale(1.12); }
+.emote-btn:disabled { cursor: default; opacity: 0.4; }
+.emote-bar .text-btn { font-size: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .emote-bubble.pop { animation: none; }
+  .emote-btn:hover:not(:disabled) svg { transform: none; }
 }

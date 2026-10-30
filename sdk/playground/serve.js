@@ -153,7 +153,7 @@ function proxyGo(req, res, url) {
 function proxyRaw(req, res, url) {
   const fail = () => (url.pathname === '/api/auth/providers' ? json(res, 200, { providers: [] }) : json(res, 503, { error: 'no game server' }));
   const headers = { host: req.headers.host ?? '', cookie: req.headers.cookie ?? '' };
-  if (req.headers['sec-fetch-site']) headers['sec-fetch-site'] = req.headers['sec-fetch-site'];
+  for (const h of ['sec-fetch-site', 'content-type']) if (req.headers[h]) headers[h] = req.headers[h];
   const up = http.request(new URL(url.pathname + url.search, GO), { method: req.method, headers, timeout: 15000 }, (r) => {
     const out = {};
     for (const h of ['content-type', 'location', 'set-cookie', 'cache-control']) if (r.headers[h]) out[h] = r.headers[h];

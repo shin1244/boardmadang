@@ -108,6 +108,8 @@ body {
 .langs button:hover { color: var(--topbar-text); }
 .langs button[aria-pressed="true"] { background: var(--topbar-line); color: var(--topbar-text); }
 
+.logo { white-space: nowrap; }
+
 .login, .logout {
   padding: 6px 14px;
   border: 1px solid var(--topbar-line);

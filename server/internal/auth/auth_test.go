@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -65,6 +66,8 @@ func newSite(t *testing.T, p *Provider) *site {
 	mux.HandleFunc("GET /auth/{provider}", h.ServeLogin)
 	mux.HandleFunc("GET /auth/{provider}/callback", h.ServeCallback)
 	mux.HandleFunc("POST /auth/logout", h.ServeLogout)
+	mux.HandleFunc("GET /auth/signup", h.ServeSignupInfo)
+	mux.HandleFunc("POST /auth/signup", h.ServeSignup)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
@@ -111,6 +114,32 @@ func (s *site) login(t *testing.T, next, code string, state func(string) string)
 
 func same(s string) string { return s }
 
+// signup은 이름을 정해 가입합니다. 응답의 상태와 본문을 돌려줍니다.
+func (s *site) signup(t *testing.T, name string) (int, map[string]string) {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"name": name})
+	res, err := s.browser.Post(s.URL+"/auth/signup", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var out map[string]string
+	json.NewDecoder(res.Body).Decode(&out)
+	return res.StatusCode, out
+}
+
+func (s *site) signupInfo(t *testing.T) (int, map[string]any) {
+	t.Helper()
+	res, err := s.browser.Get(s.URL + "/auth/signup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var out map[string]any
+	json.NewDecoder(res.Body).Decode(&out)
+	return res.StatusCode, out
+}
+
 func TestLoginAdoptsGuest(t *testing.T) {
 	gh, p := fakeGitHub(t)
 	defer gh.Close()
@@ -126,16 +155,33 @@ func TestLoginAdoptsGuest(t *testing.T) {
 	s.records.Save(m)
 	s.records.Close()
 
+	// 처음 온 사람은 이름을 정하는 화면으로 갑니다. 아직 계정이 아닙니다
 	res := s.login(t, "/web/rooms.html?x=1", "good", same)
-	if res.StatusCode != http.StatusFound || res.Header.Get("Location") != "/web/rooms.html?x=1" {
+	if res.StatusCode != http.StatusFound || res.Header.Get("Location") != SignupPage {
 		t.Fatalf("callback: %d → %q", res.StatusCode, res.Header.Get("Location"))
 	}
+	if u := s.me(t); u.ID != guest.ID {
+		t.Fatalf("before choosing a name = %+v, want the guest", u)
+	}
+	if code, info := s.signupInfo(t); code != http.StatusOK || info["suggested"] != "octo" || info["provider"] != "github" {
+		t.Fatalf("signup info: %d %v", code, info)
+	}
+	if code, out := s.signup(t, "운영자"); code != http.StatusBadRequest || out["error"] != "name reserved" {
+		t.Fatalf("reserved name: %d %v", code, out)
+	}
+	if code, out := s.signup(t, "문어"); code != http.StatusOK || out["next"] != "/web/rooms.html?x=1" {
+		t.Fatalf("signup: %d %v", code, out)
+	}
 	member := s.me(t)
-	if member.Kind != identity.KindMember || member.Name != "octo" || !strings.HasPrefix(member.ID, "m_") {
-		t.Fatalf("after login = %+v", member)
+	if member.Kind != identity.KindMember || member.Name != "문어" || !strings.HasPrefix(member.ID, "m_") {
+		t.Fatalf("after signup = %+v", member)
+	}
+	// 가입 정보는 한 번만 씁니다
+	if code, _ := s.signup(t, "또"); code != http.StatusUnauthorized {
+		t.Fatalf("second signup: %d", code)
 	}
 	list, _ := s.records.ListByUser(member.ID, 10)
-	if len(list) != 1 || list[0].Players[0].Name != "octo" {
+	if len(list) != 1 || list[0].Players[0].Name != "문어" {
 		t.Fatalf("guest match not adopted: %+v", list)
 	}
 
@@ -148,7 +194,10 @@ func TestLoginAdoptsGuest(t *testing.T) {
 	if u := s.me(t); u.Kind != identity.KindGuest || u.ID == guest.ID {
 		t.Fatalf("after logout = %+v, want a new guest", u)
 	}
-	s.login(t, "/web/", "good", same)
+	// 두 번째부터는 이름을 묻지 않고 바로 로그인합니다
+	if res := s.login(t, "/web/", "good", same); res.Header.Get("Location") != "/web/" {
+		t.Fatalf("second login → %q", res.Header.Get("Location"))
+	}
 	if u := s.me(t); u != member {
 		t.Fatalf("second login = %+v, want %+v", u, member)
 	}
@@ -219,11 +268,32 @@ func TestDevLogin(t *testing.T) {
 	s := newSite(t, Dev())
 	s.me(t)
 	res := s.get(t, "/auth/dev?next=/web/rooms.html")
-	if res.StatusCode != http.StatusFound || res.Header.Get("Location") != "/web/rooms.html" {
+	if res.StatusCode != http.StatusFound || res.Header.Get("Location") != SignupPage {
 		t.Fatalf("dev login: %d → %q", res.StatusCode, res.Header.Get("Location"))
+	}
+	if code, out := s.signup(t, "dev"); code != http.StatusOK || out["next"] != "/web/rooms.html" {
+		t.Fatalf("signup: %d %v", code, out)
 	}
 	if u := s.me(t); u.Kind != identity.KindMember || u.Name != "dev" {
 		t.Fatalf("after dev login = %+v", u)
+	}
+}
+
+func TestSignupNeedsCookie(t *testing.T) {
+	s := newSite(t, Dev())
+	if code, _ := s.signupInfo(t); code != http.StatusUnauthorized {
+		t.Errorf("info without cookie: %d", code)
+	}
+	if code, _ := s.signup(t, "someone"); code != http.StatusUnauthorized {
+		t.Errorf("signup without cookie: %d", code)
+	}
+	// 다른 서버(다른 비밀값)가 서명한 가입 정보는 받지 않습니다
+	forged := identity.NewIssuer([]byte("another-secret-another-secret-xx")).SignData("signup",
+		[]byte(fmt.Sprintf(`{"p":"dev","s":"1","next":"/web/","exp":%d}`, time.Now().Add(time.Hour).Unix())))
+	u, _ := url.Parse(s.URL)
+	s.browser.Jar.SetCookies(u, []*http.Cookie{{Name: signupCookie, Value: forged, Path: "/auth/"}})
+	if code, _ := s.signup(t, "someone"); code != http.StatusUnauthorized {
+		t.Errorf("forged cookie: %d", code)
 	}
 }
 

@@ -145,6 +145,27 @@ func Member(id, name string) User {
 	return User{ID: id, Kind: KindMember, Name: name, Tag: tagOf(id)}
 }
 
+// SignData는 세션 토큰이 아닌 짧은 값(로그인 중의 가입 정보 같은 것)에 서명합니다: <purpose>.<내용>.<서명>
+// purpose가 다르면 서로 바꿔 쓸 수 없고, 세션 토큰(v1)으로도 쓸 수 없습니다. 만료는 부르는 쪽이 내용에 넣어 확인합니다.
+func (is *Issuer) SignData(purpose string, data []byte) string {
+	body := purpose + "." + base64.RawURLEncoding.EncodeToString(data)
+	return body + "." + base64.RawURLEncoding.EncodeToString(is.mac(body))
+}
+
+// VerifyData는 SignData로 만든 값을 확인하고 내용을 돌려줍니다.
+func (is *Issuer) VerifyData(purpose, token string) ([]byte, bool) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 || parts[0] != purpose || purpose == tokenVersion {
+		return nil, false
+	}
+	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil || !hmac.Equal(sig, is.mac(parts[0]+"."+parts[1])) {
+		return nil, false
+	}
+	data, err := base64.RawURLEncoding.DecodeString(parts[1])
+	return data, err == nil
+}
+
 // FromRequest는 요청의 세션 쿠키에서 신원을 읽습니다.
 func (is *Issuer) FromRequest(r *http.Request) (User, bool) {
 	c, err := r.Cookie(CookieName)

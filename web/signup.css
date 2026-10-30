@@ -1,0 +1,29 @@
+/* 이름 정하기: 가운데에 카드 하나 */
+.signup-page .login-box { display: none; } /* 로그인하는 중이므로 로그인 버튼은 숨깁니다 */
+.signup { display: flex; justify-content: center; padding: 48px 16px; }
+.signup-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 28px 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.signup-card[hidden] { display: none; }
+.signup-card h1 { margin: 0 0 8px; font-size: 22px; }
+.signup-lead { margin: 0 0 20px; color: var(--muted); }
+.signup-field { display: grid; gap: 6px; font-weight: 600; font-size: 14px; }
+.signup-field input {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 17px;
+}
+.signup-field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.signup-rules { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+.signup-error { margin: 8px 0 0; color: var(--bad); font-size: 14px; }
+.signup-error[hidden] { display: none; }
+.signup-card .btn { display: inline-block; margin-top: 20px; padding: 10px 24px; text-decoration: none; }

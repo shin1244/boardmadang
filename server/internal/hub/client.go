@@ -46,9 +46,10 @@ type Client struct {
 	watching *Room // 관전 중인 대국
 	last     *Room // 방금 끝낸 대국. 재대결을 요청할 수 있습니다 (offers.go)
 
-	// 초당 행동 수 제한. readPump 고루틴만 씁니다.
+	// 초당 행동 수 제한과 마지막 이모티콘. readPump 고루틴만 씁니다.
 	windowStart time.Time
 	windowCount int
+	lastEmote   time.Time
 }
 
 func newClient(h *Hub, conn *websocket.Conn, user identity.User) *Client {
@@ -182,6 +183,14 @@ func (c *Client) handle(data []byte) {
 		return
 	case protocol.TypeRematch:
 		c.hub.rematch(c)
+		return
+	case protocol.TypeEmote:
+		var m protocol.Emote
+		if json.Unmarshal(data, &m) != nil || !protocol.Emotes[m.Emote] {
+			c.sendError("bad emote")
+			return
+		}
+		c.hub.emote(c, m.Emote)
 		return
 	}
 

@@ -8,6 +8,7 @@ import { BoardView, PLAYER_COLORS } from '/sdk/playground/board.js';
 import { gameLang, localize } from '/sdk/playground/listing.js';
 import { makeRng } from '/sdk/playground/platform.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
+import { popEmote } from './emotes.js';
 import { displayName, loadMe, renderMe } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -75,6 +76,9 @@ async function onMessage(m) {
     case 'drawOff':
       drawBy = null;
       break;
+    case 'emote':
+      if (m.player === 0 || m.player === 1) popEmote($(`#p${m.player}-emote`), m.emote);
+      return;
     case 'away':
       away[m.player] = Date.now() + m.seconds * 1000;
       break;

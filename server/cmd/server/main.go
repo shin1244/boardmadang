@@ -113,6 +113,8 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 	mux.HandleFunc("GET /auth/{provider}", login.ServeLogin)
 	mux.HandleFunc("GET /auth/{provider}/callback", login.ServeCallback)
 	mux.HandleFunc("POST /auth/logout", login.ServeLogout)
+	mux.HandleFunc("GET /auth/signup", login.ServeSignupInfo)
+	mux.HandleFunc("POST /auth/signup", login.ServeSignup)
 	mux.HandleFunc("GET /ws", h.ServeWS)
 	mux.HandleFunc("GET /api/rooms", h.ServeRooms)
 	mux.HandleFunc("GET /api/live", h.ServeLive)

@@ -2,7 +2,10 @@
 //
 //	GET  /api/auth/providers         켜져 있는 로그인 방법 {"providers":["google","github"]}
 //	GET  /auth/{provider}?next=/web/ 로그인 시작. 그곳의 로그인 화면으로 보냅니다
-//	GET  /auth/{provider}/callback   그곳에서 돌아오는 주소. 계정을 찾거나 만들고, 세션 쿠키를 계정으로 바꿉니다
+//	GET  /auth/{provider}/callback   그곳에서 돌아오는 주소. 계정이 있으면 세션 쿠키를 계정으로 바꾸고,
+//	                                 처음 온 사람이면 이름을 정하는 화면(/web/signup.html)으로 보냅니다
+//	GET  /auth/signup                이름을 정하는 중인 가입 정보 {"provider":"github","suggested":"octo"}
+//	POST /auth/signup                이름을 정해 계정을 만듭니다 {"name":"..."} → {"next":"/web/..."}
 //	POST /auth/logout                로그아웃. 세션 쿠키를 지웁니다 (다음 /api/me에서 새 게스트)
 //
 // 그곳에서 받은 토큰은 사용자 번호와 이름을 읽는 데만 쓰고 버립니다.
@@ -33,7 +36,21 @@ const (
 	// stateCookie는 로그인을 시작한 브라우저가 돌아온 브라우저인지 확인하는 값입니다 (CSRF 막기).
 	stateCookie = "bm_oauth"
 	stateMaxAge = 10 * time.Minute
+
+	// signupCookie는 처음 온 사람이 이름을 정하는 동안 들고 있는 가입 정보입니다 (서명한 값).
+	signupCookie = "bm_signup"
+	signupMaxAge = 30 * time.Minute
+	SignupPage   = "/web/signup.html"
 )
+
+// signup은 signupCookie의 내용입니다.
+type signup struct {
+	Provider  string `json:"p"`
+	Sub       string `json:"s"`
+	Suggested string `json:"n,omitempty"`
+	Next      string `json:"next"`
+	Expires   int64  `json:"exp"`
+}
 
 // Provider는 로그인할 수 있는 곳 하나입니다.
 type Provider struct {
@@ -57,7 +74,7 @@ type Provider struct {
 // 의견, 방 만들기처럼 계정만 되는 기능을 내 컴퓨터에서 시험합니다. 운영에서는 절대 켜지 않습니다.
 func Dev() *Provider { return &Provider{Name: "dev", direct: true} }
 
-// Google은 Google 로그인입니다. 이름은 공개되는 곳이라 성을 빼고 이름(given_name)만 씁니다.
+// Google은 Google 로그인입니다. 받은 이름은 이름 칸의 기본값으로만 씁니다. 공개되는 곳이라 성을 빼고 이름(given_name)만 씁니다.
 func Google(clientID, clientSecret string) *Provider {
 	p := &Provider{
 		Name:         "google",
@@ -86,7 +103,7 @@ func Google(clientID, clientSecret string) *Provider {
 	return p
 }
 
-// GitHub은 GitHub 로그인입니다. 이름은 GitHub 아이디(login)를 씁니다. 공개 정보만 읽으므로 scope가 없습니다.
+// GitHub은 GitHub 로그인입니다. 이름 칸의 기본값은 GitHub 아이디(login)입니다. 공개 정보만 읽으므로 scope가 없습니다.
 func GitHub(clientID, clientSecret string) *Provider {
 	p := &Provider{
 		Name:         "github",
@@ -158,9 +175,7 @@ func (h *Handler) ServeProviders(w http.ResponseWriter, r *http.Request) {
 	for _, p := range h.Providers {
 		names = append(names, p.Name)
 	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	json.NewEncoder(w).Encode(map[string][]string{"providers": names})
+	writeJSON(w, http.StatusOK, map[string][]string{"providers": names})
 }
 
 // ServeLogin은 GET /auth/{provider} 입니다. 무작위 state를 쿠키에 넣고 그곳의 로그인 화면으로 보냅니다.
@@ -258,17 +273,29 @@ func (h *Handler) ServeCallback(w http.ResponseWriter, r *http.Request) {
 	h.finish(w, r, p, sub, name, next)
 }
 
-// finish는 계정을 찾거나 만들고, 게스트의 대국을 옮기고, 쿠키를 계정으로 바꿔 next로 돌려보냅니다.
+// finish는 그곳에서 확인한 사람을 로그인시킵니다. 계정이 있으면 바로 로그인하고,
+// 처음 온 사람이면 가입 정보를 서명해 쿠키에 넣고 이름을 정하는 화면으로 보냅니다.
 func (h *Handler) finish(w http.ResponseWriter, r *http.Request, p *Provider, sub, name, next string) {
-	member, created, err := h.Accounts.Login(p.Name, sub, name)
-	if err != nil {
-		h.fail(w, r, next, "server", err)
+	if member, ok := h.Accounts.Find(p.Name, sub); ok {
+		h.signIn(w, r, member)
+		http.Redirect(w, r, next, http.StatusFound)
 		return
 	}
-	if created {
-		log.Printf("새 계정 %s (%s)", member.ID, p.Name)
-	}
-	// 게스트로 둔 대국을 계정으로 옮깁니다. 실패해도 로그인은 됩니다.
+	data, _ := json.Marshal(signup{Provider: p.Name, Sub: sub, Suggested: account.Suggest(name), Next: next, Expires: time.Now().Add(signupMaxAge).Unix()})
+	http.SetCookie(w, &http.Cookie{
+		Name:     signupCookie,
+		Value:    h.IDs.SignData("signup", data),
+		Path:     "/auth/",
+		MaxAge:   int(signupMaxAge / time.Second),
+		HttpOnly: true,
+		Secure:   identity.IsHTTPS(r),
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, SignupPage, http.StatusFound)
+}
+
+// signIn은 세션 쿠키를 member로 바꿉니다. 쓰던 쿠키가 게스트면 그 게스트로 둔 대국을 계정으로 옮깁니다 (실패해도 로그인은 됩니다).
+func (h *Handler) signIn(w http.ResponseWriter, r *http.Request, member identity.User) {
 	if prev, ok := h.IDs.FromRequest(r); ok && !prev.IsMember() && h.Records != nil {
 		to := record.Player{ID: member.ID, Kind: member.Kind, Tag: member.Tag, Name: member.Name}
 		if n, err := h.Records.Adopt(prev.ID, to); err != nil {
@@ -278,7 +305,80 @@ func (h *Handler) finish(w http.ResponseWriter, r *http.Request, p *Provider, su
 		}
 	}
 	h.IDs.SetCookie(w, r, member)
-	http.Redirect(w, r, next, http.StatusFound)
+}
+
+// pendingSignup은 요청의 가입 정보입니다. 없거나, 위조됐거나, 시간이 지났으면 false입니다.
+func (h *Handler) pendingSignup(r *http.Request) (signup, bool) {
+	c, err := r.Cookie(signupCookie)
+	if err != nil {
+		return signup{}, false
+	}
+	data, ok := h.IDs.VerifyData("signup", c.Value)
+	if !ok {
+		return signup{}, false
+	}
+	var su signup
+	if json.Unmarshal(data, &su) != nil || su.Sub == "" || h.provider(su.Provider) == nil || time.Now().Unix() > su.Expires {
+		return signup{}, false
+	}
+	return su, true
+}
+
+// ServeSignupInfo는 GET /auth/signup 입니다. 이름 칸의 기본값과 어디로 로그인했는지를 줍니다.
+func (h *Handler) ServeSignupInfo(w http.ResponseWriter, r *http.Request) {
+	su, ok := h.pendingSignup(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "expired"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"provider": su.Provider, "suggested": su.Suggested,
+		"min": account.MinName, "max": account.MaxName,
+	})
+}
+
+// ServeSignup은 POST /auth/signup 입니다. 이름을 확인해 계정을 만들고 로그인시킵니다.
+// JSON 본문만 받습니다 (다른 사이트의 폼으로 남의 브라우저에서 가입시키지 못하게).
+func (h *Handler) ServeSignup(w http.ResponseWriter, r *http.Request) {
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		writeJSON(w, http.StatusUnsupportedMediaType, map[string]string{"error": "JSON only"})
+		return
+	}
+	su, ok := h.pendingSignup(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "expired"})
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&body) != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad JSON"})
+		return
+	}
+	member, created, err := h.Accounts.Create(su.Provider, su.Sub, body.Name)
+	if errors.Is(err, account.ErrNameLength) || errors.Is(err, account.ErrNameChars) || errors.Is(err, account.ErrNameReserved) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if err != nil {
+		log.Printf("계정을 만들지 못했습니다: %v", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server error"})
+		return
+	}
+	if created {
+		log.Printf("새 계정 %s (%s)", member.ID, su.Provider)
+	}
+	http.SetCookie(w, &http.Cookie{Name: signupCookie, Path: "/auth/", MaxAge: -1, HttpOnly: true, Secure: identity.IsHTTPS(r), SameSite: http.SameSiteLaxMode})
+	h.signIn(w, r, member)
+	writeJSON(w, http.StatusOK, map[string]string{"next": su.Next})
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
 }
 
 func (h *Handler) fail(w http.ResponseWriter, r *http.Request, next, reason string, err error) {

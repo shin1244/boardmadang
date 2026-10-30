@@ -39,9 +39,9 @@
 
     <!-- 대국이 시작되면 보입니다: 나 vs 상대 -->
     <div id="players" class="players" hidden>
-      <span class="who"><i class="dot" id="my-dot"></i><b id="my-name"></b> <small id="my-seat"></small> <time id="my-clock" class="clock" hidden></time></span>
+      <span class="who"><span class="emote-bubble" id="my-emote" role="status" hidden></span><i class="dot" id="my-dot"></i><b id="my-name"></b> <small id="my-seat"></small> <time id="my-clock" class="clock" hidden></time></span>
       <span class="vs" aria-hidden="true">vs</span>
-      <span class="who"><i class="dot" id="opp-dot"></i><b id="opp-name"></b> <small id="opp-seat"></small> <time id="opp-clock" class="clock" hidden></time></span>
+      <span class="who"><span class="emote-bubble" id="opp-emote" role="status" hidden></span><i class="dot" id="opp-dot"></i><b id="opp-name"></b> <small id="opp-seat"></small> <time id="opp-clock" class="clock" hidden></time></span>
     </div>
 
     <p id="status" class="match-status" role="status"></p>
@@ -57,6 +57,12 @@
     <div id="board-wrap" class="board-wrap" hidden>
       <canvas id="board"></canvas>
       <p id="message" class="message"></p>
+    </div>
+
+    <!-- 이모티콘: 누르면 내 이름 위에 뜨고 상대와 관전자에게도 보입니다 (emotes.js). 채팅은 없습니다 -->
+    <div id="emote-bar" class="emote-bar" hidden>
+      <div id="emote-buttons" class="emote-buttons" role="group" data-i18n-attr="aria-label:emote.label" aria-label="이모티콘"></div>
+      <button id="emote-mute" class="text-btn" type="button"></button>
     </div>
 
     <!-- 무승부 제안: 내가 했으면 철회, 상대가 했으면 수락 / 거절 -->
