@@ -163,6 +163,14 @@ func TestReportGame(t *testing.T) {
 	}
 }
 
+// names는 테스트용 계정 저장소입니다.
+type names map[string]string
+
+func (n names) Name(id string) (string, bool) {
+	name, ok := n[id]
+	return name, ok
+}
+
 func TestHTTP(t *testing.T) {
 	s, _ := open(t, t.TempDir())
 	ids := identity.NewIssuer([]byte(strings.Repeat("k", 32)))
@@ -172,15 +180,20 @@ func TestHTTP(t *testing.T) {
 	mux.HandleFunc("POST /api/games/{game}/comments", h.ServePost)
 	mux.HandleFunc("DELETE /api/games/{game}/comments/{id}", h.ServeDelete)
 	mux.HandleFunc("POST /api/reports", h.ServeReport)
-	cookie := &http.Cookie{Name: identity.CookieName, Value: ids.Sign(guest("g_web"))}
+	ids.Members = names{"m_web": "web"}
+	guestCookie := &http.Cookie{Name: identity.CookieName, Value: ids.Sign(guest("g_web"))}
+	cookie := &http.Cookie{Name: identity.CookieName, Value: ids.Sign(identity.Member("m_web", ""))}
 
-	do := func(method, path, ctype, body string, withCookie bool) *httptest.ResponseRecorder {
+	do := func(method, path, ctype, body string, withCookie bool, extra ...*http.Cookie) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		if ctype != "" {
 			req.Header.Set("Content-Type", ctype)
 		}
 		if withCookie {
 			req.AddCookie(cookie)
+		}
+		for _, c := range extra {
+			req.AddCookie(c)
 		}
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
@@ -189,6 +202,9 @@ func TestHTTP(t *testing.T) {
 
 	if rec := do("POST", "/api/games/tictactoe/comments", "application/json", `{"text":"hi"}`, false); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("쿠키 없이: %d", rec.Code)
+	}
+	if rec := do("POST", "/api/games/tictactoe/comments", "application/json", `{"text":"hi"}`, false, guestCookie); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "member only") {
+		t.Fatalf("게스트: %d %s", rec.Code, rec.Body)
 	}
 	if rec := do("POST", "/api/games/tictactoe/comments", "text/plain", `{"text":"hi"}`, true); rec.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("JSON이 아닌 본문: %d", rec.Code)
@@ -204,7 +220,7 @@ func TestHTTP(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"mine":true`) || !strings.Contains(rec.Body.String(), `"count":1`) {
 		t.Fatalf("목록: %d %s", rec.Code, rec.Body)
 	}
-	if strings.Contains(rec.Body.String(), "g_web") {
+	if strings.Contains(rec.Body.String(), "m_web") {
 		t.Fatalf("내부 id를 보내면 안 됩니다: %s", rec.Body)
 	}
 	if rec := do("POST", "/api/reports", "application/json", `{"game":"tictactoe","reason":"copyright"}`, true); rec.Code != http.StatusOK {

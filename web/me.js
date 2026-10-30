@@ -32,7 +32,7 @@ let lastMe = null;
 let loginError = null;
 let setUp = false;
 
-const PROVIDERS = ['google', 'github'];
+const PROVIDERS = ['google', 'github', 'dev']; // dev는 개발용 로그인 (서버의 DEV_LOGIN=1)
 const ERRORS = ['cancelled', 'expired', 'state', 'provider', 'server'];
 
 function setup() {
@@ -51,6 +51,12 @@ function setup() {
       renderMe(lastMe);
       if (loginError && !isMember(lastMe)) openMenu(true);
     });
+
+  // 로그인하고 나면 누른 때의 화면으로 돌아옵니다 (게임 창을 열면 주소가 바뀌므로 누를 때 정합니다)
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[data-provider]');
+    if (a) a.href = `/auth/${a.dataset.provider}?next=${encodeURIComponent(location.pathname + location.search)}`;
+  });
 
   const button = document.querySelector('.login');
   button.addEventListener('click', () => openMenu(document.querySelector('.login-menu').hidden));
@@ -81,10 +87,21 @@ function openMenu(open) {
   if (!open) loginError = null;
 }
 
-/** 로그인 메뉴: 로그인 방법마다 링크 하나. 로그인하고 나면 지금 화면으로 돌아옵니다. */
+/** 로그인 방법마다 링크 하나. 주소는 누를 때 정합니다 (setup). */
+function loginLinks() {
+  return (providers ?? []).map((name) => {
+    const a = document.createElement('a');
+    a.href = `/auth/${name}`;
+    a.dataset.provider = name;
+    a.className = `login-${name}`;
+    a.textContent = t(`login.${name}`);
+    return a;
+  });
+}
+
+/** 상단 로그인 메뉴와, 페이지 안의 로그인 안내(.login-links: 의견, 방 만들기처럼 계정만 되는 곳) */
 function renderMenu() {
   const menu = document.querySelector('.login-menu');
-  const next = location.pathname + location.search;
   menu.replaceChildren();
   if (loginError) {
     const p = document.createElement('p');
@@ -93,13 +110,13 @@ function renderMenu() {
     p.textContent = t(ERRORS.includes(loginError) ? `login.error.${loginError}` : 'login.error.server');
     menu.append(p);
   }
-  for (const name of providers ?? []) {
-    const a = document.createElement('a');
-    a.href = `/auth/${name}?next=${encodeURIComponent(next)}`;
-    a.className = `login-${name}`;
+  for (const a of loginLinks()) {
     a.setAttribute('role', 'menuitem');
-    a.textContent = t(`login.${name}`);
     menu.append(a);
+  }
+  for (const box of document.querySelectorAll('.login-links')) {
+    box.replaceChildren(...loginLinks());
+    box.hidden = !providers?.length;
   }
   const hint = document.createElement('p');
   hint.className = 'login-hint';

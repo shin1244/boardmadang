@@ -95,6 +95,10 @@ func providers(cfg config.Config) []*auth.Provider {
 	if cfg.GitHubClientID != "" && cfg.GitHubClientSecret != "" {
 		list = append(list, auth.GitHub(cfg.GitHubClientID, cfg.GitHubClientSecret))
 	}
+	if cfg.DevLogin {
+		log.Println("경고: 개발용 로그인(DEV_LOGIN=1)이 켜져 있습니다. 누구나 dev 계정으로 들어옵니다. 운영에서는 끄세요.")
+		list = append(list, auth.Dev())
+	}
 	if len(list) == 0 {
 		log.Println("소셜 로그인이 꺼져 있습니다 (GOOGLE_CLIENT_ID, GITHUB_CLIENT_ID 등이 없음). 게스트로만 들어옵니다.")
 	}

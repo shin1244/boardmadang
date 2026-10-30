@@ -49,7 +49,13 @@ type Provider struct {
 	profile func(ctx context.Context, c *http.Client, token string) (sub, name string, err error)
 	// ProfileURL은 profile이 읽는 주소입니다. 테스트에서 바꾸려고 둡니다.
 	ProfileURL string
+
+	direct bool // 외부에 묻지 않고 바로 로그인합니다 (Dev)
 }
+
+// Dev는 개발용 로그인입니다 (DEV_LOGIN=1). OAuth 앱 없이 바로 "dev" 계정으로 로그인해서
+// 의견, 방 만들기처럼 계정만 되는 기능을 내 컴퓨터에서 시험합니다. 운영에서는 절대 켜지 않습니다.
+func Dev() *Provider { return &Provider{Name: "dev", direct: true} }
 
 // Google은 Google 로그인입니다. 이름은 공개되는 곳이라 성을 빼고 이름(given_name)만 씁니다.
 func Google(clientID, clientSecret string) *Provider {
@@ -164,13 +170,18 @@ func (h *Handler) ServeLogin(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	next := safeNext(r.URL.Query().Get("next"))
+	if p.direct {
+		w.Header().Set("Cache-Control", "no-store")
+		h.finish(w, r, p, "dev", "dev", next)
+		return
+	}
 	b := make([]byte, 24)
 	if _, err := rand.Read(b); err != nil {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
 	}
 	state := base64.RawURLEncoding.EncodeToString(b)
-	next := safeNext(r.URL.Query().Get("next"))
 	http.SetCookie(w, &http.Cookie{
 		Name:     stateCookie,
 		Value:    p.Name + "." + state + "." + base64.RawURLEncoding.EncodeToString([]byte(next)),
@@ -244,6 +255,11 @@ func (h *Handler) ServeCallback(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, next, "provider", err)
 		return
 	}
+	h.finish(w, r, p, sub, name, next)
+}
+
+// finish는 계정을 찾거나 만들고, 게스트의 대국을 옮기고, 쿠키를 계정으로 바꿔 next로 돌려보냅니다.
+func (h *Handler) finish(w http.ResponseWriter, r *http.Request, p *Provider, sub, name, next string) {
 	member, created, err := h.Accounts.Login(p.Name, sub, name)
 	if err != nil {
 		h.fail(w, r, next, "server", err)

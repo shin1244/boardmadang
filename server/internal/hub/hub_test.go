@@ -17,9 +17,17 @@ import (
 
 // ---- 도구 ----
 
+var testSecret = []byte("test-secret-test-secret-test-secret")
+
+// anyMember는 모든 계정이 있다고 답하는 계정 저장소입니다. 이름은 id에서 m_를 뗀 것입니다.
+type anyMember struct{}
+
+func (anyMember) Name(id string) (string, bool) { return strings.TrimPrefix(id, "m_"), true }
+
 func newServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	ids := identity.NewIssuer([]byte("test-secret-test-secret-test-secret"))
+	ids := identity.NewIssuer(testSecret)
+	ids.Members = anyMember{}
 	h := New(config.Config{}, ids, nil)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/me", ids.HandleMe)
@@ -52,6 +60,15 @@ func connect(t *testing.T, srv *httptest.Server) *player {
 		header.Add("Cookie", c.String())
 	}
 	p := &player{t: t, srv: srv, header: header}
+	p.dial()
+	return p
+}
+
+// connectMember는 계정 m_<name>으로 웹소켓에 붙습니다 (로그인한 브라우저).
+func connectMember(t *testing.T, srv *httptest.Server, name string) *player {
+	t.Helper()
+	cookie := &http.Cookie{Name: identity.CookieName, Value: identity.NewIssuer(testSecret).Sign(identity.Member("m_"+name, ""))}
+	p := &player{t: t, srv: srv, header: http.Header{"Cookie": {cookie.String()}}}
 	p.dial()
 	return p
 }

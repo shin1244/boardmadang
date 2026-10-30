@@ -215,6 +215,18 @@ func TestProviders(t *testing.T) {
 	}
 }
 
+func TestDevLogin(t *testing.T) {
+	s := newSite(t, Dev())
+	s.me(t)
+	res := s.get(t, "/auth/dev?next=/web/rooms.html")
+	if res.StatusCode != http.StatusFound || res.Header.Get("Location") != "/web/rooms.html" {
+		t.Fatalf("dev login: %d → %q", res.StatusCode, res.Header.Get("Location"))
+	}
+	if u := s.me(t); u.Kind != identity.KindMember || u.Name != "dev" {
+		t.Fatalf("after dev login = %+v", u)
+	}
+}
+
 func TestSafeNext(t *testing.T) {
 	for in, want := range map[string]string{
 		"/web/rooms.html":                 "/web/rooms.html",

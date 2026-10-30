@@ -409,6 +409,21 @@ fieldset label:has(input:disabled) { opacity: 0.5; cursor: default; }
   line-height: 1.6;
   resize: vertical;
 }
+/* 계정만 되는 곳(의견, 방 만들기)에서 게스트에게 보여주는 로그인 안내 */
+.need-login p { margin: 0 0 10px; color: var(--muted); font-size: 14px; }
+#create-login { margin: 12px 0; }
+.need-login[hidden], .login-links[hidden], .comment-form[hidden] { display: none; }
+.login-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.login-links a {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+}
+.login-links a:hover, .login-links a:focus-visible { border-color: var(--accent); color: var(--accent); }
 .comment-form-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
 .comment-as { color: var(--muted); font-size: 13px; }
 .comment-len { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }

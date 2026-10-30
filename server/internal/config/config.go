@@ -23,6 +23,8 @@ type Config struct {
 	// 소셜 로그인 (internal/auth). ID와 비밀값이 둘 다 있는 곳만 켭니다.
 	GoogleClientID, GoogleClientSecret string
 	GitHubClientID, GitHubClientSecret string
+	// 개발용 로그인 (DEV_LOGIN=1). OAuth 앱 없이 "dev" 계정으로 로그인합니다. 운영에서는 절대 켜지 않습니다.
+	DevLogin bool
 }
 
 func Load() Config {
@@ -36,6 +38,7 @@ func Load() Config {
 		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
 		GitHubClientID:     os.Getenv("GITHUB_CLIENT_ID"),
 		GitHubClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
+		DevLogin:           os.Getenv("DEV_LOGIN") == "1",
 	}
 	if cfg.Port == "" {
 		cfg.Port = "8080"

@@ -5,7 +5,7 @@
 import { BoardView } from '/sdk/playground/board.js';
 import { DIFFICULTIES, LANGS, LANG_NAMES, NO_TIMER, fullLangs, gameLang, localize, timerOf } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
-import { displayName, loadMe, renderMe } from './me.js';
+import { displayName, isMember, loadMe, renderMe } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -418,6 +418,9 @@ function renderTalk() {
     : `${displayName(latest.author)} · ${ago(latest.at)}\n${latest.hidden ? t('comments.preview.hidden') : latest.text}`;
   $('#gd-talk-preview').textContent = preview;
 
+  // 의견은 계정만 남깁니다. 게스트에게는 남기는 칸 대신 로그인 안내를 보여줍니다
+  $('#comment-form').hidden = !isMember(me);
+  $('#comment-login').hidden = isMember(me);
   $('#comment-as').textContent = me ? t('comments.as', { name: displayName(me) }) : '';
   syncCommentLength();
   const note = $('#comments-note');
@@ -609,6 +612,9 @@ function fillCreate(entry) {
   $('#create-picks').hidden = !timer.custom;
   $('#create-fixed').hidden = timer.custom;
   $('#create-fixed').textContent = t('detail.fixed', { timer: timerText(timer.minutes) });
+  // 방은 계정만 만듭니다
+  $('#create-login').hidden = isMember(me);
+  $('#create-submit').disabled = !isMember(me);
   syncCreateForm();
 }
 
