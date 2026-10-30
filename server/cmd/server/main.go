@@ -79,6 +79,7 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store) http.Handle
 	mux.HandleFunc("GET /api/me", ids.HandleMe)
 	mux.HandleFunc("GET /ws", h.ServeWS)
 	mux.HandleFunc("GET /api/rooms", h.ServeRooms)
+	mux.HandleFunc("GET /api/live", h.ServeLive)
 	matches := record.Handler{Store: records, IDs: ids}
 	mux.HandleFunc("GET /api/matches", matches.ServeMine)
 	mux.HandleFunc("GET /api/matches/{id}", matches.ServeMatch)

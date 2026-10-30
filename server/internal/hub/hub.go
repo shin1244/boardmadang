@@ -45,6 +45,8 @@ var (
 	BumpEvery = time.Minute
 	// 타이머 1분의 길이. 테스트에서만 줄입니다.
 	MinuteUnit = time.Minute
+	// 대국 하나를 관전할 수 있는 최대 인원
+	MaxWatchers = 100
 )
 
 // 타이머 범위(분). sdk/playground/listing.js의 TIMER_MINUTES와 같습니다.
@@ -135,7 +137,7 @@ func (h *Hub) seat(c *Client) (*Room, int) {
 	return c.room, c.player
 }
 
-// begin은 c가 새 대국을 찾기 전(join, create, enter)에 부릅니다.
+// begin은 c가 새 대국을 찾기 전(join, create, enter, watch)에 부릅니다.
 // 방금 끝낸 대국의 재대결은 할 수 없게 됩니다.
 // 같은 신원이 끊긴 채로 기다리는 대국이 있으면 그리로 돌려보내고 false입니다 (게임 id가 달라도 끊긴 대국이 먼저).
 // true면 h.mu를 잡은 채로 돌아옵니다. 부른 쪽이 풀어야 합니다.
@@ -234,7 +236,7 @@ func (h *Hub) start(id, game string, minutes *int, version string, players [2]*C
 
 // leave는 연결이 끊긴 c를 정리합니다. 대기열이나 방 목록에 있었으면 바로 빼고,
 // 대국 중이었으면 ReconnectGrace만큼 돌아오기를 기다립니다 (Room.playerLeft).
-// 방금 끝낸 대국이 있으면 재대결을 할 수 없게 합니다.
+// 관전 중이었으면 관전자에서 빼고, 방금 끝낸 대국이 있으면 재대결을 할 수 없게 합니다.
 func (h *Hub) leave(c *Client) {
 	h.mu.Lock()
 	if c.queued != "" && h.queue[c.queued] == c {
@@ -246,13 +248,16 @@ func (h *Hub) leave(c *Client) {
 		c.hosting = ""
 	}
 	room, player := c.room, c.player
-	last := c.last
-	c.last = nil
+	watching, last := c.watching, c.last
+	c.watching, c.last = nil, nil
 	h.mu.Unlock()
 
 	// r.mu는 h.mu를 놓은 뒤에 잡습니다 (락 순서).
 	if room != nil {
 		room.playerLeft(player, c)
+	}
+	if watching != nil {
+		watching.removeWatcher(c)
 	}
 	if last != nil {
 		last.cancelRematch(c)
@@ -272,7 +277,7 @@ func (h *Hub) dropRematch(c *Client) {
 }
 
 // removeRoom은 끝난 방을 지우고, 두 플레이어가 다시 매칭할 수 있게 합니다.
-// 두 사람의 last에 이 방을 남겨 재대결을 받을 수 있게 합니다. Room.end에서 r.mu를 잡고 부릅니다.
+// 두 사람의 last에 이 방을 남겨 재대결을 받을 수 있게 하고, 관전자는 놓아 줍니다. Room.end에서 r.mu를 잡고 부릅니다.
 func (h *Hub) removeRoom(r *Room) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -282,6 +287,11 @@ func (h *Hub) removeRoom(r *Room) {
 			p.room = nil
 		}
 		p.last = r
+	}
+	for w := range r.watchers {
+		if w.watching == r {
+			w.watching = nil
+		}
 	}
 }
 

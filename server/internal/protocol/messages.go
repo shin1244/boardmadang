@@ -19,6 +19,7 @@ const (
 	TypeDraw    = "draw"    // 무승부 제안. 상대가 제안해 둔 상태면 수락
 	TypeDecline = "decline" // 무승부 제안 거절 (제안한 쪽이 보내면 철회)
 	TypeRematch = "rematch" // 끝난 대국의 재대결 요청. 상대도 보내면 자리를 바꿔 시작
+	TypeWatch   = "watch"   // 진행 중인 대국 관전
 )
 
 // 서버 → 클라이언트
@@ -36,9 +37,10 @@ const (
 	TypeEnded   = "ended"
 	TypeError   = "error"
 
-	// TypeDraw: 누가 무승부를 제안했는지 (양쪽에게). TypeRematch: 누가 재대결을 원하는지 (양쪽에게)
+	// TypeDraw: 누가 무승부를 제안했는지 (양쪽과 관전자에게). TypeRematch: 누가 재대결을 원하는지 (양쪽에게)
 	TypeDrawOff    = "drawOff"    // 무승부 제안이 없어짐 (거절, 철회, 다음 행동)
 	TypeRematchOff = "rematchOff" // 재대결을 할 수 없게 됨 (상대가 나가거나 다른 대국을 찾음)
+	TypeWatching   = "watching"   // 관전 시작. 지금까지의 기록을 보내고, 그 뒤로는 relay, clock, ended를 같이 받습니다
 )
 
 // Ended.Reason 값
@@ -89,6 +91,12 @@ type Enter struct {
 	Type    string `json:"type"`
 	Room    string `json:"room"`
 	Version string `json:"version"`
+}
+
+// Watch는 진행 중인 대국(GET /api/live) 관전입니다. 관전자는 행동을 보낼 수 없습니다.
+type Watch struct {
+	Type string `json:"type"`
+	Room string `json:"room"`
 }
 
 // Bump는 방장이 자기 방을 목록 맨 위로 올리는 것입니다. BumpEvery마다 한 번 됩니다.
@@ -163,6 +171,18 @@ type OpenRoom struct {
 	Age     int        `json:"age"`
 }
 
+// LiveRoom은 진행 중인 대국 목록(GET /api/live)의 한 줄입니다. Age는 시작한 뒤 지난 초, Moves는 행동 수입니다.
+type LiveRoom struct {
+	Room     string        `json:"room"`
+	Game     string        `json:"game"`
+	Version  string        `json:"version"`
+	Minutes  *int          `json:"minutes"`
+	Players  [2]PlayerInfo `json:"players"`
+	Moves    int           `json:"moves"`
+	Watchers int           `json:"watchers"`
+	Age      int           `json:"age"`
+}
+
 // Seed는 32비트입니다. JS 숫자는 2^53을 넘으면 정밀도를 잃기 때문입니다.
 type Matched struct {
 	Type     string     `json:"type"`
@@ -195,6 +215,20 @@ type Resumed struct {
 	Clock    *Clock     `json:"clock,omitempty"` // 타이머가 있으면 지금 시계
 	Draw     *int       `json:"draw,omitempty"`  // 무승부를 제안해 둔 자리. 없으면 없음
 	Log      []Relay    `json:"log"`
+}
+
+// Watching은 관전을 시작할 때 보냅니다. 클라이언트는 Resumed처럼 Seed로 setup()한 뒤 Log를 재생합니다.
+type Watching struct {
+	Type    string        `json:"type"`
+	Room    string        `json:"room"`
+	Game    string        `json:"game"`
+	Version string        `json:"version"`
+	Seed    uint32        `json:"seed"`
+	Minutes *int          `json:"minutes"`
+	Players [2]PlayerInfo `json:"players"`
+	Clock   *Clock        `json:"clock,omitempty"`
+	Draw    *int          `json:"draw,omitempty"`
+	Log     []Relay       `json:"log"`
 }
 
 // Draw는 Player가 무승부를 제안했다는 알림입니다. 제안한 쪽에게도 갑니다.

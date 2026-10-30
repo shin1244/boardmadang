@@ -38,12 +38,13 @@ type Client struct {
 	done      chan struct{} // 닫히면 연결을 정리 중입니다. send 채널은 닫지 않습니다 (닫힌 채널에 보내면 패닉).
 	closeOnce sync.Once
 
-	// 아래 다섯은 hub.mu를 잡고만 읽고 씁니다. 상대의 고루틴이 매칭하면서 바꾸기 때문입니다.
-	queued  string // 빠른 매칭 대기열의 키 (게임|타이머|버전). 없으면 ""
-	hosting string // 방 목록에 올린 내 방 코드. 없으면 ""
-	room    *Room
-	player  int   // 방 안에서의 번호 (0 = 선공, 1 = 후공)
-	last    *Room // 방금 끝낸 대국. 재대결을 요청할 수 있습니다 (offers.go)
+	// 아래 여섯은 hub.mu를 잡고만 읽고 씁니다. 상대의 고루틴이 매칭하면서 바꾸기 때문입니다.
+	queued   string // 빠른 매칭 대기열의 키 (게임|타이머|버전). 없으면 ""
+	hosting  string // 방 목록에 올린 내 방 코드. 없으면 ""
+	room     *Room
+	player   int   // 방 안에서의 번호 (0 = 선공, 1 = 후공)
+	watching *Room // 관전 중인 대국
+	last     *Room // 방금 끝낸 대국. 재대결을 요청할 수 있습니다 (offers.go)
 
 	// 초당 행동 수 제한. readPump 고루틴만 씁니다.
 	windowStart time.Time
@@ -80,9 +81,9 @@ func (c *Client) Send(msg any) {
 	}
 }
 
-// busy는 이미 대기열, 방 목록, 대국 중 하나에 있는지입니다. hub.mu를 잡고 부릅니다.
+// busy는 이미 대기열, 방 목록, 대국, 관전 중 하나에 있는지입니다. hub.mu를 잡고 부릅니다.
 func (c *Client) busy() bool {
-	return c.room != nil || c.queued != "" || c.hosting != ""
+	return c.room != nil || c.queued != "" || c.hosting != "" || c.watching != nil
 }
 
 // closed는 연결이 이미 닫혔는지입니다.
@@ -167,6 +168,14 @@ func (c *Client) handle(data []byte) {
 			return
 		}
 		c.hub.enter(c, m.Room, m.Version)
+		return
+	case protocol.TypeWatch:
+		var m protocol.Watch
+		if json.Unmarshal(data, &m) != nil {
+			c.sendError("bad message")
+			return
+		}
+		c.hub.watch(c, m.Room)
 		return
 	case protocol.TypeBump:
 		c.hub.bump(c)

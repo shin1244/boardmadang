@@ -1,7 +1,6 @@
 package hub
 
 import (
-	"slices"
 	"sync"
 	"time"
 
@@ -46,6 +45,8 @@ type Room struct {
 	drawAt    [2]int // 자리별로 마지막에 제안했을 때의 행동 수. 그 뒤로 행동이 있어야 다시 제안할 수 있습니다
 	again     [2]bool
 	noRematch bool // 재대결을 이미 시작했거나 할 수 없게 됨
+
+	watchers map[*Client]struct{} // 관전자 (watch.go)
 }
 
 // report는 한 플레이어가 보고한 상태 해시와 그 상태에서 누구 차례인지입니다.
@@ -68,6 +69,7 @@ func newRoom(h *Hub, id, game, version string, seed uint32, minutes *int, player
 		clockSeq: -2,
 		started:  time.Now(),
 		drawAt:   [2]int{-1, -1},
+		watchers: make(map[*Client]struct{}),
 	}
 	if minutes != nil {
 		r.clock = newClock(time.Duration(*minutes) * MinuteUnit)
@@ -193,7 +195,9 @@ func (r *Room) playerLeft(player int, c *Client) {
 	gen := r.awayGen[player]
 	r.away[player] = time.AfterFunc(ReconnectGrace, func() { r.expire(player, gen) })
 	r.hub.markAway(c.user.ID, r) // 락 순서 r.mu → h.mu
-	r.Players[1-player].Send(protocol.Away{Type: protocol.TypeAway, Player: player, Seconds: int(ReconnectGrace / time.Second)})
+	away := protocol.Away{Type: protocol.TypeAway, Player: player, Seconds: int(ReconnectGrace / time.Second)}
+	r.Players[1-player].Send(away)
+	r.toWatchers(away)
 }
 
 // expire는 유예 시간이 끝났을 때 타이머가 부릅니다. 그때까지 안 돌아왔으면 상대가 이깁니다.
@@ -242,17 +246,19 @@ func (r *Room) resume(c *Client) bool {
 		Minutes:  r.Minutes,
 		Clock:    r.clockMsg(),
 		Draw:     r.drawBy,
-		Log:      slices.Clone(r.Log),
+		Log:      r.logCopy(),
 	})
 	if r.ended {
 		c.Send(*r.final)
 	} else {
-		r.Players[otherSeat].Send(protocol.Back{Type: protocol.TypeBack, Player: seat})
+		back := protocol.Back{Type: protocol.TypeBack, Player: seat}
+		r.Players[otherSeat].Send(back)
+		r.toWatchers(back)
 	}
 	return true
 }
 
-// end는 대국을 끝내고 기보를 저장한 뒤 양쪽에 Ended를 보냅니다. 두 번 불려도 한 번만 처리합니다. r.mu를 잡고 부릅니다.
+// end는 대국을 끝내고 기보를 저장한 뒤 양쪽과 관전자에게 Ended를 보냅니다. 두 번 불려도 한 번만 처리합니다. r.mu를 잡고 부릅니다.
 func (r *Room) end(winner *int, reason string) {
 	if r.ended {
 		return
@@ -267,6 +273,7 @@ func (r *Room) end(winner *int, reason string) {
 	}
 	r.broadcast(*r.final)
 	r.hub.removeRoom(r) // 락 순서 r.mu → h.mu
+	r.watchers = nil
 }
 
 // record는 끝난 대국의 기보입니다. 무효가 된 대국(desync 등)도 남깁니다. 분쟁을 확인할 때 씁니다.
@@ -297,10 +304,17 @@ func (r *Room) record(winner *int, reason string) *record.Match {
 	return m
 }
 
+// broadcast는 양쪽 플레이어와 관전자에게 보냅니다. r.mu를 잡고 부릅니다.
 func (r *Room) broadcast(msg any) {
 	for _, p := range r.Players {
 		p.Send(msg)
 	}
+	r.toWatchers(msg)
+}
+
+// logCopy는 보낼 행동 기록의 복사본입니다. 아직 행동이 없어도 null이 아닌 []로 보냅니다. r.mu를 잡고 부릅니다.
+func (r *Room) logCopy() []protocol.Relay {
+	return append([]protocol.Relay{}, r.Log...)
 }
 
 func other(player int) *int {

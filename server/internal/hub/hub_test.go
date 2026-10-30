@@ -25,6 +25,7 @@ func newServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("GET /api/me", ids.HandleMe)
 	mux.HandleFunc("GET /ws", h.ServeWS)
 	mux.HandleFunc("GET /api/rooms", h.ServeRooms)
+	mux.HandleFunc("GET /api/live", h.ServeLive)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv

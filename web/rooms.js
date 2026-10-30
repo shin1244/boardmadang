@@ -2,6 +2,8 @@
 // 방장은 대전 화면에서 1분에 한 번 자기 방을 맨 위로 다시 올릴 수 있습니다.
 // 들어가기를 누르면 대전 화면(match.html?game=x&room=CODE)으로 가서 바로 시작합니다.
 // 방장과 게임 코드 버전이 다르면 들어갈 수 없으므로 버튼을 막아 둡니다.
+//
+// 아래에는 진행 중인 대국(GET /api/live)을 보여주고, 관전을 누르면 관전 화면(watch.html?room=CODE)으로 갑니다.
 
 import { localize } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
@@ -13,6 +15,7 @@ const REFRESH_MS = 15_000;
 let me = null;
 let games = new Map(); // 게임 id → /api/games 항목
 let rooms = null; // 마지막으로 받은 목록
+let live = null; // 진행 중인 대국
 let fetchedAt = 0;
 let loadError = null;
 
@@ -24,7 +27,7 @@ const otherVersion = (room) => {
   return !!mine && room.version !== mine;
 };
 
-/** 마지막으로 올린 뒤 지난 시간. 받은 뒤로 흐른 시간도 더합니다. */
+/** 마지막으로 올린 뒤(진행 중인 대국은 시작한 뒤) 지난 시간. 받은 뒤로 흐른 시간도 더합니다. */
 function ageText(room) {
   const s = room.age + Math.floor((Date.now() - fetchedAt) / 1000);
   if (s < 60) return t('rooms.age.now');
@@ -34,9 +37,10 @@ function ageText(room) {
 
 async function load() {
   try {
-    const res = await fetch('/api/rooms', { cache: 'no-store' });
+    const [res, liveRes] = await Promise.all([fetch('/api/rooms', { cache: 'no-store' }), fetch('/api/live', { cache: 'no-store' })]);
     if (!res.ok) throw new Error(res.status);
     rooms = await res.json();
+    live = liveRes.ok ? await liveRes.json() : [];
     fetchedAt = Date.now();
     loadError = null;
   } catch (e) {
@@ -49,7 +53,7 @@ function renderFilter() {
   const select = $('#game-filter');
   const chosen = select.value;
   // 열린 방이 있는 게임만 고를 수 있게 합니다. 고른 게임은 방이 없어져도 남겨 둡니다.
-  const ids = [...new Set([...(rooms ?? []).map((r) => r.game), ...(chosen ? [chosen] : [])])];
+  const ids = [...new Set([...(rooms ?? []), ...(live ?? [])].map((r) => r.game).concat(chosen ? [chosen] : []))];
   ids.sort((a, b) => gameName(a).localeCompare(gameName(b), lang));
   select.replaceChildren(select.options[0], ...ids.map((id) => new Option(gameName(id), id)));
   select.value = chosen;
@@ -79,6 +83,27 @@ function renderRoom(room) {
   return li;
 }
 
+function renderLive(room) {
+  const li = document.createElement('li');
+  li.className = 'room';
+  li.innerHTML = `
+    <div class="room-info"><b class="room-game"></b><span class="room-sub"></span></div>
+    <span class="room-watchers"></span>
+    <span class="room-timer"></span>
+    <a class="btn ghost"></a>`;
+  li.querySelector('.room-game').textContent = gameName(room.game);
+  const [a, b] = room.players.map(displayName);
+  li.querySelector('.room-sub').textContent = `${a} vs ${b} · ${t('history.moves', { n: room.moves })} · ${ageText(room)}`;
+  li.querySelector('.room-watchers').textContent = room.watchers ? t('rooms.watchers', { n: room.watchers }) : '';
+  const timer = li.querySelector('.room-timer');
+  timer.textContent = room.minutes === null ? t('timer.none') : t('timer.each', { m: room.minutes });
+  timer.classList.toggle('none', room.minutes === null);
+  const link = li.querySelector('.btn');
+  link.href = `/web/watch.html?room=${encodeURIComponent(room.room)}`;
+  link.textContent = t('rooms.watch');
+  return li;
+}
+
 function render() {
   applyStatic('rooms.title');
   renderMe(me);
@@ -90,6 +115,11 @@ function render() {
   const empty = $('#empty');
   empty.hidden = shown.length > 0 || (!rooms && !loadError);
   empty.textContent = loadError ? t('rooms.failed', { msg: loadError }) : t('rooms.empty');
+
+  const watching = (live ?? []).filter((r) => !filter || r.game === filter);
+  $('#live').replaceChildren(...watching.map(renderLive));
+  $('#live-count').textContent = live ? `${watching.length}` : '';
+  $('#live-empty').hidden = watching.length > 0 || !live;
 }
 
 async function main() {

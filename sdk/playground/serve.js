@@ -120,11 +120,11 @@ function proxyMe(req, res) {
 }
 
 /**
- * 방 목록(/api/rooms)과 기보(/api/matches...)는 Go 서버에만 있습니다. 쿠키를 붙여 그대로 물어 넘깁니다.
+ * 방 목록(/api/rooms), 진행 중인 대국(/api/live), 기보(/api/matches...)는 Go 서버에만 있습니다. 쿠키를 붙여 그대로 물어 넘깁니다.
  * Go 서버가 꺼져 있으면 목록은 빈 목록, 기보 하나는 503입니다.
  */
 function proxyGo(req, res, url) {
-  const isList = url.pathname === '/api/rooms' || url.pathname === '/api/matches';
+  const isList = ['/api/rooms', '/api/live', '/api/matches'].includes(url.pathname);
   const fail = () => (isList ? json(res, 200, []) : json(res, 503, { error: 'no game server' }));
   const up = http.get(new URL(url.pathname + url.search, GO), { headers: { cookie: req.headers.cookie ?? '' }, timeout: 2000 }, (r) => {
     let body = '';
@@ -235,7 +235,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/games') return json(res, 200, listGames());
   if (url.pathname === '/api/locale') return json(res, 200, detectLocale(req));
   if (url.pathname === '/api/me') return proxyMe(req, res);
-  if (url.pathname === '/api/rooms' || /^\/api\/matches(\/[A-Z0-9]+)?$/.test(url.pathname)) return proxyGo(req, res, url);
+  if (url.pathname === '/api/rooms' || url.pathname === '/api/live' || /^\/api\/matches(\/[A-Z0-9]+)?$/.test(url.pathname)) return proxyGo(req, res, url);
   const m = url.pathname.match(/^\/api\/games\/([a-z0-9-]+)\/listing$/);
   if (m && req.method === 'PUT') return saveListing(req, res, m[1]);
 

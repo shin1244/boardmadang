@@ -11,6 +11,7 @@
 | `GET /api/matches/{id}` | 기보 하나. 시드와 행동 기록이 있어 처음부터 다시 둘 수 있습니다 `{"id":"VJ7QHHVKDY","game":"tictactoe","version":"3f1c9a0b2e7d4c56","seed":3551073280,"minutes":10,"players":[{…},{…}],"you":[0],"moves":[{"player":0,"action":{"kind":"click","row":1,"col":1},"at":10854}],"count":1,"winner":0,"reason":"result","clock":[587103,597876],"started":"…","ended":"…"}` |
 | `GET /api/matches` | 내가 둔 대국 목록, 최근 것부터 50개 (`moves` 없이). 쿠키가 없으면 `[]` |
 | `GET /api/rooms` | 상대를 기다리는 방 목록. 최근에 만들거나 올린 방이 먼저 `[{"room":"K3P9QX","game":"tictactoe","version":"3f1c9a0b2e7d4c56","minutes":10,"host":{"kind":"guest","tag":"4821"},"age":42}]` |
+| `GET /api/live` | 진행 중인 대국 목록. 최근에 시작한 대국이 먼저 `[{"room":"K3P9QX","game":"tictactoe","version":"3f1c…","minutes":10,"players":[{…},{…}],"moves":7,"watchers":2,"age":95}]` |
 
 - `version`은 게임 코드 버전입니다. 개발 서버가 게임 폴더의 `.js`, `.mjs` 파일(테스트 제외)을 경로 순으로 이어 SHA-256을 구하고 앞 16글자를 씁니다.
   코드를 한 글자라도 고치면 바뀝니다. 대전할 때 서버에 같이 보내고, 기보에도 남습니다.
@@ -27,6 +28,7 @@
   - 개발 서버는 쿠키를 붙여 Go 서버에 그대로 묻습니다.
 - `/api/rooms`: 방 목록은 Go 서버의 메모리에만 있습니다. 개발 서버는 Go 서버에 물어 그대로 넘깁니다.
   `age`는 마지막으로 만들거나 올린 뒤 지난 초, `minutes`가 `null`이면 타이머 없음입니다. 최대 200개입니다.
+- `/api/live`: 관전할 수 있는 대국입니다. `age`는 시작한 뒤 지난 초, `moves`는 지금까지의 행동 수, `watchers`는 관전자 수입니다. 최대 200개입니다.
 - 기보의 `version`이 지금 게임 코드와 다르면 다시보기 화면이 "판이 다르게 보일 수 있다"고 알립니다.
   예전 코드를 보관해 그 코드로 재생하는 건 아직 하지 않습니다.
 - `/api/locale`: 나라는 GCP 부하 분산기의 커스텀 요청 헤더 `X-Client-Region: {client_region}`에서 읽습니다.
@@ -50,6 +52,7 @@
 | `join` | 빠른 매칭 대기열에 들어갈 때. 같은 게임, 같은 타이머, 같은 코드 버전끼리 만납니다. 대국이 끝나면 같은 연결로 다시 보낼 수 있습니다 | `{"type":"join","game":"tictactoe","minutes":10,"version":"3f1c…"}` |
 | `create` | 방을 만들어 방 목록에 올릴 때 | `{"type":"create","game":"tictactoe","minutes":5,"version":"3f1c…"}` |
 | `enter` | 방 목록의 방에 들어갈 때. 먼저 들어온 한 명만 되고, 방장과 코드 버전이 같아야 합니다 | `{"type":"enter","room":"K3P9QX","version":"3f1c…"}` |
+| `watch` | 진행 중인 대국을 관전할 때 | `{"type":"watch","room":"K3P9QX"}` |
 | `bump` | 방장이 자기 방을 목록 맨 위로 다시 올릴 때 (1분에 한 번) | `{"type":"bump"}` |
 | `action` | 내 행동 (클릭, 패스 등) | `{"type":"action","action":{"kind":"click","row":0,"col":2}}` |
 | `hash` | 행동을 적용한 뒤 상태 해시와 그 상태에서 누구 차례인지(`turn()`, 없으면 `null`). 시작 상태는 `seq: -1` | `{"type":"hash","seq":4,"hash":"9f2c…","turn":1}` |
@@ -75,8 +78,9 @@
 - `version`은 게임 코드 버전(`/api/games`의 `version`, 16진수 64자 이하)입니다. 비워 보내도 되고, 그러면 비운 사람끼리만 만납니다.
   코드가 다르면 같은 행동에도 판이 달라져 `desync`가 나므로, 다른 버전끼리는 매칭하지 않습니다.
 - **무승부 제안**은 누가 행동을 하나 보내면(`relay`) 없어집니다. 거절당한 뒤 다시 제안하려면 그 사이에 행동이 하나 이상 오가야 합니다.
-- **재대결**은 끝난 대국의 두 사람이 모두 `rematch`를 보내야 시작됩니다. 한쪽이 연결을 닫거나 `join`, `create`, `enter`로
+- **재대결**은 끝난 대국의 두 사람이 모두 `rematch`를 보내야 시작됩니다. 한쪽이 연결을 닫거나 `join`, `create`, `enter`, `watch`로
   다른 대국을 찾기 시작하면 남은 쪽에 `rematchOff`가 가고 그 대국으로는 재대결할 수 없습니다.
+- **관전자**는 행동을 보낼 수 없습니다. 연결을 닫으면 빠집니다. 대국이 끝나면 `ended`를 받고 관전도 끝납니다.
 - `action`에는 **순번을 넣지 않습니다.** 순번은 서버가 받은 순서대로 붙입니다.
 - `winner`가 `null`이면 무승부입니다.
 - `matched`를 받으면 `setup()`한 시작 상태의 해시를 `seq: -1`로 보냅니다.
@@ -94,10 +98,11 @@
 | `resumed` | 끊겼다가 15초 안에 돌아와 `join`했을 때 | `{"type":"resumed","room":"K3P9QX","game":"tictactoe","player":1,"seed":3141592653,"opponent":{…},"minutes":10,"clock":{…},"draw":0,"log":[{"type":"relay","seq":0,…}]}` |
 | `away` | 상대 연결이 끊겼을 때 | `{"type":"away","player":0,"seconds":15}` |
 | `back` | 끊겼던 상대가 돌아왔을 때 | `{"type":"back","player":0}` |
-| `draw` | 누가 무승부를 제안했을 때 (양쪽에게) | `{"type":"draw","player":0}` |
+| `draw` | 누가 무승부를 제안했을 때 (양쪽과 관전자에게) | `{"type":"draw","player":0}` |
 | `drawOff` | 무승부 제안이 없어졌을 때 (거절, 철회, 다음 행동) | `{"type":"drawOff"}` |
 | `rematch` | 누가 재대결을 원할 때 (양쪽에게). 둘 다 원하면 바로 `matched`가 옵니다 | `{"type":"rematch","player":1}` |
 | `rematchOff` | 상대가 나가거나 다른 대국을 찾아 재대결을 할 수 없게 됐을 때 | `{"type":"rematchOff"}` |
+| `watching` | 관전을 시작했을 때. `resumed`처럼 `seed`로 `setup()`한 뒤 `log`를 재생합니다. 그 뒤로는 `relay`, `clock`, `draw`, `drawOff`, `away`, `back`, `ended`를 같이 받습니다 | `{"type":"watching","room":"K3P9QX","game":"tictactoe","version":"3f1c…","seed":3141592653,"minutes":10,"players":[{…},{…}],"clock":{…},"log":[…]}` |
 | `matched` | 상대가 정해졌을 때. 방에 들어왔으면 `room`은 그 방 코드입니다 | `{"type":"matched","room":"K3P9QX","game":"tictactoe","player":1,"seed":3141592653,"opponent":{"kind":"guest","tag":"4821"},"minutes":10}` |
 | `clock` | 대국 시계가 넘어가거나 멈출 때 (타이머가 있을 때만) | `{"type":"clock","remaining":[598512,600000],"running":1}` |
 | `relay` | 누군가의 행동 (내 행동도 포함) | `{"type":"relay","seq":4,"player":0,"action":{"kind":"click","row":1,"col":1}}` |
@@ -134,10 +139,11 @@
 | `already joined` | 이미 대기 중이거나, 방을 만들었거나, 대국 중인데 `join`, `create`, `enter`를 보냄 |
 | `bad minutes` | 타이머가 1~180분도 `null`도 아님 |
 | `bad version` | 코드 버전이 16진수 64자 이하가 아님 |
-| `room not found` | 들어가려는 방이 없음 (이미 시작했거나 방장이 나감) |
+| `room not found` | 들어가거나 관전하려는 방이 없음 (이미 시작했거나 끝났거나 방장이 나감) |
 | `version mismatch` | 방장과 게임 코드 버전이 다름 |
 | `not hosting` / `too soon` | 방이 없는데 `bump`를 보냄 / 마지막으로 올린 지 1분이 안 됨. 무승부 제안을 거절당한 뒤 행동 없이 다시 제안해도 `too soon` |
 | `no rematch` | 끝난 대국이 없거나 아직 대국 중인데 `rematch`를 보냄, 또는 이미 재대결을 할 수 없게 됨 |
+| `too many watchers` | 관전자가 상한(100)에 닿음 |
 | `not in a room` | 대국 중이 아닌데 `action`, `hash`, `result`, `resign`, `draw`, `decline`을 보냄 |
 | `bad action` / `bad hash` / `bad result` | 값이 틀림. 클릭 좌표는 0~31, 해시는 64자 이하, `turn`과 `winner`는 0, 1, `null` |
 | `too many actions` | 초당 행동 수 제한(20)을 넘음. 그 행동은 버립니다 |
