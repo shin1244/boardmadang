@@ -28,8 +28,8 @@
 
 ## 도메인과 HTTPS (boardmadang.com)
 
-> **아직 Go 서버만으로는 사이트가 뜨지 않습니다.** 화면(`web/`), 게임 코드(`games/`), `/api/games`, `/api/locale`은
-> 지금 개발 서버(`sdk/playground/serve.js`)에만 있습니다. 운영 전에 Go 서버가 이것들도 맡아야 합니다 (TODO).
+Go 서버 하나가 API, 웹소켓, 화면(`web/`), 게임 코드(`games/`), SDK(`sdk/`), `/api/games`, `/api/locale`을 모두 맡습니다
+(`server/internal/site`). 등록창의 저장(`PUT /api/games/<id>/listing`)만 아직 개발 서버에 있어서, 운영에서는 저장이 404입니다.
 
 1. **고정 IP**: VM에 고정 외부 IP를 예약해 붙입니다 (VPC 네트워크 → IP 주소 → 외부 고정 주소 예약).
 2. **DNS**: 도메인을 산 곳(또는 Cloud DNS)에서 레코드를 넣습니다.
@@ -77,10 +77,14 @@ GPU가 있고 싼 리전에서 **Spot VM**으로 돌리면 비용을 크게 줄�
 
 ## 컨테이너 빌드
 
+레포 루트에서 빌드합니다. 이미지에 서버와 함께 `web/`, `sdk/`, `games/`가 `/site`로 들어갑니다.
+
 ```bash
-cd server
-docker build -t boardmadang-server .
-docker run --rm -p 8080:8080 -v boardmadang-data:/data boardmadang-server
+docker build -t boardmadang .
+docker run --rm -p 8080:8080 -v boardmadang-data:/data --env-file .env boardmadang
 ```
 
-- 기보는 컨테이너 안의 `/data`에 씁니다. 볼륨(`-v boardmadang-data:/data`)을 붙이지 않으면 컨테이너를 지울 때 같이 사라집니다.
+- http://localhost:8080 을 열면 로비가 보입니다.
+- 기보와 계정은 컨테이너 안의 `/data`에 씁니다. 볼륨(`-v boardmadang-data:/data`)을 붙이지 않으면 컨테이너를 지울 때 같이 사라집니다.
+- 게임을 더하거나 고치면 이미지를 다시 빌드합니다. `games/private/`는 깃허브에 올라가지 않으므로, 깨끗하게 클론한 곳에서 빌드하면 들어가지 않습니다.
+- `.env`는 이미지에 넣지 않습니다 (`.dockerignore`). 비밀값은 실행할 때 `--env-file`이나 환경변수로 넘깁니다.

@@ -120,7 +120,9 @@ go run ./cmd/server
 
 개발할 때는 개발 서버(`node sdk/playground/serve.js`)가 `/auth/…`를 Go 서버로 넘기므로 돌아올 주소를
 `http://localhost:5173/auth/<google|github>/callback`으로 등록하고 `PUBLIC_URL=http://localhost:5173`을 넣습니다.
-GitHub OAuth App은 돌아올 주소를 하나만 받으므로 개발용 앱을 따로 만듭니다.
+개발용 OAuth 앱은 운영용과 따로 만듭니다. GitHub과 Google 모두 돌아올 주소를 여러 개 받지만, 운영 앱에 localhost 주소를 넣으면
+운영 앱의 비밀값이 개발하는 컴퓨터와 `.env`에도 퍼지게 됩니다.
+Go 서버만 켜고(개발 서버 없이) 시험하면 돌아올 주소는 `http://localhost:8080/auth/<google|github>/callback`입니다.
 
 OAuth 앱 없이 계정 기능(의견, 방 만들기)을 시험하려면 Go 서버를 `DEV_LOGIN=1`로 켭니다. 로그인 메뉴에
 "개발용 로그인"이 생기고, 누르면 바로 `dev` 계정으로 들어옵니다. **운영에서는 절대 켜지 않습니다** (누구나 같은 계정으로 들어옵니다).

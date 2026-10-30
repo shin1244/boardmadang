@@ -8,8 +8,12 @@ import (
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("PORT", "")
 	t.Setenv("ALLOWED_ORIGINS", "")
+	t.Setenv("SITE_DIR", "")
 
 	cfg := Load()
+	if cfg.SiteDir != ".." {
+		t.Errorf("SiteDir = %q, want .. (server/에서 go run 할 때의 레포 루트)", cfg.SiteDir)
+	}
 	if cfg.Port != "8080" {
 		t.Errorf("Port = %q, want 8080", cfg.Port)
 	}

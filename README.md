@@ -56,7 +56,11 @@ curl http://localhost:8080/healthz
 
 설정은 환경변수로 합니다. [.env.example](.env.example)을 참고하세요.
 
-로비(게임 목록)와 [플레이그라운드](sdk/README.md#내-컴퓨터에서-돌려보기-플레이그라운드)는 Go 서버 없이 개발 서버로 띄웁니다.
+Go 서버 하나가 화면까지 모두 보여줍니다. http://localhost:8080 을 열면 로비가 보이고, 대전, 로그인, 기보가 다 됩니다.
+운영(boardmadang.com)도 이 서버 하나로 돌립니다 ([docs/deploy-gcp.md](docs/deploy-gcp.md)).
+
+개발 서버(Node)는 게임을 만들 때 씁니다. 게임 등록창의 저장(`games/<id>/listing.json`에 쓰기)은 아직 개발 서버에만 있습니다.
+로비(게임 목록)와 [플레이그라운드](sdk/README.md#내-컴퓨터에서-돌려보기-플레이그라운드)는 Go 서버 없이 개발 서버로 띄울 수 있습니다.
 
 ```bash
 node sdk/playground/serve.js
