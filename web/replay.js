@@ -1,5 +1,7 @@
 // 기보 다시보기: 서버에 저장된 시드와 행동 기록을 받아, 게임 로직으로 처음부터 한 수씩 다시 둡니다 (락스텝과 같은 방식).
 // 기보 id를 아는 사람은 누구나 볼 수 있습니다. 내가 둔 판이면 내 자리 시점으로 엽니다.
+// ?clear=<게임>이면 대국 기보 대신 제작자 클리어 기보(GET /api/games/<게임>/clear)를 봅니다.
+// 등록할 때 제작자가 혼자 양쪽을 둬서 이긴 판이라 두 자리 모두 "제작자"입니다 (server/internal/upload/clear.go).
 //
 // 제작자가 게임 코드를 고쳤으면 예전 기보가 다르게 재생될 수 있습니다.
 // 기보에 남은 코드 버전이 지금 코드(/api/games의 version)와 다르면 알려 줍니다. 옛 코드는 아직 보관하지 않습니다.
@@ -14,7 +16,11 @@ import { loadGame } from './engine.js';
 import { displayName, loadMe, renderMe } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
-const recordId = new URLSearchParams(location.search).get('id') ?? '';
+const params = new URLSearchParams(location.search);
+const recordId = params.get('id') ?? '';
+/** 제작자 클리어 기보를 볼 게임 id. 대국 기보면 null */
+const clearOf = params.get('clear');
+const titleKey = clearOf === null ? 'replay.title' : 'replay.clearTitle';
 const STEP_MS = 700;
 
 let me = null;
@@ -34,6 +40,23 @@ let problem = '';
 const playLang = () => gameLang(entry?.listing, lang);
 const nameOfGame = () => localize(entry?.listing?.name, lang).text || rec?.game || '';
 const flip = () => runner.info.board.flipForPlayer === viewAs;
+const playerName = (p) => (clearOf === null ? displayName(rec.players[p]) : t('replay.creator'));
+
+/** 클리어 기보를 대국 기보 모양으로 맞춥니다. 시계도 기권도 없고, 게임 로직(result())이 끝낸 판입니다 */
+function fromClear(c) {
+  return {
+    game: c.game,
+    version: c.version,
+    seed: c.seed,
+    moves: c.moves,
+    winner: c.winner,
+    reason: 'result',
+    minutes: null,
+    started: c.at,
+    players: [null, null],
+    you: [],
+  };
+}
 
 /**
  * 시작부터 끝까지 Worker에서 모두 둬 두고(keep), 상태를 바꾼 행동 수를 셉니다. 기록은 최대 3,000수라 금방입니다.
@@ -70,13 +93,14 @@ function outcome() {
   const { winner, reason } = rec;
   if (['desync', 'disagree', 'limit'].includes(reason)) return [t('match.void'), 'even'];
   if (winner === null) return [t('match.draw'), 'even'];
-  return [t('replay.won', { name: displayName(rec.players[winner]) }), 'win'];
+  if (clearOf !== null) return [t('replay.clearWon', { side: t(winner === 0 ? 'match.first' : 'match.second') }), 'win'];
+  return [t('replay.won', { name: playerName(winner) }), 'win'];
 }
 
 /** 왜 끝났는지. 게임 로직이 끝냈으면 마지막 상태의 result()가 쓴 이유를 보여줍니다. */
 function reasonText() {
   const { winner, reason } = rec;
-  const loser = winner === null ? null : rec.players[1 - winner];
+  const loser = winner === null ? null : 1 - winner;
   switch (reason) {
     case 'result': {
       const r = final?.result;
@@ -87,7 +111,7 @@ function reasonText() {
     case 'left':
     case 'timeout':
     case 'spam':
-      return t(`replay.reason.${reason}`, { name: displayName(loser) });
+      return t(`replay.reason.${reason}`, { name: playerName(loser) });
     default:
       return t(`match.reason.${reason}`);
   }
@@ -124,7 +148,7 @@ function renderHead() {
   if (!rec) return;
   const date = new Date(rec.started).toLocaleString(lang, { dateStyle: 'medium', timeStyle: 'short' });
   const timerText = rec.minutes === null ? t('timer.none') : t('timer.each', { m: rec.minutes });
-  when.textContent = `${date} · ${timerText}`;
+  when.textContent = `${date} · ${clearOf === null ? timerText : t('replay.clearNote')}`;
 }
 
 function renderPlayers() {
@@ -133,7 +157,7 @@ function renderPlayers() {
   for (const p of [0, 1]) {
     $(`#p${p}-dot`).style.background = PLAYER_COLORS[p];
     const name = $(`#p${p}-name`);
-    name.textContent = displayName(rec.players[p]) + (rec.you.includes(p) ? ` (${t('match.you')})` : '');
+    name.textContent = playerName(p) + (rec.you.includes(p) ? ` (${t('match.you')})` : '');
     name.classList.toggle('winner', rec.winner === p);
     $(`#p${p}-tag`).textContent = t(p === 0 ? 'match.first' : 'match.second');
   }
@@ -164,8 +188,8 @@ function renderControls() {
 }
 
 function render() {
-  applyStatic('replay.title');
-  if (rec) document.title = `${nameOfGame()} · ${t('replay.title')} · ${t('site.name')}`;
+  applyStatic(titleKey);
+  if (rec) document.title = `${nameOfGame()} · ${t(titleKey)} · ${t('site.name')}`;
   renderMe(me);
   renderHead();
   renderPlayers();
@@ -243,10 +267,13 @@ async function main() {
   render();
   me = await loadMe();
 
-  const res = await fetch(`/api/matches/${encodeURIComponent(recordId)}`);
-  if (res.status === 404 || !recordId) return fail(t('replay.notFound'));
+  const res = await fetch(clearOf === null
+    ? `/api/matches/${encodeURIComponent(recordId)}`
+    : `/api/games/${encodeURIComponent(clearOf)}/clear`);
+  if (res.status === 404 || !(clearOf ?? recordId)) return fail(t(clearOf === null ? 'replay.notFound' : 'replay.noClear'));
   if (!res.ok) return fail(t('replay.loadFailed', { msg: res.status }));
   rec = await res.json();
+  if (clearOf !== null) rec = fromClear(rec);
   viewAs = rec.you[0] ?? 0;
 
   entry = (await (await fetch('/api/games')).json()).find((g) => g.id === rec.game) ?? null;

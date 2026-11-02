@@ -357,6 +357,7 @@ fieldset label:has(input:disabled) { opacity: 0.5; cursor: default; }
 .gd-field.row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .gd-field.row h4 { flex: none; margin: 0; }
 .gd-field.row span { text-align: right; }
+.gd-link { color: var(--accent); font-size: 14px; text-align: right; }
 
 /* 접는 칸: 세모를 누르면 펼칩니다 */
 .gd-fold summary { display: flex; align-items: center; gap: 8px; list-style: none; cursor: pointer; }

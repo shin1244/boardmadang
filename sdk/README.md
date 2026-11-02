@@ -28,7 +28,8 @@ The new game is tic-tac-toe. Change the rules in `index.js` and refresh the page
 | `npx boardmadang pack` | If the checks pass, makes `<id>.zip` for uploading. |
 
 Upload the zip on the **Register a game** page of boardmadang.com (<https://boardmadang.com/web/register.html>).
-You need to log in. The page runs the same checks in your browser, then you fill in the listing and register.
+You need to log in. The page runs the same checks in your browser. Then you play both sides and win one game (the clear check), fill in the listing, and register.
+The winning game is kept as your clear replay, and if you change the code and upload it again, you clear it again. You can take the thumbnail on this page too.
 
 ## A game folder
 
@@ -150,6 +151,7 @@ It saves that board to `thumbnail.json`, and the site draws it with the same boa
 
 - If there's no thumbnail, the site shows the starting position.
 - If you later change `board` or `pieces` in your code, take the snapshot again. `check` will remind you.
+- You can also take one the same way on the site's register page while you clear the game.
 
 ## listing.json: the text on the site
 

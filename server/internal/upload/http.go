@@ -18,9 +18,10 @@ import (
 //
 //	GET  /api/uploads                         내가 올린 게임과 오늘 남은 등록 횟수 {"games":[...],"left":N}
 //	POST /api/drafts                          zip 본문(Content-Type: application/zip) → 201 Draft
-//	POST /api/drafts/{draft}/publish          {"id":"...","listing":{...},"thumbnail":true} → 200 {"game":{...}}
+//	POST /api/drafts/{draft}/publish          PublishRequest {"id","listing","thumbnail","clear"} → 200 {"game":{...}}
 //	GET  /drafts/{draft}/{path...}            초안의 파일 (실행기가 불러옴)
 //	GET  /uploads/{game}/{version}/{path...}  올린 게임의 코드
+//	GET  /api/games/{game}/clear              제작자 클리어 기보 ClearRecord (누구나)
 //
 // API는 계정만 됩니다 (쿠키가 없으면 401, 게스트면 403 {"error":"member only"}).
 // 규칙에 맞지 않으면 422 {"error":"problems","problems":[{code, file?, field?, lang?, max?}]}입니다.
@@ -33,8 +34,8 @@ type Handler struct {
 	IDs   *identity.Issuer
 }
 
-// maxPublishBody: 등록 정보는 10개 언어로 룰북을 다 채우면 1MB 가까이 됩니다
-const maxPublishBody = MaxListingFile + 8<<10
+// maxPublishBody: 등록 정보는 10개 언어로 룰북을 다 채우면 1MB 가까이 됩니다. 썸네일과 클리어 기보가 더해집니다
+const maxPublishBody = MaxListingFile + MaxThumbnailFile + maxClearBody + 8<<10
 
 func (h Handler) ServeMine(w http.ResponseWriter, r *http.Request) {
 	u, ok := h.member(w, r)
@@ -79,21 +80,28 @@ func (h Handler) ServePublish(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnsupportedMediaType, map[string]string{"error": "JSON only"})
 		return
 	}
-	var body struct {
-		ID        string `json:"id"`
-		Listing   any    `json:"listing"`
-		Thumbnail bool   `json:"thumbnail"`
-	}
+	var body PublishRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxPublishBody)).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad JSON"})
 		return
 	}
-	g, err := h.Store.Publish(u, r.PathValue("draft"), body.ID, body.Listing, body.Thumbnail)
+	g, err := h.Store.Publish(u, r.PathValue("draft"), body)
 	if err != nil {
 		h.fail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"game": g})
+}
+
+// ServeClear는 제작자 클리어 기보입니다. 기보처럼 누구나 봅니다. 다시 등록하면 바뀌므로 캐시하지 않습니다.
+func (h Handler) ServeClear(w http.ResponseWriter, r *http.Request) {
+	c, err := h.Store.ClearOf(r.PathValue("game"))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, c)
 }
 
 // ServeDraftFile은 초안의 파일입니다. 고쳐서 다시 올리면 새 초안이 되지만, 혹시 몰라 캐시하지 않습니다.

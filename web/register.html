@@ -45,9 +45,11 @@
 
     <div id="member-only">
     <ol class="steps">
+      <!-- 번호는 register.js가 보이는 단계 순서대로 씁니다. 직접 깨기는 사이트에서만 합니다 -->
       <li data-step="1"><b>1</b> <span data-i18n="register.step0">게임 파일</span></li>
-      <li data-step="2"><b>2</b> <span data-i18n="register.step1">게임과 언어</span></li>
-      <li data-step="3"><b>3</b> <span data-i18n="register.step2">설명 글</span></li>
+      <li data-step="2"><b>2</b> <span data-i18n="register.stepClear">직접 깨기</span></li>
+      <li data-step="3"><b>3</b> <span data-i18n="register.step1">게임과 언어</span></li>
+      <li data-step="4"><b>4</b> <span data-i18n="register.step2">설명 글</span></li>
     </ol>
 
     <div id="problems" class="problems" role="alert" hidden>
@@ -90,8 +92,58 @@
         </div>
       </div>
 
-      <!-- 2단계: 난이도, 타이머, 지원 언어 -->
+      <!-- 2단계 (사이트만): 직접 깨기. 혼자 양쪽을 둬서 이겨야(result()가 승자를 정해야) 등록할 수 있습니다.
+           이긴 판은 제작자 클리어 기보로 남습니다. 같은 판에서 로비 썸네일도 찍습니다 -->
       <div class="step" id="step-2" hidden>
+        <section class="block" id="clear">
+          <h2 class="block-title" data-i18n="register.clear">직접 깨기</h2>
+          <p class="hint" data-i18n="register.clear.lead"></p>
+          <div class="play">
+            <div class="play-board">
+              <canvas id="play-board"></canvas>
+              <p id="play-message" class="play-message"></p>
+            </div>
+            <div class="play-side">
+              <p id="play-status" class="play-status" role="status"></p>
+              <div class="seats" role="group" data-i18n-attr="aria-label:register.play.seat">
+                <span class="seats-label" data-i18n="register.play.seat">두는 쪽</span>
+                <button type="button" class="chip seat" data-seat="0"><i class="dot"></i> <span data-i18n="match.first">선공</span></button>
+                <button type="button" class="chip seat" data-seat="1"><i class="dot"></i> <span data-i18n="match.second">후공</span></button>
+              </div>
+              <div id="play-specials" class="play-buttons"></div>
+              <div class="play-buttons">
+                <button id="play-undo" class="btn ghost" type="button" data-i18n="register.play.undo">한 수 무르기</button>
+                <button id="play-restart" class="btn ghost" type="button" data-i18n="register.play.restart">처음부터</button>
+              </div>
+              <p id="play-note" class="hint"></p>
+              <p id="clear-status" class="status-line"></p>
+            </div>
+          </div>
+        </section>
+
+        <section class="block" id="thumb">
+          <h2 class="block-title" data-i18n="register.thumb">썸네일</h2>
+          <p class="hint" data-i18n="register.thumb.lead"></p>
+          <div class="thumb-row">
+            <canvas id="thumb-board"></canvas>
+            <div>
+              <p id="thumb-status" class="status-line"></p>
+              <div class="play-buttons">
+                <button id="thumb-shot" class="btn ghost" type="button" data-i18n="register.thumb.shot">지금 판을 썸네일로</button>
+                <button id="thumb-drop" class="btn ghost" type="button" data-i18n="register.thumb.drop">썸네일 빼기</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="form-actions">
+          <button id="back-2" class="btn ghost" type="button" data-i18n="register.back">이전</button>
+          <button id="next-2" class="btn" type="button" data-i18n="register.next" disabled>다음</button>
+        </div>
+      </div>
+
+      <!-- 3단계: 난이도, 타이머, 지원 언어 -->
+      <div class="step" id="step-3" hidden>
 
         <fieldset class="block" id="difficulty">
           <legend class="block-title" data-i18n="register.difficulty">난이도</legend>
@@ -140,13 +192,13 @@
         </section>
 
         <div class="form-actions">
-          <button id="back-2" class="btn ghost" type="button" data-i18n="register.back">이전</button>
-          <button id="next-2" class="btn" type="button" data-i18n="register.next">다음</button>
+          <button id="back-3" class="btn ghost" type="button" data-i18n="register.back">이전</button>
+          <button id="next-3" class="btn" type="button" data-i18n="register.next">다음</button>
         </div>
       </div>
 
-      <!-- 3단계: 고른 언어마다 이름, 소개, 룰북 -->
-      <div class="step" id="step-3" hidden>
+      <!-- 4단계: 고른 언어마다 이름, 소개, 룰북 -->
+      <div class="step" id="step-4" hidden>
         <section class="block">
           <h2 class="block-title" data-i18n="register.texts">설명 글</h2>
           <p class="hint" data-i18n="register.texts.lead"></p>
@@ -154,7 +206,7 @@
         </section>
 
         <div class="form-actions">
-          <button id="back-3" class="btn ghost" type="button" data-i18n="register.back">이전</button>
+          <button id="back-4" class="btn ghost" type="button" data-i18n="register.back">이전</button>
           <!-- 글자는 register.js가 고릅니다: 사이트면 등록, 개발 서버면 저장 -->
           <button id="save" class="btn" type="submit">저장</button>
           <span id="save-status" class="status-line" role="status"></span>
