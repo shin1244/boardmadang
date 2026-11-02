@@ -1,4 +1,4 @@
-# 레포 루트에서 빌드합니다. 서버와 함께 화면(web/), SDK 모듈(sdk/playground/), 게임(games/)을 넣습니다.
+# 레포 루트에서 빌드합니다. 서버와 함께 화면(web/), SDK 모듈(sdk/playground/, sdk/check.js), 게임(games/)을 넣습니다.
 #   docker build -t boardmadang .
 FROM golang:1.24 AS build
 WORKDIR /src
@@ -16,6 +16,8 @@ COPY --from=build --chown=65532:65532 /out/data /data
 # 화면과 게임 코드 (server/internal/site). 비공개 게임(games/private)은 .dockerignore로 뺍니다.
 COPY web /site/web
 COPY sdk/playground /site/sdk/playground
+# 등록창이 올린 게임을 실행기 안에서 검사할 때 씁니다 (site.sdkModules)
+COPY sdk/check.js /site/sdk/check.js
 COPY games /site/games
 ENV PORT=8080
 ENV DATA_DIR=/data

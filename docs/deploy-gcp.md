@@ -47,14 +47,14 @@ GCP 프로젝트 `boardmadang`에 이렇게 놓았습니다. gcloud의 기본 �
 - **배포**: 커밋한 뒤 `deploy/deploy.sh`. Cloud Build로 이미지를 만들고, VM 메타데이터 `bm-image`를 바꾼 뒤 SSH로 시작 스크립트를 다시 돌립니다.
   서버가 다시 켜지므로 진행 중인 대국은 사라집니다.
 - **VM 안**: [deploy/startup.sh](../deploy/startup.sh)가 켤 때마다 돌며 Docker를 깔고, Secret Manager에서 `/etc/boardmadang/env`를 만들고,
-  `app`(서버)과 `caddy`(HTTPS) 컨테이너를 띄웁니다. 기보, 계정, 의견은 `/var/lib/boardmadang`에 남습니다.
+  `app`(서버)과 `caddy`(HTTPS) 컨테이너를 띄웁니다. 기보, 계정, 의견, 올린 게임은 `/var/lib/boardmadang`에 남습니다.
 - **로그**: `gcloud compute ssh boardmadang --project boardmadang --zone asia-northeast3-a` 뒤에
   `sudo docker logs app`, `sudo docker logs caddy`, `sudo journalctl -u google-startup-scripts`.
 - **비용** (대략): VM, 디스크, 고정 IP를 합해 한 달에 20달러 안팎입니다. 이미지 빌드는 Cloud Build 무료 사용량 안에 들어갑니다.
 
 ## 도메인과 HTTPS (boardmadang.com)
 
-등록창의 저장(`PUT /api/games/<id>/listing`)만 아직 개발 서버에 있어서, 운영에서는 저장이 404입니다.
+올린 게임은 운영에서도 등록창에서 바로 등록합니다. 레포 게임의 등록 정보 저장(`PUT /api/games/<id>/listing`)만 아직 개발 서버에 있어서, 운영에서는 404입니다.
 
 1. **고정 IP**: `setup-gcp.sh`가 예약해 VM에 붙였습니다 (`34.64.41.206`).
 2. **DNS**: 도메인을 산 곳(또는 Cloud DNS)에서 레코드를 넣습니다.
