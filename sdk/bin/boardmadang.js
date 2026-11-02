@@ -196,7 +196,7 @@ async function pack(folder, opts) {
   fs.writeFileSync(out, data);
   say(`Made ${out} (${(data.length / 1024).toFixed(1)}KB)`);
   for (const n of names) say(`    ${n}`);
-  say('Upload this file on boardmadang.com (game uploads are opening soon).');
+  say('Upload it on the "Register a game" page: https://boardmadang.com/web/register.html');
   return true;
 }
 

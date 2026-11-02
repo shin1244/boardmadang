@@ -20,6 +20,7 @@ import (
 	"github.com/shin1244/boardmadang/server/internal/identity"
 	"github.com/shin1244/boardmadang/server/internal/record"
 	"github.com/shin1244/boardmadang/server/internal/site"
+	"github.com/shin1244/boardmadang/server/internal/upload"
 )
 
 func main() {
@@ -33,6 +34,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("의견 폴더를 열지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
 	}
+	uploads, err := upload.Open(cfg.DataDir)
+	if err != nil {
+		log.Fatalf("올린 게임 폴더를 열지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
+	}
 	accounts, err := account.Open(cfg.DataDir)
 	if err != nil {
 		log.Fatalf("계정 기록을 읽지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
@@ -44,11 +49,14 @@ func main() {
 	if err != nil {
 		// 개발 서버(serve.js)를 앞에 두고 API만 쓸 때는 화면이 없어도 됩니다
 		log.Printf("경고: 화면 폴더를 열지 못해 화면과 게임 목록은 내보내지 않습니다 (SITE_DIR=%s): %v", cfg.SiteDir, err)
+	} else {
+		pages.Uploaded = uploads
+		uploads.Reserved = pages.Has
 	}
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           routes(h, ids, records, comments, login, pages),
+		Handler:           routes(h, ids, records, comments, uploads, login, pages),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -112,7 +120,7 @@ func providers(cfg config.Config) []*auth.Provider {
 }
 
 // pages가 nil이면 화면과 게임 목록 없이 API만 엽니다.
-func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *comment.Store, login *auth.Handler, pages *site.Site) http.Handler {
+func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *comment.Store, uploads *upload.Store, login *auth.Handler, pages *site.Site) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
 	mux.HandleFunc("GET /api/locale", site.ServeLocale)
@@ -120,6 +128,7 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 		mux.HandleFunc("GET /{$}", site.ServeHome)
 		mux.HandleFunc("GET /web/", pages.ServeFile)
 		mux.HandleFunc("GET /sdk/playground/", pages.ServeFile)
+		mux.HandleFunc("GET /sdk/check.js", pages.ServeFile)
 		mux.HandleFunc("GET /games/", pages.ServeFile)
 		mux.HandleFunc("GET /api/games", pages.ServeGames)
 	}
@@ -141,8 +150,13 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 	mux.HandleFunc("POST /api/games/{game}/comments", talk.ServePost)
 	mux.HandleFunc("DELETE /api/games/{game}/comments/{id}", talk.ServeDelete)
 	mux.HandleFunc("POST /api/reports", talk.ServeReport)
-	// TODO: 업로드와 등록 정보 저장은 계정만 됩니다. 붙일 때 ids.RequireMember로 감쌉니다.
-	//   mux.Handle("PUT /api/games/{id}/listing", ids.RequireMember(...))
+	up := upload.Handler{Store: uploads, IDs: ids}
+	mux.HandleFunc("GET /api/uploads", up.ServeMine)
+	mux.HandleFunc("POST /api/drafts", up.ServeNewDraft)
+	mux.HandleFunc("POST /api/drafts/{draft}/publish", up.ServePublish)
+	mux.HandleFunc("GET /drafts/{draft}/{path...}", up.ServeDraftFile)
+	mux.HandleFunc("GET /uploads/{game}/{version}/{path...}", up.ServeFile)
+	// TODO: 등록 정보만 고치기, 내리기 (docs/roadmap.md 1-1)
 	return mux
 }
 

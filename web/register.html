@@ -45,8 +45,9 @@
 
     <div id="member-only">
     <ol class="steps">
-      <li data-step="1"><b>1</b> <span data-i18n="register.step1">게임과 언어</span></li>
-      <li data-step="2"><b>2</b> <span data-i18n="register.step2">설명 글</span></li>
+      <li data-step="1"><b>1</b> <span data-i18n="register.step0">게임 파일</span></li>
+      <li data-step="2"><b>2</b> <span data-i18n="register.step1">게임과 언어</span></li>
+      <li data-step="3"><b>3</b> <span data-i18n="register.step2">설명 글</span></li>
     </ol>
 
     <div id="problems" class="problems" role="alert" hidden>
@@ -55,14 +56,42 @@
     </div>
 
     <form id="form" novalidate>
-      <!-- 1단계: 게임, 난이도, 지원 언어 -->
+      <!-- 1단계: 게임 코드. 사이트에서는 zip을 올려 자동 검사하고, 개발 서버에서는 games/의 게임을 고릅니다 (register.js의 mode) -->
       <div class="step" id="step-1">
-        <section class="block">
+        <section class="block" id="upload" hidden>
+          <label class="block-title" for="zip" data-i18n="register.zip">게임 파일 (zip)</label>
+          <input id="zip" type="file" accept=".zip,application/zip">
+          <p class="hint" data-i18n="register.zip.hint"></p>
+          <p id="upload-status" class="status-line" role="status"></p>
+        </section>
+
+        <!-- 올린 zip의 자동 검사 결과. 문제 글은 검사 코드(sdk/check.js)가 쓴 영어 그대로입니다 -->
+        <section class="block" id="check" hidden>
+          <h2 class="block-title" data-i18n="register.check">자동 검사</h2>
+          <dl id="facts" class="facts"></dl>
+          <p id="check-status" class="status-line"></p>
+          <ul id="check-problems" class="check-list bad"></ul>
+          <p id="check-stats" class="hint"></p>
+          <div id="check-warnings" class="check-notes" hidden>
+            <b data-i18n="register.check.warnings">참고</b>
+            <ul class="check-list"></ul>
+          </div>
+        </section>
+
+        <section class="block" id="pick" hidden>
           <label class="block-title" for="game" data-i18n="register.game">게임</label>
           <select id="game"></select>
           <p class="hint" data-i18n="register.game.hint"></p>
           <p id="game-status" class="status-line"></p>
         </section>
+
+        <div class="form-actions">
+          <button id="next-1" class="btn" type="button" data-i18n="register.next" disabled>다음</button>
+        </div>
+      </div>
+
+      <!-- 2단계: 난이도, 타이머, 지원 언어 -->
+      <div class="step" id="step-2" hidden>
 
         <fieldset class="block" id="difficulty">
           <legend class="block-title" data-i18n="register.difficulty">난이도</legend>
@@ -111,12 +140,13 @@
         </section>
 
         <div class="form-actions">
-          <button id="next" class="btn" type="button" data-i18n="register.next">다음</button>
+          <button id="back-2" class="btn ghost" type="button" data-i18n="register.back">이전</button>
+          <button id="next-2" class="btn" type="button" data-i18n="register.next">다음</button>
         </div>
       </div>
 
-      <!-- 2단계: 고른 언어마다 이름, 소개, 룰북 -->
-      <div class="step" id="step-2" hidden>
+      <!-- 3단계: 고른 언어마다 이름, 소개, 룰북 -->
+      <div class="step" id="step-3" hidden>
         <section class="block">
           <h2 class="block-title" data-i18n="register.texts">설명 글</h2>
           <p class="hint" data-i18n="register.texts.lead"></p>
@@ -124,8 +154,9 @@
         </section>
 
         <div class="form-actions">
-          <button id="back" class="btn ghost" type="button" data-i18n="register.back">이전</button>
-          <button id="save" class="btn" type="submit" data-i18n="register.save">저장</button>
+          <button id="back-3" class="btn ghost" type="button" data-i18n="register.back">이전</button>
+          <!-- 글자는 register.js가 고릅니다: 사이트면 등록, 개발 서버면 저장 -->
+          <button id="save" class="btn" type="submit">저장</button>
           <span id="save-status" class="status-line" role="status"></span>
         </div>
       </div>

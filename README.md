@@ -7,7 +7,8 @@
 AI 학습은 전부 플랫폼이 합니다.
 
 > 지금은 초기 단계입니다. [boardmadang.com](https://boardmadang.com)에서 게스트와 Google·GitHub 로그인, 매칭, 대국 시계, 관전,
-> 기보 다시보기가 동작합니다. 게임 올리기는 아직이고, 앞으로 할 일은 [docs/roadmap.md](docs/roadmap.md)에 있습니다.
+> 기보 다시보기가 동작합니다. 게임 올리기는 첫 단계(zip 올리기 → 자동 검사 → 등록)까지 만들었고, 클리어 체크 같은 남은 일과
+> 앞으로 할 일은 [docs/roadmap.md](docs/roadmap.md)에 있습니다.
 
 ## 핵심 아이디어
 

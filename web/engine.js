@@ -16,6 +16,7 @@
 //   const s = await g.start(seed, look);   // { hash, turn, look }
 //   const r = await g.play([{ player, action }], look);  // { steps: [{ hash, changed, turn }], look }
 //   const l = await g.look(look, at);      // { result, views: { 0: view, 1: view }, legal }
+//   const c = await g.check({ n, langs, thumbnail });  // 등록창의 자동 검사 { problems, warnings, stats, thumbnail }
 //   g.close();
 // look = { players: [0, 1], lang, legalFor: 0 | 1 | null }
 
@@ -23,6 +24,7 @@ const FRAME = '/web/runner/frame.html';
 const LOAD_MS = 10_000;
 const CALL_MS = 3_000; // 한 번 부를 때. play는 행동 수에 따라 늘립니다
 const PER_MOVE_MS = 20;
+const CHECK_MS = 60_000; // 자동 검사는 랜덤 대국을 여러 판 둡니다
 
 const PLACES = ['cells', 'points', 'both'];
 const LOOKS = ['plain', 'checker', 'wood'];
@@ -139,6 +141,21 @@ function cleanAction(a) {
   return isInt(a.row, 0, 31) && isInt(a.col, 0, 31) ? { kind: 'click', row: a.row, col: a.col } : null;
 }
 
+/** 자동 검사 결과. 글자 목록과 숫자만 남깁니다. */
+function cleanCheck(v) {
+  const texts = (a) => (Array.isArray(a) ? a.filter((x) => typeof x === 'string').slice(0, 50).map((x) => x.slice(0, 500)) : []);
+  const num = (x) => (Number.isFinite(x) ? x : 0);
+  const s = v?.stats && typeof v.stats === 'object' ? v.stats : null;
+  const tally = {};
+  for (const k of ['0', '1', 'draw', 'maxActions', 'stuck', 'noLegal']) tally[k] = num(s?.tally?.[k]);
+  return {
+    problems: texts(v?.problems),
+    warnings: texts(v?.warnings),
+    stats: s && { n: num(s.n), tally, avgMoves: num(s.avgMoves), avgMs: num(s.avgMs), maxMs: num(s.maxMs) },
+    thumbnail: Array.isArray(v?.thumbnail) ? texts(v.thumbnail) : null, // 썸네일을 넘기지 않았으면 null
+  };
+}
+
 function cleanLook(l, board) {
   const views = {};
   for (const p of [0, 1]) if (l?.views && p in l.views) views[p] = cleanView(l.views[p], board);
@@ -225,6 +242,10 @@ class GameRunner {
 
   async look(look, at = null) {
     return cleanLook(await this.call('look', { at, look }), this.info.board);
+  }
+
+  async check({ n = 100, langs = ['en'], thumbnail = null } = {}) {
+    return cleanCheck(await this.call('check', { n, langs, thumbnail }, CHECK_MS));
   }
 }
 

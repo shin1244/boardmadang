@@ -27,7 +27,8 @@ npx boardmadang dev
 | `npx boardmadang check` | 사이트에 올릴 때와 같은 검사를 합니다. |
 | `npx boardmadang pack` | 검사를 통과하면 올릴 `<id>.zip`을 만듭니다. |
 
-boardmadang.com에 올리는 기능은 곧 열립니다.
+zip은 boardmadang.com의 **게임 등록** 화면(<https://boardmadang.com/web/register.html>)에서 올립니다.
+로그인이 필요합니다. 화면이 브라우저에서 같은 검사를 한 번 더 하고, 등록 정보를 넣으면 등록됩니다.
 
 ## 게임 폴더
 
@@ -153,7 +154,7 @@ view(state, player, lang) {
 ## listing.json: 사이트에 보일 글
 
 `listing.json`에는 플레이어가 읽는 것이 들어갑니다. 이름, 한 줄 소개, 룰북, 난이도(`easy`, `normal`, `hard`),
-언어, 타이머입니다. 나중에 사이트에서 써도 되고, 그때는 코드를 다시 올리지 않아도 됩니다.
+언어, 타이머입니다. 등록할 때 사이트에서 써도 됩니다.
 
 ```json
 {

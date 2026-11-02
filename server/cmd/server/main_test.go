@@ -20,7 +20,7 @@ func newTestServer() *httptest.Server {
 func newTestServerWith(pages *site.Site) *httptest.Server {
 	ids := identity.NewIssuer([]byte("test-secret-test-secret-test-secret"))
 	login := &auth.Handler{IDs: ids}
-	return httptest.NewServer(routes(hub.New(config.Config{Port: "0"}, ids, nil), ids, nil, nil, login, pages))
+	return httptest.NewServer(routes(hub.New(config.Config{Port: "0"}, ids, nil), ids, nil, nil, nil, login, pages))
 }
 
 // 레포의 화면과 게임으로 운영과 같은 길을 확인합니다. 리다이렉트는 따라가지 않고 그대로 봅니다.
@@ -49,6 +49,8 @@ func TestSiteRoutes(t *testing.T) {
 		{"/sdk/playground/", http.StatusNotFound, ""}, // 플레이그라운드는 사이트에 없습니다
 		{"/sdk/playground/listing.js", http.StatusOK, ""},
 		{"/sdk/playground/platform.js", http.StatusOK, ""},
+		{"/sdk/check.js", http.StatusOK, ""}, // 등록창의 자동 검사
+		{"/sdk/bin/boardmadang.js", http.StatusNotFound, ""},
 		{"/server/go.mod", http.StatusNotFound, ""},
 		{"/README.md", http.StatusNotFound, ""},
 		{"/api/locale", http.StatusOK, ""},
