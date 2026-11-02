@@ -7,11 +7,12 @@
 // SITE_DIR(레포 루트) 아래에서 이것만 내보냅니다.
 //
 //	web/              화면
-//	sdk/playground/   화면이 import하는 모듈만 (sdkModules). 플레이그라운드 화면과 개발 서버는
+//	sdk/              화면과 실행기가 import하는 모듈만 (sdkModules). 플레이그라운드 화면과 개발 서버는
 //	                  게임 제작자가 자기 컴퓨터에서 쓰는 도구라 사이트에서는 내보내지 않습니다
 //	games/            게임 코드. games/private/가 있으면 같이 (운영 이미지에는 넣지 않습니다)
 //
 // 테스트 파일(*.test.js)과 점으로 시작하는 파일, types에 없는 종류는 내보내지 않습니다.
+// 회원이 올린 게임은 internal/upload가 DATA_DIR에서 내보내고, 목록만 Uploaded로 받아 /api/games에 붙입니다.
 package site
 
 import (
@@ -45,12 +46,15 @@ var types = map[string]string{
 var roots = []string{"web/", "games/"}
 
 // sdkModules는 sdk/에서 내보내는 파일입니다. 화면(web/)이 import하는 것만 둡니다.
-var sdkModules = []string{"sdk/playground/board.js", "sdk/playground/listing.js", "sdk/playground/platform.js"}
+// check.js는 등록창이 올린 게임을 실행기 안에서 검사할 때 씁니다 (web/runner/host.js의 check).
+var sdkModules = []string{"sdk/check.js", "sdk/playground/board.js", "sdk/playground/listing.js", "sdk/playground/platform.js"}
 
 var gameIDPattern = regexp.MustCompile(`^[a-z0-9-]+$`)
 
 type Site struct {
 	fsys fs.FS
+	// Uploaded는 회원이 올린 게임입니다 (internal/upload). 있으면 /api/games에서 레포 게임 뒤에 붙입니다.
+	Uploaded interface{ Games() []Game }
 }
 
 // Open은 dir(레포 루트)을 엽니다. dir/web/index.html이 없으면 에러입니다.
@@ -183,6 +187,19 @@ type Game struct {
 	Thumbnail json.RawMessage `json:"thumbnail"`
 }
 
+// Has는 레포에 그 id의 게임 폴더가 있는지입니다. 회원은 이 id로 게임을 올릴 수 없습니다.
+func (s *Site) Has(id string) bool {
+	if !gameIDPattern.MatchString(id) {
+		return false
+	}
+	for _, dir := range []string{"games/", "games/private/"} {
+		if info, err := fs.Stat(s.fsys, dir+id); err == nil && info.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
 // Games는 games/<id>/index.js 와 games/private/<id>/index.js 를 찾아 목록으로 만듭니다.
 // 부를 때마다 새로 읽습니다. 게임 코드는 작고, 매번 읽어야 코드를 고친 게 버전에 바로 반영됩니다.
 func (s *Site) Games() ([]Game, error) {
@@ -206,7 +223,7 @@ func (s *Site) Games() ([]Game, error) {
 			if _, err := fs.Stat(s.fsys, folder+"/index.js"); err != nil {
 				continue
 			}
-			version, err := codeVersion(s.fsys, folder)
+			version, err := CodeVersion(s.fsys, folder)
 			if err != nil {
 				return nil, err
 			}
@@ -221,10 +238,10 @@ func (s *Site) Games() ([]Game, error) {
 	return list, nil
 }
 
-// codeVersion은 게임 코드의 버전입니다. 폴더 안 .js, .mjs 파일(테스트, node_modules, 점으로 시작하는 이름 제외)을
+// CodeVersion은 게임 코드의 버전입니다. 폴더 안 .js, .mjs 파일(테스트, node_modules, 점으로 시작하는 이름 제외)을
 // /로 구분한 상대 경로 순으로 "경로\0내용\0"씩 이어 SHA-256을 구한 앞 16글자.
 // 등록 정보와 썸네일은 판에 영향이 없어 넣지 않습니다. sdk/lib/games.js의 codeVersion과 같아야 합니다.
-func codeVersion(fsys fs.FS, folder string) (string, error) {
+func CodeVersion(fsys fs.FS, folder string) (string, error) {
 	var files []string
 	err := fs.WalkDir(fsys, folder, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -283,6 +300,14 @@ func (s *Site) ServeGames(w http.ResponseWriter, r *http.Request) {
 		log.Printf("게임 목록 실패: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server error"})
 		return
+	}
+	if s.Uploaded != nil {
+		for _, g := range s.Uploaded.Games() {
+			// 올린 뒤에 레포에 같은 id가 생기면 레포 게임만 보입니다
+			if !slices.ContainsFunc(list, func(x Game) bool { return x.ID == g.ID }) {
+				list = append(list, g)
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, list)
 }

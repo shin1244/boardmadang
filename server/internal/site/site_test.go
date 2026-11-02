@@ -48,7 +48,7 @@ func TestCodeVersionMatchesServeJS(t *testing.T) {
 		"games/fixture/node_modules/x/index.js": "excluded\n",
 		"games/fixture/listing.json":            "{}\n",
 	})
-	got, err := codeVersion(s.fsys, "games/fixture")
+	got, err := CodeVersion(s.fsys, "games/fixture")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,11 +66,11 @@ func TestCodeVersionSkipsHidden(t *testing.T) {
 		"games/x/.draft.js":       "draft",
 		"games/x/.cache/index.js": "cache",
 	})
-	a, err := codeVersion(plain.fsys, "games/x")
+	a, err := CodeVersion(plain.fsys, "games/x")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := codeVersion(hidden.fsys, "games/x")
+	b, err := CodeVersion(hidden.fsys, "games/x")
 	if err != nil {
 		t.Fatal(err)
 	}

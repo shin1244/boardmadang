@@ -11,6 +11,7 @@
 //   start { seed, keep, look }           새 판. keep이면 다시보기용으로 모든 상태를 남깁니다
 //   play  { moves: [{ player, action }], look }   행동을 차례로 적용하고 행동마다 해시, 상태를 바꿨는지, 차례를 돌려줍니다
 //   look  { at, look }                   지금(또는 at번째 행동 뒤) 판의 결과, 화면, 둘 수 있는 수
+//   check { n, langs, thumbnail }        등록창의 자동 검사 (sdk/check.js의 checkGame, checkThumbnail)
 // look = { players: [0, 1], lang, legalFor: 0 | 1 | null }
 
 import { hashOf, makeRng } from '../../sdk/playground/platform.js';
@@ -98,6 +99,14 @@ export function createHost() {
       const s = at === null ? state : history?.[at];
       if (s === undefined) throw new Error('no such move');
       return lookAt(s, look);
+    },
+
+    // 검사 코드는 게임 코드와 같은 Worker에서 돕니다. 게임 코드가 결과를 바꿀 수도 있으므로
+    // 등록창은 이 결과를 올린 사람에게 보여 주기만 하고, 서버는 믿지 않습니다.
+    async check({ n = 100, langs = ['en'], thumbnail = null }) {
+      const { checkGame, checkThumbnail } = await import('../../sdk/check.js');
+      const r = checkGame(game, { n, langs });
+      return plain({ ...r, thumbnail: thumbnail ? checkThumbnail(game, thumbnail) : null });
     },
   };
 

@@ -58,7 +58,7 @@ fieldset[aria-invalid="true"], #langs[aria-invalid="true"] { border-color: var(-
 .choice span { display: flex; flex-direction: column; }
 .choice small { color: var(--muted); font-size: 12px; line-height: 1.4; }
 
-/* 단계 표시: 1 게임과 언어 → 2 설명 글 */
+/* 단계 표시: 1 게임 파일 → 2 게임과 언어 → 3 설명 글 */
 .steps { display: flex; gap: 8px; margin: 0 0 20px; padding: 0; list-style: none; }
 .steps li {
   display: flex;
@@ -123,6 +123,17 @@ fieldset[aria-invalid="true"], #langs[aria-invalid="true"] { border-color: var(-
 .fields label > span { display: inline; }
 .counter { justify-self: end; margin-top: -22px; color: var(--muted); font-weight: 400; font-size: 12px; }
 
+/* 1단계: 게임 파일과 자동 검사 */
+#zip { display: block; max-width: 100%; font: inherit; font-size: 14px; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; font-size: 14px; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.check-list { margin: 8px 0 0; padding-left: 20px; font-size: 14px; overflow-wrap: anywhere; }
+.check-list.bad { color: var(--bad); }
+.check-list:empty { display: none; }
+.check-notes { margin-top: 10px; font-size: 14px; color: var(--warn); }
+.check-notes[hidden] { display: none; }
+
 .need-account p { margin: 0 0 14px; color: var(--muted); }
 .need-account .btn { display: inline-block; text-decoration: none; }
 #member-only[hidden] { display: none; }
@@ -164,6 +175,7 @@ fieldset[aria-invalid="true"], #langs[aria-invalid="true"] { border-color: var(-
 
 .form-actions { display: flex; align-items: center; gap: 14px; }
 .form-actions .btn { flex: none; padding: 10px 28px; }
+.form-actions .btn:disabled { cursor: not-allowed; }
 .form-actions .status-line { margin: 0; }
 .status-line a { color: var(--accent); }
 

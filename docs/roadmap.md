@@ -14,21 +14,25 @@
 
 ### 1-1. 사이트에서 게임 올리기
 
-지금 "게임 등록" 화면은 레포에 있는 게임의 등록 정보만 고치는 개발용이고, 저장도 개발 서버에서만 됩니다.
+첫 단계가 됐습니다 ([server/internal/upload](../server/internal/upload), [docs/protocol.md](protocol.md#게임-올리기-serverinternalupload)).
+"게임 등록" 화면에서 zip 올리기 → 자동 검사 → 등록 정보 → 등록까지 합니다. 개발 서버에서는 예전처럼 레포 게임의 등록 정보를 고칩니다.
 
-- [ ] **업로드 API** (`POST /api/games`, 계정만)
+- [x] **업로드 API** (계정만): `POST /api/drafts`로 초안을 올리고 `POST /api/drafts/{draft}/publish`로 등록
   - `npx boardmadang pack`이 만든 zip을 받음 (300KB 이하)
-  - 파일 규칙: `.js`, `.mjs`, `.json`만, 폴더 밖 경로와 점으로 시작하는 이름 거절, 코드 256KB 이하
-  - 버전별 저장: `DATA_DIR/games/<id>/<버전>/`. 게임 주인(계정) 기록, id 중복 확인
-  - 하루 업로드 수 제한 ([abuse-and-limits.md](abuse-and-limits.md))
-- [ ] 올라온 게임도 `/api/games`에 나오고, `/games/<id>/…`를 `DATA_DIR`에서 내보내기 (실행기용 CORS 그대로)
-- [ ] **새 등록 화면**: zip 올리기 → 실행기 안에서 자동 검사(`sdk/check.js`) → 클리어 체크 → 썸네일 찍기 → 등록 정보 → 등록
+  - 파일 규칙: `.js`, `.mjs`와 맨 위의 `listing.json`, `thumbnail.json`만 (다른 JSON은 버전에 안 들어가서 거절), 폴더 밖 경로와 점으로 시작하는 이름 거절, 코드 256KB 이하
+  - 버전별 저장: `DATA_DIR/uploads/<id>/<버전>/`. 게임 주인(계정) 기록, id 중복 확인 (레포 게임 id도 막음)
+  - 하루 등록 5번, 초안은 한 시간에 30번 ([abuse-and-limits.md](abuse-and-limits.md))
+  - 등록 정보와 썸네일은 서버가 다시 검사 (`listing.js`, `check.js`의 규칙을 Go로 옮김)
+- [x] 올라온 게임도 `/api/games`에 나오고, `/uploads/<id>/<버전>/…`에서 내보내기 (실행기용 CORS, 버전이 내용의 해시라 오래 캐시)
+- [x] **새 등록 화면**: zip 올리기 → 실행기 안에서 자동 검사(`sdk/check.js`) → 등록 정보 → 등록
+- [ ] 등록 화면에 클리어 체크와 썸네일 찍기 넣기 (지금은 zip의 `thumbnail.json`만 씀)
 - [ ] **클리어 체크** (슈퍼 마리오 메이커 2처럼)
   - 혼자 양쪽을 둬서 `result()`가 승자를 정해야 통과. 무승부, 기권, `maxActions` 도달은 안 됨
   - 그 판(시드, 행동 기록, 코드 버전)을 "제작자 클리어 기보"로 저장하고 게임 페이지에서 다시볼 수 있게
   - 코드를 고쳐 버전이 바뀌면 다시 해야 함
-- [ ] 등록 정보만 고치기(코드를 다시 안 올려도), 게임 내리기
-- [ ] 옛 버전 코드를 보관해서 기보는 그 버전으로 다시보기 (`server/internal/record`의 TODO)
+- [ ] 등록 정보만 고치기(지금은 zip을 다시 올려 같은 버전으로 등록), 게임 내리기
+- [x] 올린 게임의 옛 버전 코드 보관 (`DATA_DIR/uploads/<id>/<버전>/`)
+- [ ] 기보는 그 버전으로 다시보기 (`server/internal/record`의 TODO)
 
 ### 1-2. 개인정보처리방침과 이용약관
 

@@ -1,10 +1,16 @@
-// 게임 등록창: 두 단계로 나눕니다.
-//   1단계: 게임, 난이도, 타이머, 지원 언어 (일부 번역 / 완전 번역으로 나눠 언어를 고릅니다)
-//   2단계: 고른 언어마다 이름, 소개, 룰북
-// 게임 코드에는 규칙만 두고 이 정보는 플랫폼이 따로 저장하므로, 코드를 다시 올리지 않아도 고칠 수 있습니다.
+// 게임 등록창: 세 단계로 나눕니다.
+//   1단계: 게임 코드. 사이트에서는 npx boardmadang pack이 만든 zip을 초안으로 올리고(POST /api/drafts),
+//          게임 실행기(engine.js)의 샌드박스 안에서 자동 검사(sdk/check.js)를 돌립니다.
+//          개발 서버에서는 games/ 폴더의 게임을 고릅니다.
+//   2단계: 난이도, 타이머, 지원 언어 (일부 번역 / 완전 번역으로 나눠 언어를 고릅니다)
+//   3단계: 고른 언어마다 이름, 소개, 룰북
+// 사이트에서는 등록(POST /api/drafts/<초안>/publish)하면 바로 로비에 나옵니다 (server/internal/upload).
 // 개발 서버에서는 PUT /api/games/<id>/listing 으로 games/<id>/listing.json 에 저장합니다.
+// 어느 쪽인지는 GET /api/uploads로 압니다. 개발 서버에는 없어서 404입니다.
+//
+// 자동 검사는 이 브라우저에서 돌기 때문에 서버는 결과를 믿지 않습니다. 검사는 올리는 사람이 문제를 미리 알게 하려는 것입니다.
 
-import { LANGS, LANG_NAMES, LIMITS, NO_TIMER, TIMER_MINUTES, isRtl, localize, validateListing } from '/sdk/playground/listing.js';
+import { LANGS, LANG_NAMES, LIMITS, NO_TIMER, TIMER_MINUTES, fullLangs, isRtl, localize, validateListing } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { loadGame } from './engine.js';
 import { isMember, loadMe, renderMe } from './me.js';
@@ -13,9 +19,25 @@ const $ = (sel) => document.querySelector(sel);
 const TEXT_FIELDS = ['name', 'description', 'rulebook'];
 /** 타이머를 정한 적 없는 게임에 처음 보여주는 값 */
 const DEFAULT_TIMER = { minutes: 10, custom: true };
+/** 자동 검사에서 두는 랜덤 대국 수 (npx boardmadang check는 200판) */
+const CHECK_GAMES = 100;
+/** 게임 id 길이. 대전 서버가 받는 길이입니다 */
+const MAX_ID = 40;
 
 let me = null;
+/** 'site'면 zip을 올려 등록, 'dev'면 개발 서버에서 games/의 게임 등록 정보를 고칩니다. 알기 전에는 null */
+let mode = null;
+/** /api/games */
 let games = [];
+/** 사이트: GET /api/uploads. 내가 올린 게임과 오늘 남은 등록 횟수 */
+let mine = null;
+/**
+ * 사이트: 올린 zip과 검사.
+ * @type {{ state: 'uploading' | 'failed' | 'checking' | 'done', draft?: object, info?: object, check?: object,
+ *          problems?: object[], msg?: string } | null}
+ */
+let upload = null;
+/** 등록할 게임 { id, listing, ... }. 사이트에서는 검사를 마친 초안이고 개발 서버에서는 games의 항목입니다 */
 let current = null;
 let step = 1;
 /** 언어 → 'full' | 'rulebook'. 없으면 지원 안 함 */
@@ -26,10 +48,231 @@ let problems = [];
 /** @type {{ kind: 'saving' | 'saved' | 'failed', msg?: string } | null} */
 let saveState = null;
 let dirty = false;
-/** 고른 게임 코드에 turn()이 있는지. 불러오는 중이면 null */
+/** 게임 코드에 turn()이 있는지. 불러오는 중이면 null */
 let hasTurn = null;
 
-// ---- 1단계: 언어 고르기 ----
+// ---- 1단계 (사이트): zip 올리기와 자동 검사 ----
+
+async function uploadZip(file) {
+  const u = { state: 'uploading' };
+  upload = u;
+  current = null;
+  saveState = null;
+  render();
+  try {
+    const res = await fetch('/api/drafts', { method: 'POST', headers: { 'Content-Type': 'application/zip' }, body: file });
+    const body = await res.json().catch(() => ({}));
+    if (upload !== u) return;
+    if (!res.ok) {
+      Object.assign(u, { state: 'failed', problems: body.problems ?? [], msg: uploadError(res.status, body) });
+      return render();
+    }
+    Object.assign(u, { state: 'checking', draft: body });
+  } catch (err) {
+    if (upload !== u) return;
+    Object.assign(u, { state: 'failed', problems: [], msg: err.message });
+    return render();
+  }
+  render();
+  await checkDraft(u);
+}
+
+function uploadError(status, body) {
+  if (status === 403 && body.error === 'member only') return t('register.memberOnly');
+  if (status === 429) return t('register.upload.tooMany');
+  if (body.error === 'problems') return t('register.upload.problems');
+  return body.error ?? String(status);
+}
+
+/** 초안을 실행기에 불러와 검사합니다. 그사이 다른 zip을 올리면 결과를 버립니다. */
+async function checkDraft(u) {
+  const { draft } = u;
+  let runner = null;
+  try {
+    runner = await loadGame({ module: draft.module });
+    u.info = runner.info;
+    const langs = fullLangs(draft.listing);
+    u.check = await runner.check({ n: CHECK_GAMES, langs: langs.length ? langs : [lang], thumbnail: draft.thumbnail });
+  } catch (err) {
+    u.check = { problems: [err.message], warnings: [], stats: null, thumbnail: null };
+  } finally {
+    runner?.close();
+  }
+  if (upload !== u) return;
+  u.state = 'done';
+  if (u.info && !siteProblems(u).length) {
+    const id = u.info.id;
+    const before = kindOf(u) === 'new' ? null : games.find((g) => g.id === id);
+    current = {
+      id,
+      draft,
+      // 썸네일은 zip에 있고, 서버 검사와 게임 코드와 맞는지 검사를 모두 통과했을 때만 씁니다
+      keepThumbnail: !!draft.thumbnail && Array.isArray(u.check.thumbnail) && !u.check.thumbnail.length,
+      listing: draft.listing ?? before?.listing ?? null,
+    };
+    // 이미 쓰던 글이 있으면 그대로 둡니다 (코드만 고쳐서 다시 올린 경우)
+    if (!dirty) fill(current.listing);
+    hasTurn = u.info.turn;
+  }
+  render();
+}
+
+/** 이 게임이 사이트에서 어떤 것인지: 'new' 새 게임, 'update' 내 게임의 새 버전, 'same' 이미 등록한 버전, 'taken' 남의 id */
+function kindOf(u) {
+  const id = u.info?.id;
+  const my = mine?.games.find((g) => g.id === id);
+  if (my) return my.version === u.draft.version ? 'same' : 'update';
+  return games.some((g) => g.id === id) ? 'taken' : 'new';
+}
+
+/** 고쳐야 다음 단계로 갈 수 있는 것. 검사(check.js)의 글은 영어 그대로입니다 (npx boardmadang check와 같은 글). */
+function siteProblems(u) {
+  if (u.state === 'failed') return u.problems.map(uploadProblemText);
+  if (u.state !== 'done') return [];
+  const list = [...u.check.problems];
+  const id = u.info?.id ?? '';
+  if (id.length > MAX_ID) list.push(t('register.check.longId', { max: MAX_ID }));
+  if (u.info && kindOf(u) === 'taken') list.push(t('register.check.taken', { id }));
+  return list;
+}
+
+function uploadProblemText(p) {
+  return t(`upload.${p.code}`, { file: p.file ?? '', max: p.max, kb: Math.round((p.max ?? 0) / 1024) });
+}
+
+const size = (bytes) => (bytes < 1024 ? `${bytes}B` : `${(bytes / 1024).toFixed(1)}KB`);
+
+function thumbText(u) {
+  const { draft } = u;
+  if (!draft.thumbnail) {
+    return draft.thumbnailProblems?.length ? t('register.thumb.bad', { msg: draft.thumbnailProblems[0] }) : t('register.thumb.none');
+  }
+  const p = u.check?.thumbnail ?? [];
+  return p.length ? t('register.thumb.bad', { msg: p[0] }) : t('register.thumb.ok');
+}
+
+function renderUpload() {
+  const u = upload;
+  const line = $('#upload-status');
+  line.className = 'status-line';
+  if (u?.state === 'uploading') line.textContent = t('register.uploading');
+  else if (u?.state === 'checking') line.textContent = t('register.checking', { n: CHECK_GAMES });
+  else if (u?.state === 'failed') {
+    line.textContent = t('register.uploadFailed', { msg: u.msg });
+    line.classList.add('bad');
+  } else {
+    line.textContent = mine ? t('register.left', { n: mine.left }) : '';
+    if (mine?.left === 0) line.classList.add('bad');
+  }
+
+  const box = $('#check');
+  box.hidden = !u?.draft && !u?.problems?.length;
+  if (box.hidden) return;
+
+  const facts = [];
+  if (u.draft) {
+    if (u.info) facts.push([t('register.fact.id'), `${u.info.id} · ${t(`register.kind.${kindOf(u)}`)}`]);
+    facts.push([t('register.fact.version'), u.draft.version]);
+    facts.push([t('register.fact.files'), u.draft.files.map((f) => `${f.path} (${size(f.bytes)})`).join(', ')]);
+    if (u.state === 'done') facts.push([t('register.fact.thumbnail'), thumbText(u)]);
+  }
+  $('#facts').replaceChildren(...facts.flatMap(([k, v]) => {
+    const dt = document.createElement('dt');
+    const dd = document.createElement('dd');
+    dt.textContent = k;
+    dd.textContent = v;
+    return [dt, dd];
+  }));
+
+  const found = siteProblems(u);
+  const status = $('#check-status');
+  status.className = 'status-line';
+  status.textContent = '';
+  if (u.state === 'done') {
+    status.textContent = t(found.length ? 'register.check.failed' : 'register.check.passed');
+    status.classList.add(found.length ? 'bad' : 'good');
+  }
+  const s = u.check?.stats;
+  $('#check-stats').textContent = s ? t('register.check.stats', {
+    n: s.n,
+    p0: s.tally['0'],
+    p1: s.tally['1'],
+    draw: s.tally.draw,
+    max: s.tally.maxActions,
+    moves: s.avgMoves.toFixed(1),
+    avg: s.avgMs.toFixed(2),
+  }) : '';
+  fillList($('#check-problems'), found);
+  const warnings = u.check?.warnings ?? [];
+  $('#check-warnings').hidden = !warnings.length;
+  fillList($('#check-warnings ul'), warnings);
+}
+
+function fillList(ul, items) {
+  ul.replaceChildren(...items.map((x) => {
+    const li = document.createElement('li');
+    li.textContent = x;
+    return li;
+  }));
+}
+
+/** 1단계를 마쳤는지 */
+function fileReady() {
+  if (mode === 'dev') return !!current;
+  return upload?.state === 'done' && !!current && !siteProblems(upload).length;
+}
+
+// ---- 1단계 (개발 서버): games/의 게임 고르기 ----
+
+function renderGame() {
+  const select = $('#game');
+  for (const o of select.options) {
+    const g = games.find((x) => x.id === o.value);
+    const name = localize(g.listing?.name, lang).text;
+    o.textContent = name ? `${name} (${g.id})` : g.id;
+  }
+  const line = $('#game-status');
+  line.className = 'status-line';
+  if (!current) {
+    line.textContent = t('register.noGames');
+    return;
+  }
+  if (current.listingError) line.textContent = t('register.status.broken', { msg: current.listingError });
+  else line.textContent = t(current.listing ? 'register.status.saved' : 'register.status.new');
+}
+
+function choose(id) {
+  current = games.find((g) => g.id === id) ?? games[0] ?? null;
+  if (!current) return;
+  $('#game').value = current.id;
+  history.replaceState(null, '', `?game=${encodeURIComponent(current.id)}`);
+  fill(current.listing);
+  render();
+  checkTurn(current);
+}
+
+/**
+ * 게임 코드에 turn()이 있는지 봅니다. 코드는 실행기(engine.js)의 샌드박스에서만 불러옵니다.
+ * 그사이 다른 게임을 고르면 결과를 버립니다.
+ */
+async function checkTurn(entry) {
+  hasTurn = null;
+  let found = false;
+  let runner = null;
+  try {
+    runner = await loadGame(entry);
+    found = runner.info.turn;
+  } catch {
+    // 코드가 깨졌으면 npx boardmadang check가 알려 줍니다. 여기서는 타이머만 막습니다.
+  } finally {
+    runner?.close();
+  }
+  if (current !== entry) return;
+  hasTurn = found;
+  renderTimer();
+}
+
+// ---- 2단계: 언어 고르기 ----
 
 function buildChips() {
   for (const box of document.querySelectorAll('.chips')) {
@@ -65,7 +308,7 @@ function renderChips() {
   }
 }
 
-// ---- 2단계: 언어별 글 ----
+// ---- 3단계: 언어별 글 ----
 
 /** 고른 언어만 입력칸을 만듭니다. 완전 번역 언어를 먼저 둡니다. */
 function renderTexts() {
@@ -119,7 +362,7 @@ function fillTimer(timer) {
 }
 
 function readTimer() {
-  // turn()이 없는 게임은 타이머를 쓸 수 없습니다 (불러오는 중이면 고른 대로 둡니다. 서버가 다시 검사합니다)
+  // turn()이 없는 게임은 타이머를 쓸 수 없습니다 (불러오는 중이면 고른 대로 둡니다. 개발 서버는 다시 검사합니다)
   if (hasTurn === false) return { ...NO_TIMER };
   const on = document.querySelector('input[name=timer]:checked')?.value === 'on';
   const raw = $('#timer-minutes').value.trim();
@@ -141,27 +384,6 @@ function renderTimer() {
   line.textContent = blocked ? t('register.timer.noTurn') : '';
 }
 
-/**
- * 게임 코드에 turn()이 있는지 봅니다. 코드는 실행기(engine.js)의 샌드박스에서만 불러옵니다.
- * 그사이 다른 게임을 고르면 결과를 버립니다.
- */
-async function checkTurn(entry) {
-  hasTurn = null;
-  let found = false;
-  let runner = null;
-  try {
-    runner = await loadGame(entry);
-    found = runner.info.turn;
-  } catch {
-    // 코드가 깨졌으면 npx boardmadang check가 알려 줍니다. 여기서는 타이머만 막습니다.
-  } finally {
-    runner?.close();
-  }
-  if (current !== entry) return;
-  hasTurn = found;
-  renderTimer();
-}
-
 // ---- 폼 ↔ 등록 정보 ----
 
 function fill(listing) {
@@ -169,7 +391,9 @@ function fill(listing) {
   fillTimer(listing?.timer ?? DEFAULT_TIMER);
   support = new Map(Object.entries(listing?.languages ?? {}).filter(([l]) => LANGS.includes(l)));
   texts = { name: {}, description: {}, rulebook: {} };
-  for (const field of TEXT_FIELDS) Object.assign(texts[field], listing?.[field]);
+  for (const field of TEXT_FIELDS) {
+    for (const [l, v] of Object.entries(listing?.[field] ?? {})) if (typeof v === 'string') texts[field][l] = v;
+  }
   problems = [];
   saveState = null;
   dirty = false;
@@ -194,8 +418,8 @@ function readForm() {
   return listing;
 }
 
-/** 1단계에서 고칠 문제인지 (난이도, 타이머, 지원 언어) */
-const isStep1Problem = (p) => ['languages.', 'difficulty.', 'timer.'].some((s) => p.code.startsWith(s));
+/** 2단계에서 고칠 문제인지 (난이도, 타이머, 지원 언어) */
+const isStep2Problem = (p) => ['languages.', 'difficulty.', 'timer.'].some((s) => p.code.startsWith(s));
 
 // ---- 화면 ----
 
@@ -211,11 +435,7 @@ function problemText(p) {
 function renderProblems() {
   const box = $('#problems');
   box.hidden = !problems.length;
-  box.querySelector('ul').replaceChildren(...problems.map((p) => {
-    const li = document.createElement('li');
-    li.textContent = problemText(p);
-    return li;
-  }));
+  fillList(box.querySelector('ul'), problems.map(problemText));
   // 문제가 있는 칸 표시
   for (const el of document.querySelectorAll('[aria-invalid]')) el.removeAttribute('aria-invalid');
   for (const p of problems) {
@@ -229,79 +449,59 @@ function renderProblems() {
 }
 
 function renderStep() {
-  $('#step-1').hidden = step !== 1;
-  $('#step-2').hidden = step !== 2;
+  for (const n of [1, 2, 3]) $(`#step-${n}`).hidden = step !== n;
   for (const li of document.querySelectorAll('.steps li')) {
     const n = Number(li.dataset.step);
     li.classList.toggle('done', n < step);
     if (n === step) li.setAttribute('aria-current', 'step');
     else li.removeAttribute('aria-current');
   }
+  $('#next-1').disabled = !fileReady();
 }
 
 function renderStatus() {
+  const site = mode === 'site';
   const s = $('#save-status');
   s.replaceChildren();
   s.className = 'status-line';
-  $('#save').disabled = saveState?.kind === 'saving';
+  $('#save').textContent = t(site ? 'register.publish' : 'register.save');
+  // 사이트에서는 등록하면 초안이 없어집니다. 다시 고치려면 zip을 다시 올립니다
+  $('#save').disabled = saveState?.kind === 'saving' || (site && saveState?.kind === 'saved');
   if (!saveState) return;
   if (saveState.kind === 'saving') {
-    s.textContent = t('register.saving');
+    s.textContent = t(site ? 'register.publishing' : 'register.saving');
   } else if (saveState.kind === 'failed') {
-    s.textContent = t('register.failed', { msg: saveState.msg });
+    s.textContent = t(site ? 'register.publishFailed' : 'register.failed', { msg: saveState.msg });
     s.classList.add('bad');
   } else {
     s.classList.add('good');
     const a = document.createElement('a');
-    a.href = '/web/';
+    a.href = site ? `/web/?game=${encodeURIComponent(current.id)}` : '/web/';
     a.textContent = t('register.toLobby');
-    s.append(`${t('register.saved')} `, a);
+    s.append(`${t(site ? 'register.published' : 'register.saved')} `, a);
   }
-}
-
-function renderGame() {
-  const select = $('#game');
-  for (const o of select.options) {
-    const g = games.find((x) => x.id === o.value);
-    const name = localize(g.listing?.name, lang).text;
-    o.textContent = name ? `${name} (${g.id})` : g.id;
-  }
-  const line = $('#game-status');
-  line.className = 'status-line';
-  if (!current) {
-    line.textContent = t('register.noGames');
-    return;
-  }
-  if (current.listingError) line.textContent = t('register.status.broken', { msg: current.listingError });
-  else line.textContent = t(current.listing ? 'register.status.saved' : 'register.status.new');
 }
 
 function render() {
   applyStatic('register.title');
   renderMe(me);
-  // 게스트는 업로드할 수 없습니다. 서버도 저장 요청을 403으로 막습니다.
+  // 게스트는 업로드할 수 없습니다. 서버도 올리기와 저장을 403으로 막습니다.
   $('#need-account').hidden = !me || isMember(me);
   $('#member-only').hidden = !isMember(me);
-  renderGame();
+  $('#upload').hidden = mode !== 'site';
+  $('#pick').hidden = mode !== 'dev';
+  if (mode === 'site') renderUpload();
+  else $('#check').hidden = true;
+  if (mode === 'dev') renderGame();
   renderTimer();
   renderChips();
-  if (step === 2) renderTexts();
+  if (step === 3) renderTexts();
   renderStep();
   renderProblems();
   renderStatus();
 }
 
 // ---- 동작 ----
-
-function choose(id) {
-  current = games.find((g) => g.id === id) ?? games[0] ?? null;
-  if (!current) return;
-  $('#game').value = current.id;
-  history.replaceState(null, '', `?game=${encodeURIComponent(current.id)}`);
-  fill(current.listing);
-  render();
-  checkTurn(current);
-}
 
 function goStep(n) {
   step = n;
@@ -310,58 +510,84 @@ function goStep(n) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-/** 1단계 문제만 검사하고 넘어갑니다. 글 칸은 2단계에서 검사합니다. */
+function showProblems() {
+  render();
+  $('#problems').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+/** 2단계 문제만 검사하고 넘어갑니다. 글 칸은 3단계에서 검사합니다. */
 function next() {
   if (!current) return;
-  problems = validateListing(readForm()).filter(isStep1Problem);
-  if (problems.length) {
-    render();
-    $('#problems').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    return;
-  }
-  goStep(2);
+  problems = validateListing(readForm()).filter(isStep2Problem);
+  if (problems.length) return showProblems();
+  goStep(3);
 }
 
 async function save(e) {
   e.preventDefault();
-  if (!current || step !== 2) return;
+  if (!current || step !== 3) return;
   const listing = readForm();
   problems = validateListing(listing);
   if (problems.length) {
     saveState = null;
-    // 언어나 난이도가 문제면 1단계로 돌아갑니다
-    if (problems.some(isStep1Problem)) step = 1;
-    render();
-    $('#problems').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    return;
+    // 언어나 난이도가 문제면 2단계로 돌아갑니다
+    if (problems.some(isStep2Problem)) step = 2;
+    return showProblems();
   }
   saveState = { kind: 'saving' };
   render();
   try {
-    const res = await fetch(`/api/games/${encodeURIComponent(current.id)}/listing`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(listing),
-    });
+    const res = mode === 'site'
+      ? await fetch(`/api/drafts/${encodeURIComponent(current.draft.id)}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: current.id, listing, thumbnail: current.keepThumbnail }),
+      })
+      : await fetch(`/api/games/${encodeURIComponent(current.id)}/listing`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(listing),
+      });
     const body = await res.json().catch(() => ({}));
     if (res.status === 422) {
       problems = body.problems ?? [];
-      if (problems.some(isStep1Problem)) step = 1;
+      if (problems.some(isStep2Problem)) step = 2;
       saveState = null;
-    } else if (res.status === 403 && body.error === 'member only') {
-      saveState = { kind: 'failed', msg: t('register.memberOnly') };
     } else if (!res.ok) {
-      saveState = { kind: 'failed', msg: body.error ?? res.status };
+      saveState = { kind: 'failed', msg: saveError(res.status, body) };
     } else {
-      current.listing = body.listing;
+      current.listing = body.listing ?? body.game?.listing;
       delete current.listingError;
       saveState = { kind: 'saved' };
       dirty = false;
+      if (mode === 'site') refreshLists();
     }
   } catch (err) {
     saveState = { kind: 'failed', msg: err.message };
   }
   render();
+}
+
+function saveError(status, body) {
+  if (status === 403 && body.error === 'member only') return t('register.memberOnly');
+  if (mode !== 'site') return body.error ?? status;
+  if (status === 409) return t('register.check.taken', { id: current.id });
+  if (status === 429) return t('register.publish.tooMany');
+  if (status === 404) return t('register.publish.expired');
+  if (status === 400 && body.error === 'bad id') return t('register.check.longId', { max: MAX_ID });
+  return body.error ?? status;
+}
+
+/** 등록한 뒤 목록을 다시 받습니다. 같은 게임을 다시 올리면 '새 버전'으로 보이게 */
+async function refreshLists() {
+  try {
+    const [g, m] = await Promise.all([fetch('/api/games'), fetch('/api/uploads')]);
+    if (g.ok) games = await g.json();
+    if (m.ok) mine = await m.json();
+    render();
+  } catch {
+    // 다음에 새로 열면 됩니다
+  }
 }
 
 async function main() {
@@ -372,7 +598,21 @@ async function main() {
   render();
   if (!isMember(me)) return;
 
-  games = await (await fetch('/api/games')).json();
+  const [gamesRes, upRes] = await Promise.all([fetch('/api/games'), fetch('/api/uploads')]);
+  games = await gamesRes.json();
+  if (upRes.ok) {
+    mode = 'site';
+    mine = await upRes.json();
+  } else if (upRes.status === 404) {
+    mode = 'dev';
+  } else {
+    throw new Error(`/api/uploads ${upRes.status}`);
+  }
+
+  $('#zip').addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (file) uploadZip(file);
+  });
   $('#game').replaceChildren(...games.map((g) => new Option(g.id, g.id)));
   $('#game').addEventListener('change', (e) => {
     if (dirty && !confirm(t('register.discard'))) {
@@ -386,15 +626,17 @@ async function main() {
     if (e.target.name === 'timer') renderTimer();
   });
   $('#timer-minutes').addEventListener('input', changed);
-  $('#next').addEventListener('click', next);
-  $('#back').addEventListener('click', () => goStep(1));
+  $('#next-1').addEventListener('click', () => fileReady() && goStep(2));
+  $('#back-2').addEventListener('click', () => goStep(1));
+  $('#next-2').addEventListener('click', next);
+  $('#back-3').addEventListener('click', () => goStep(2));
   $('#form').addEventListener('submit', save);
   window.addEventListener('beforeunload', (e) => {
     if (dirty) e.preventDefault();
   });
 
-  choose(new URLSearchParams(location.search).get('game'));
-  if (!current) render();
+  if (mode === 'dev') choose(new URLSearchParams(location.search).get('game'));
+  render();
 }
 
 main().catch((err) => {

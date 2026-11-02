@@ -16,6 +16,11 @@
 | `POST /api/games/{id}/comments` | 의견 남기기 `{"text":"…"}` → `201`과 남긴 의견 |
 | `DELETE /api/games/{id}/comments/{comment}` | 내 의견 지우기 → `{"ok":true}` |
 | `POST /api/reports` | 신고 `{"game":"tictactoe","comment":"RN92MFYW","reason":"spam","detail":"…"}` → `{"ok":true,"hidden":false}`. `comment`가 없으면 게임 신고 |
+| `GET /api/uploads` | 내가 올린 게임과 오늘 남은 등록 횟수 `{"games":[{"id":"dots","version":"e9ff673cd0205ffa","published":"…"}],"left":4}`. 계정만 |
+| `POST /api/drafts` | 게임 zip을 초안으로 올리기. 본문은 zip 그대로(`Content-Type: application/zip`). 계정만 → `201 {"id":"<초안>","module":"/drafts/<초안>/index.js","version":"…","files":[{"path":"index.js","bytes":3640}],"listing":{…},"thumbnail":{…},"thumbnailProblems":["…"]}` |
+| `POST /api/drafts/{draft}/publish` | 초안 등록 `{"id":"dots","listing":{…},"thumbnail":true}` → `{"game":{…}}` (`/api/games`의 항목). 계정만 |
+| `GET /drafts/{draft}/{path}` | 초안의 파일. 등록창이 실행기에 불러와 검사합니다 |
+| `GET /uploads/{id}/{version}/{path}` | 올린 게임의 코드. 버전이 곧 내용의 해시라 오래 캐시합니다 (`immutable`) |
 
 - `version`은 게임 코드 버전입니다. 게임 폴더의 `.js`, `.mjs` 파일(테스트와 `node_modules` 제외)을 `/`로 구분한 상대 경로 순으로
   "경로\0내용\0"씩 이어 SHA-256을 구하고 앞 16글자를 씁니다. 개발 서버와 Go 서버의 계산이 같아야 합니다.
@@ -28,6 +33,26 @@
 - `PUT /api/games/<id>/thumbnail`: 개발 서버 전용. 플레이그라운드의 "Use as thumbnail"이 찍은 판을 `thumbnail.json`에 저장합니다.
   내 컴퓨터에서 온 JSON만 받고, 모양이 틀리면 `422 {"problems":[...]}`입니다.
 - `PUT /api/games/<id>/listing`: 개발 서버 전용. 등록창이 등록 정보를 `games/<id>/listing.json`에 저장합니다.
+
+### 게임 올리기 ([server/internal/upload](../server/internal/upload))
+
+등록창이 `npx boardmadang pack`의 zip을 초안으로 올리고(`POST /api/drafts`), 실행기 안에서 자동 검사를 돌린 뒤 등록합니다
+(`POST /api/drafts/{draft}/publish`). 등록하면 바로 `/api/games`에 나오고, `module`은 `/uploads/<id>/<버전>/index.js`입니다.
+개발 서버에는 이 API가 없어서 등록창은 `GET /api/uploads`가 404면 개발용(레포 게임의 등록 정보 고치기)으로 돕니다.
+
+- zip 규칙: `.js`, `.mjs` 코드(합쳐서 256KB)와 맨 위의 `listing.json`, `thumbnail.json`만 받습니다. 맨 위에 `index.js`가 있어야 합니다.
+  경로에는 영문자, 숫자, `_`, `-`, `.`만 쓰고 점으로 시작하는 이름(`..`, 숨김 파일)은 안 됩니다.
+  모든 파일이 폴더 하나에 들어 있으면 그 폴더를 맨 위로 봅니다. macOS가 끼워 넣는 `__MACOSX/`, `.DS_Store`는 건너뜁니다.
+  다른 JSON을 받지 않는 건 `version`이 `.js`, `.mjs`만 보기 때문입니다. 버전이 같은데 데이터가 다르면 두 플레이어의 판이 어긋납니다.
+- 규칙에 맞지 않으면 `422 {"error":"problems","problems":[{"code":"file.badType","file":"notes.txt"}]}`입니다.
+  코드: `zip.bad`, `zip.tooBig`(413), `zip.tooManyFiles`, `file.badName`, `file.badType`, `file.duplicate`, `file.tooBig`, `file.badJson`, `file.noIndex`, `code.tooBig`
+- 등록할 때 등록 정보를 `listing.js`의 `validateListing`과 같은 규칙으로 다시 검사합니다 (`422`, 문제 코드는 등록창과 같음).
+  썸네일은 `thumbnail: true`이고 `validateThumbnail`과 같은 검사를 통과해야 씁니다. 틀린 `thumbnail.json`은 문제로 보지 않고 빼고 등록합니다.
+- 같은 계정이 같은 id로 다시 등록하면 새 버전이 되고, 옛 버전 코드는 기보 다시보기를 위해 남깁니다. 같은 버전이면 등록 정보만 바뀝니다.
+- 실패: `409 {"error":"id taken"}` 레포 게임이거나 다른 계정이 올린 id, `400 {"error":"bad id"}` id 모양(영문 소문자, 숫자, `-`로 40자까지),
+  `429 {"error":"too many"}` 하루 등록 5번 또는 한 시간에 초안 30번, `404` 초안이 없거나 남의 것이거나 하루가 지남
+- 초안은 하루가 지나면 지우고, 계정마다 최근 3개만 남깁니다. 등록하면 그 초안은 없어집니다.
+- 서버는 게임 코드를 돌리지 않습니다. 자동 검사는 올린 사람의 브라우저에서 돌므로 서버는 그 결과를 믿지 않습니다 ([architecture.md](architecture.md#보안)).
   내 컴퓨터에서 온 요청과 계정만 받고(게스트면 `403 {"error":"member only"}`), 검사에 걸리면 `422 {"problems":[...]}`를 돌려줍니다.
   검사 규칙은 [sdk/playground/listing.js](../sdk/playground/listing.js)에 있고, 운영 서버도 같은 규칙으로 검사합니다.
   타이머를 켰는데 게임 코드에 `turn()`이 없으면 `422 {"problems":[{"code":"timer.needsTurn"}]}`입니다.

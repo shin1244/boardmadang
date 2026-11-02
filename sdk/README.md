@@ -27,7 +27,8 @@ The new game is tic-tac-toe. Change the rules in `index.js` and refresh the page
 | `npx boardmadang check` | Runs the same checks the site runs when you upload. |
 | `npx boardmadang pack` | If the checks pass, makes `<id>.zip` for uploading. |
 
-Uploading on boardmadang.com is coming soon.
+Upload the zip on the **Register a game** page of boardmadang.com (<https://boardmadang.com/web/register.html>).
+You need to log in. The page runs the same checks in your browser, then you fill in the listing and register.
 
 ## A game folder
 
@@ -153,7 +154,7 @@ It saves that board to `thumbnail.json`, and the site draws it with the same boa
 ## listing.json: the text on the site
 
 `listing.json` holds what players read: the name, a one-line description, the rules, difficulty (`easy`, `normal`, `hard`),
-languages, and the timer. You can also fill it in on the site later, without uploading your code again.
+languages, and the timer. You can also fill it in on the site when you register.
 
 ```json
 {

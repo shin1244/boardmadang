@@ -1,0 +1,212 @@
+package upload
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"math"
+	"regexp"
+	"slices"
+)
+
+// 썸네일 검사. sdk/check.js의 validateThumbnail, normalizeThumbnail과 같은 규칙입니다. 한쪽을 고치면 같이 고칩니다.
+// 썸네일은 이미지가 아니라 판 설정, 기물 세트, 화면 데이터라서 로비가 보드 렌더러로 다시 그립니다.
+// 모든 방문자의 로비에 그려지므로 서버가 모양과 크기를 지킵니다. 게임 코드와 맞는지(checkThumbnail)는 등록창이 실행기 안에서 봅니다.
+
+// ThumbnailBytes는 정리한 썸네일 JSON의 상한입니다 (GAME_LIMITS.thumbnailBytes).
+const ThumbnailBytes = 32 << 10
+
+const (
+	boardSize  = 32 // GAME_LIMITS.boardSize
+	pieceKinds = 32 // GAME_LIMITS.pieceKinds
+)
+
+var (
+	places    = []string{"cells", "points", "both"}
+	pieceSets = []string{"chess", "go-stones", "xo"}
+	markTypes = []string{"dot", "ring", "last-move", "danger", "ghost", "blocked", "frame"}
+	hexColor  = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+)
+
+// CheckThumbnail은 thumbnail.json을 검사합니다. 문제가 없으면 정리한 JSON을, 있으면 문제 글(영어, check.js와 같은 글)을 돌려줍니다.
+func CheckThumbnail(data []byte) (json.RawMessage, []string) {
+	var v any
+	if err := json.Unmarshal(data, &v); err != nil {
+		return nil, []string{"thumbnail.json is not valid JSON"}
+	}
+	if _, isList := v.([]any); isList {
+		v = map[string]any{} // 자바스크립트에서는 배열도 객체라 칸마다 검사합니다
+	}
+	t, ok := v.(map[string]any)
+	if !ok {
+		return nil, []string{"thumbnail: must be an object"}
+	}
+	p := boardProblems(t["board"], "thumbnail.board")
+	if !piecesOk(t["pieces"]) {
+		p = append(p, "thumbnail.pieces: must look like the game's pieces")
+	}
+	if player, ok := t["player"].(float64); !ok || (player != 0 && player != 1) {
+		p = append(p, "thumbnail.player: must be 0 or 1")
+	}
+	view, ok := t["view"].(map[string]any)
+	if _, isList := view["pieces"].([]any); !ok || !isList {
+		p = append(p, "thumbnail.view.pieces: must be a list")
+	}
+	if len(p) > 0 {
+		return nil, p
+	}
+
+	b := t["board"].(map[string]any)
+	rows, cols := b["rows"].(float64), b["cols"].(float64)
+	for _, k := range []string{"marks", "tint", "text"} {
+		if x, present := view[k]; present {
+			if _, isList := x.([]any); !isList {
+				p = append(p, fmt.Sprintf("thumbnail.view.%s: must be a list if present", k))
+			}
+		}
+	}
+	if len(p) > 0 {
+		return nil, p
+	}
+	isCell := func(c map[string]any) bool {
+		r, okR := whole(c["row"])
+		col, okC := whole(c["col"])
+		return okR && okC && r >= 0 && col >= 0 && r < rows && col < cols
+	}
+	items := func(k string) []map[string]any {
+		list, _ := view[k].([]any)
+		out := make([]map[string]any, len(list))
+		for i, x := range list {
+			out[i], _ = x.(map[string]any) // 객체가 아니면 nil이라 isCell에서 걸립니다
+		}
+		return out
+	}
+	every := func(k string, ok func(map[string]any) bool) bool {
+		return !slices.ContainsFunc(items(k), func(x map[string]any) bool { return !ok(x) })
+	}
+	if !every("pieces", func(x map[string]any) bool {
+		s, isStr := x["piece"].(string)
+		return isCell(x) && isStr && jsLen(s) <= 32
+	}) {
+		p = append(p, "thumbnail.view.pieces: each needs a place on the board and a piece name")
+	}
+	if !every("marks", func(m map[string]any) bool {
+		_, isStr := m["piece"].(string)
+		return isCell(m) && slices.Contains(markTypes, str(m["type"])) &&
+			(!has(m, "piece") || isStr) && (!has(m, "color") || isColor(m["color"]))
+	}) {
+		p = append(p, "thumbnail.view.marks: each needs a place on the board and a known mark type")
+	}
+	if !every("tint", func(x map[string]any) bool { return isCell(x) && isColor(x["color"]) }) {
+		p = append(p, "thumbnail.view.tint: each needs a place on the board and a color")
+	}
+	if !every("text", func(x map[string]any) bool {
+		s, isStr := x["text"].(string)
+		return isCell(x) && isStr && jsLen(s) <= 8
+	}) {
+		p = append(p, "thumbnail.view.text: each needs a place on the board and up to 8 characters")
+	}
+	if len(p) > 0 {
+		return nil, p
+	}
+
+	// normalizeThumbnail: 알려진 칸만 남깁니다
+	cell := func(x map[string]any) map[string]any { return map[string]any{"row": x["row"], "col": x["col"]} }
+	board := map[string]any{"places": b["places"], "rows": b["rows"], "cols": b["cols"]}
+	for _, k := range []string{"look", "starPoints", "labels", "flipForPlayer"} {
+		if has(b, k) {
+			board[k] = b[k]
+		}
+	}
+	out := map[string]any{}
+	pieces := []any{}
+	for _, x := range items("pieces") {
+		c := cell(x)
+		c["piece"] = x["piece"]
+		pieces = append(pieces, c)
+	}
+	out["pieces"] = pieces
+	if _, present := view["marks"]; present {
+		marks := []any{}
+		for _, m := range items("marks") {
+			c := cell(m)
+			c["type"] = m["type"]
+			for _, k := range []string{"piece", "color"} {
+				if has(m, k) {
+					c[k] = m[k]
+				}
+			}
+			marks = append(marks, c)
+		}
+		out["marks"] = marks
+	}
+	for k, field := range map[string]string{"tint": "color", "text": "text"} {
+		if _, present := view[k]; present {
+			list := []any{}
+			for _, x := range items(k) {
+				c := cell(x)
+				c[field] = x[field]
+				list = append(list, c)
+			}
+			out[k] = list
+		}
+	}
+	norm := map[string]any{"board": board, "pieces": t["pieces"], "player": t["player"], "view": out}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false) // 크기를 JSON.stringify와 비슷하게 셉니다
+	if err := enc.Encode(norm); err != nil {
+		return nil, []string{"thumbnail: " + err.Error()}
+	}
+	data = bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
+	if len(data) > ThumbnailBytes {
+		return nil, []string{fmt.Sprintf("thumbnail is larger than %dKB", ThumbnailBytes>>10)}
+	}
+	return data, nil
+}
+
+// boardProblems: places와 1~32의 rows, cols (check.js의 boardProblems)
+func boardProblems(v any, where string) []string {
+	b, ok := v.(map[string]any)
+	if !ok {
+		return []string{where + ": must be an object"}
+	}
+	var p []string
+	if !slices.Contains(places, str(b["places"])) {
+		p = append(p, where+".places: must be 'cells', 'points', or 'both'")
+	}
+	for _, k := range []string{"rows", "cols"} {
+		if n, ok := whole(b[k]); !ok || n < 1 || n > boardSize {
+			p = append(p, fmt.Sprintf("%s.%s: must be a whole number from 1 to %d", where, k, boardSize))
+		}
+	}
+	return p
+}
+
+func piecesOk(v any) bool {
+	if s, ok := v.(string); ok {
+		return slices.Contains(pieceSets, s)
+	}
+	list, ok := v.([]any)
+	return ok && len(list) <= pieceKinds && !slices.ContainsFunc(list, func(x any) bool { _, isStr := x.(string); return !isStr })
+}
+
+func isColor(v any) bool {
+	if n, ok := v.(float64); ok {
+		return n == 0 || n == 1
+	}
+	s, ok := v.(string)
+	return ok && hexColor.MatchString(s)
+}
+
+// whole은 Number.isInteger입니다.
+func whole(v any) (float64, bool) {
+	n, ok := v.(float64)
+	return n, ok && n == math.Trunc(n) && !math.IsInf(n, 0)
+}
+
+// has는 키가 있는지입니다. 자바스크립트의 x[k] !== undefined (null은 있는 것으로 봅니다).
+func has(m map[string]any, k string) bool {
+	_, ok := m[k]
+	return ok
+}

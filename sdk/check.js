@@ -1,4 +1,4 @@
-// 게임 검사. 플레이그라운드, 명령줄(npx boardmadang check), 앞으로의 업로드 검사가 같은 코드를 씁니다.
+// 게임 검사. 플레이그라운드, 명령줄(npx boardmadang check), 사이트 등록창의 자동 검사(web/runner/host.js의 check)가 같은 코드를 씁니다.
 // 브라우저와 Node 양쪽에서 돌아가야 하므로 화면, 파일, 네트워크를 쓰지 않습니다.
 // 제한값의 이유는 docs/abuse-and-limits.md에 있습니다.
 //
