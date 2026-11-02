@@ -72,8 +72,8 @@ export function checkMembers(g) {
   if (!Number.isInteger(g.maxActions) || g.maxActions < 1 || g.maxActions > GAME_LIMITS.maxActions) {
     p.push(`maxActions: must be a whole number from 1 to ${GAME_LIMITS.maxActions.toLocaleString('en')}`);
   }
-  for (const k of ['setup', 'play', 'result', 'view']) if (!fn(k)) p.push(`${k}(): missing (must be a function)`);
-  for (const k of ['legal', 'observe', 'turn']) if (k in g && !fn(k)) p.push(`${k}: must be a function if present`);
+  for (const k of ['setup', 'play', 'result', 'view', 'turn']) if (!fn(k)) p.push(`${k}(): missing (must be a function)`);
+  for (const k of ['legal', 'observe']) if (k in g && !fn(k)) p.push(`${k}: must be a function if present`);
   if ('specialActions' in g
     && !(Array.isArray(g.specialActions) && g.specialActions.every((x) => typeof x === 'string' && x !== 'click'))) {
     p.push("specialActions: must be a list of names other than 'click'");
@@ -117,7 +117,8 @@ function choicesOf(game, s, random) {
 
 /**
  * 랜덤 대국 한 판. 양쪽이 고를 수 있는 행동 중 하나를 무작위로 둡니다.
- * deep이면 한 수마다 state를 고쳤는지, JSON인지, turn()이 맞는지도 봅니다 (느려서 앞의 몇 판만).
+ * 모든 판에서 play()가 받아들인 행동이 turn()이 말한 플레이어의 것인지 봅니다.
+ * deep이면 한 수마다 state를 고쳤는지, JSON인지, turn()이 0, 1, null인지도 봅니다 (느려서 앞의 몇 판만).
  */
 function playRandom(game, seed, { random, lang, deep }) {
   const out = { actions: [], effective: 0, end: null, result: null, sumMs: 0, maxMs: 0, legalIgnored: 0, problems: [] };
@@ -134,6 +135,7 @@ function playRandom(game, seed, { random, lang, deep }) {
     if (!choices.length) { out.end = 'noLegal'; break; }
 
     const [player, action] = choices[Math.floor(random() * choices.length)];
+    const turn = call('turn()', () => game.turn(s));
     const before = deep ? JSON.stringify(s) : null;
     const t = performance.now();
     const next = call('play()', () => game.play(s, player, action));
@@ -147,12 +149,19 @@ function playRandom(game, seed, { random, lang, deep }) {
     }
     out.actions.push({ player, action });
     const h2 = hashOf(next);
-    if (h2 !== h) out.effective++;
-    else if (game.legal) out.legalIgnored++;
+    if (h2 === h) {
+      if (game.legal) out.legalIgnored++;
+    } else {
+      out.effective++;
+      // 대국 시계와 AI 학습은 turn()으로 누가 둘 차례인지 압니다. play()와 어긋나면 안 됩니다
+      if (player !== turn) {
+        out.problems.push('play() accepted a move from a player whose turn it was not, according to turn(). The two must agree.');
+      }
+    }
     s = next;
     h = h2;
     r = call('result()', () => game.result(s, lang));
-    if (deep && game.turn) {
+    if (deep) {
       const t2 = call('turn()', () => game.turn(s));
       if (t2 !== 0 && t2 !== 1 && t2 !== null) out.problems.push(`turn() must return 0, 1, or null (got ${JSON.stringify(t2)})`);
       if (r && t2 !== null) out.problems.push('turn() must return null once the game is over, so the clock stops.');
@@ -203,7 +212,8 @@ function observeProblems(game, s) {
  * 게임 검사. 업로드 검사의 실행 단계를 그대로 합니다.
  *   - 필수 멤버와 제한값
  *   - 랜덤 대국 n판: 오류 없이 끝나는지, 진행이 막히지 않는지, play() 속도
- *   - 앞의 몇 판은 한 수마다: state를 고치지 않는지, JSON인지, 64KB 이하인지, turn()이 맞는지
+ *   - 한 수마다 play()가 받아들인 행동이 turn()이 말한 플레이어의 것인지
+ *   - 앞의 몇 판은 한 수마다: state를 고치지 않는지, JSON인지, 64KB 이하인지, turn()이 0, 1, null인지
  *   - 결정성: 같은 시드와 같은 행동으로 다시 두면 같은 상태인지
  *   - 언어: 판 그림과 승자가 lang과 상관없이 같은지 (langs가 둘 이상일 때)
  * problems는 고쳐야 올릴 수 있는 것, warnings는 알려만 주는 것입니다.

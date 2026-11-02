@@ -44,7 +44,7 @@ npx boardmadang new my-game
 server/    Go 백엔드: 매칭, 클릭 중계, 결과 기록          (AGPL-3.0)
 sdk/       게임 제작 도구 (npm 패키지 boardmadang): API 타입, 플레이그라운드, 검사, 묶기   (MIT)
 games/     예제 게임: 틱택토, 바둑, 체스                    (MIT)
-trainer/   (예정) AlphaZero 방식 AI 학습 파이프라인
+trainer/   AlphaZero 방식 AI 학습 (지금은 내 컴퓨터에서 게임 폴더 하나를 학습)   (AGPL-3.0)
 docs/      설계 문서
 web/       프론트엔드: 로비(게임 목록), 게임 등록창, 대전 화면         (AGPL-3.0)
 ```

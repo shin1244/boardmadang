@@ -67,6 +67,11 @@ export default {
     return { board, turn: 1 - player };
   },
 
+  // Whose turn is it? 0 or 1, or null once the game is over (the game clock stops).
+  turn(state) {
+    return state.turn; // (return null here once the game is over)
+  },
+
   // Is the game over? { winner: 0 or 1 } or { winner: null } for a draw. null = keep playing.
   result(state, lang) {
     return null; // (check for three in a row here)
@@ -95,7 +100,8 @@ Your code never deals with the network, the screen, or who the opponent is.
 2. **Don't change the state you receive.** Copy it and return a new one.
 3. **Keep the state plain JSON.** Numbers, strings, booleans, arrays, plain objects.
    No `Set`, `Map`, classes, or functions.
-4. **Ignore moves that aren't allowed** by returning the same state. Your game decides whose turn it is.
+4. **Ignore moves that aren't allowed** by returning the same state. Your game decides whose turn it is,
+   and `play()` only accepts moves from the player `turn()` names.
 
 `npx boardmadang check` catches all four, plays 200 random games, and checks speed and size limits.
 
@@ -103,7 +109,6 @@ Your code never deals with the network, the screen, or who the opponent is.
 
 | Add this | When |
 |---|---|
-| `turn(state)` | Return whose turn it is (`0`, `1`, or `null` when the game is over). Needed for a game timer. |
 | `legal(state, player)` | Return the moves allowed right now. Shows hover hints and helps the AI learn. |
 | `observe(state, player)` | Extra info you can't see on the board (like castling rights in chess), for the AI. |
 | `specialActions: ['pass']` | Moves that aren't on the board. Boardmadang shows them as buttons and sends `{ kind: 'pass' }`. |
@@ -171,7 +176,7 @@ languages, and the timer. You can also fill it in on the site when you register.
   `rulebook` means only the name, description, and rules are. Boardmadang passes one of your `full` languages as `lang`,
   so keep your in-game text in a small table per language.
 - **Timer:** each player gets this many minutes in total, like a chess clock (1 to 180, or `null` for none).
-  `custom: true` lets a room host pick their own time. A timer needs `turn()`.
+  `custom: true` lets a room host pick their own time.
 
 ## Limits
 

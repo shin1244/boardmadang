@@ -66,6 +66,16 @@ test('게임 함수가 오류를 던지면 어느 함수인지 알려줍니다',
   assert.ok(r.problems.some((p) => p === 'result() threw an error: boom'), r.problems.join('\n'));
 });
 
+test('turn()이 없으면 걸립니다', () => {
+  const { turn, ...noTurn } = tictactoe;
+  assert.ok(checkMembers(noTurn).includes('turn(): missing (must be a function)'));
+});
+
+test('turn()이 play()와 어긋나면 걸립니다', () => {
+  const r = checkGame(variant({ turn: (s) => (tictactoe.turn(s) === null ? null : 0) }), opts);
+  assert.ok(r.problems.some((p) => p.includes('The two must agree')), r.problems.join('\n'));
+});
+
 test('판 그림이 언어에 따라 달라지면 걸립니다', () => {
   const view = (s, p, lang) => ({ ...tictactoe.view(s, p, lang), pieces: lang === 'en' ? [] : tictactoe.view(s, p, lang).pieces });
   const r = checkGame(variant({ view }), opts);

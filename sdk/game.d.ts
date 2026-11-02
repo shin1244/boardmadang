@@ -95,7 +95,6 @@ export type Support = 'full' | 'rulebook';
 
 /**
  * 타이머. 각 플레이어가 자기 차례에 쓸 수 있는 총 시간입니다 (체스 시계). 다 쓰면 집니다.
- * 타이머를 쓰려면 게임에 turn()이 있어야 합니다.
  */
 export interface Timer {
   /** 기본 타이머 (분, 1~180). null이면 타이머 없음. 빠른 매칭은 이 시간으로 합니다. */
@@ -170,11 +169,12 @@ export interface Game<S> {
   view(state: S, player: Player, lang: Lang): View;
 
   /**
-   * (선택) 지금 누구 차례인지. 끝났거나 아무도 차례가 아니면 null.
-   * 플랫폼은 이걸로 대국 시계를 돌립니다. 없으면 이 게임은 타이머를 쓸 수 없습니다.
+   * 지금 누구 차례인지. 끝났거나 아무도 차례가 아니면 null.
+   * 플랫폼은 이걸로 대국 시계를 돌리고, AI 학습은 탐색할 때 둘 차례를 압니다.
+   * play()는 이 플레이어의 행동만 받아들여야 합니다 (검사가 랜덤 대국으로 확인합니다).
    * 선택 → 이동처럼 한 차례에 클릭이 여러 번이어도, 차례가 넘어갈 때만 바뀌면 됩니다.
    */
-  turn?(state: S): Player | null;
+  turn(state: S): Player | null;
 
   /** (선택) 지금 둘 수 있는 행동 목록. AI 학습의 행동 마스크와 호버 표시에 쓰입니다. */
   legal?(state: S, player: Player): Action[];
