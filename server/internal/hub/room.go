@@ -27,7 +27,8 @@ type Room struct {
 
 	hashes  map[int][2]*report // 순번 → 양쪽이 보고한 상태 해시와 차례. -1은 시작 상태. 양쪽이 모이면 agreed로 옮깁니다
 	agreed  map[int]string     // 순번 → 양쪽이 같다고 확인한 해시. 직전 것만 남깁니다
-	ignored [2]int             // 플레이어별 무시된 행동 수 (해시가 직전과 같았던 행동)
+	inTurn  map[string]bool    // 이번 차례에 나온 판의 해시들 (차례가 시작된 판부터)
+	ignored [2]int             // 플레이어별 무시된 행동 수 (상태가 그대로였거나 이번 차례에 이미 나온 판으로 돌아간 행동)
 	results [2]*protocol.Result
 	ended   bool
 	final   *protocol.Ended // 끝난 결과. 끊긴 채로 끝난 대국에 돌아온 플레이어에게 보여줍니다
@@ -66,6 +67,7 @@ func newRoom(h *Hub, id, game, version string, seed uint32, minutes *int, player
 		Players:  players,
 		hashes:   make(map[int][2]*report),
 		agreed:   make(map[int]string),
+		inTurn:   make(map[string]bool),
 		clockSeq: -2,
 		started:  time.Now(),
 		drawAt:   [2]int{-1, -1},
@@ -81,8 +83,8 @@ func newRoom(h *Hub, id, game, version string, seed uint32, minutes *int, player
 // 행동이 규칙에 맞는지는 검사하지 않습니다. 그건 클라이언트의 게임 로직이 합니다.
 // 무승부 제안이 있었으면 행동 하나로 없어집니다.
 //
-// maxActions는 서버가 세지 않습니다. 무시된 행동은 세지 않아야 하는데, 그건 해시가 모여야 알 수 있습니다.
-// 상태를 바꾼 행동 수는 양쪽 클라이언트가 세고, maxActions에 이르면 무승부 결과를 보고합니다.
+// maxActions는 서버가 세지 않습니다. 차례가 넘어간 행동만 세야 하는데, 그건 해시와 차례가 모여야 알 수 있습니다.
+// 둔 수는 양쪽 클라이언트가 세고, maxActions에 이르면 무승부 결과를 보고합니다.
 func (r *Room) relay(player int, a protocol.Action) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -142,16 +144,26 @@ func (r *Room) reportHash(player, seq int, hash string, turn *int) {
 	r.agreed[seq] = hash
 	delete(r.agreed, seq-2)
 	if seq < 0 {
+		r.inTurn = map[string]bool{hash: true}
 		return
 	}
 
 	// 상태가 직전과 같으면 그 행동은 게임 로직이 무시한 것입니다.
-	if hash == r.agreed[seq-1] {
-		p := r.Log[seq].Player
+	// 차례가 그대로인데 이번 차례에 이미 나온 판으로 돌아갔으면(기물을 골랐다 바꾸기를 되풀이) 아무것도 안 한 것과 같아서
+	// 무시된 행동으로 셉니다. 판은 그대로 바뀌지만, 맴돌며 기록을 늘리거나 시간을 끄는 데 쓸 수 없습니다.
+	// turn()이 없는 게임은 차례를 모르므로 모든 행동이 차례를 넘긴 것으로 봅니다.
+	p := r.Log[seq].Player
+	passed := got[0].turn == nil || *got[0].turn != p
+	switch {
+	case hash == r.agreed[seq-1] || (!passed && r.inTurn[hash]):
 		r.ignored[p]++
 		if r.ignored[p] > MaxIgnored {
 			r.end(other(p), protocol.ReasonSpam)
 		}
+	case passed:
+		r.inTurn = map[string]bool{hash: true}
+	default:
+		r.inTurn[hash] = true
 	}
 }
 

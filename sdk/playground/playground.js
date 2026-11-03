@@ -36,8 +36,9 @@ const playMs = [];
 let seed;
 let state;
 let stateHash;
-let log; // [{ player, action, changed }]
-let effective; // 상태를 바꾼 행동 수 (maxActions 기준)
+let log; // [{ player, action, changed, back }]
+let moves; // 둔 수: 차례가 넘어간 행동 수 (maxActions 기준)
+let turnHashes; // 이번 차례에 나온 판의 해시들. 이미 나온 판으로 돌아가면 대전 서버처럼 무시된 행동으로 셉니다
 let ignored; // 플레이어별 무시된 행동 수
 let ended; // Result | null
 
@@ -60,7 +61,8 @@ function newGame(s) {
   if (bad) warn(`setup() returned a state with a non-JSON value: ${bad}`);
   stateHash = hashOf(state);
   log = [];
-  effective = 0;
+  moves = 0;
+  turnHashes = [stateHash];
   ignored = [0, 0];
   ended = null;
   checkResult();
@@ -88,9 +90,16 @@ function dispatch(player, action) {
 
   const h = hashOf(next);
   const changed = h !== stateHash;
-  log.push({ player, action, changed });
-  if (changed) effective++;
-  else ignored[player]++;
+  // 차례가 넘어가면(판이 끝나도) 한 수입니다. 차례가 그대로인데 이번 차례에 나온 판으로 돌아가면(기물을 골랐다 바꾸기)
+  // 아무것도 안 한 것과 같아서 무시된 행동으로 셉니다. 판은 그대로 바뀝니다
+  const passed = changed && turnOf(next) !== player;
+  const back = changed && !passed && turnHashes.includes(h);
+  log.push({ player, action, changed, back });
+  if (passed) {
+    moves++;
+    turnHashes = [h];
+  } else if (!changed || back) ignored[player]++;
+  else turnHashes.push(h);
   state = next;
   stateHash = h;
 
@@ -99,6 +108,16 @@ function dispatch(player, action) {
   checkTurn();
   checkLangs();
   render();
+}
+
+/** 그 판에서 둘 차례인 플레이어. turn()이 없거나 오류면 null (그러면 상태를 바꾼 행동마다 한 수) */
+function turnOf(s) {
+  if (typeof game.turn !== 'function') return null;
+  try {
+    return game.turn(s);
+  } catch {
+    return null;
+  }
 }
 
 /** turn()은 0, 1, null만 돌려줘야 합니다. 플랫폼이 대국 시계를 이걸로 돌립니다. */
@@ -123,7 +142,7 @@ function checkResult() {
   } catch (e) {
     warn(`result() threw an error: ${e.message}`);
   }
-  if (!r && effective >= game.maxActions) r = { winner: null, reason: 'maxActions' };
+  if (!r && moves >= game.maxActions) r = { winner: null, reason: 'maxActions' };
   if (r) ended = r;
 }
 
@@ -267,14 +286,15 @@ function render() {
     status.textContent = 'Playing';
     status.className = 'status';
   }
-  $('#counts').textContent = `Moves that changed the state: ${effective} / ${game.maxActions} · ignored: P0 ${ignored[0]}, P1 ${ignored[1]} · hash ${stateHash}`;
+  $('#counts').textContent = `Moves (the turn passed): ${moves} / ${game.maxActions} · ignored: P0 ${ignored[0]}, P1 ${ignored[1]} · hash ${stateHash}`;
 
   const logEl = $('#log');
   logEl.innerHTML = '';
   log.forEach((e, i) => {
     const li = document.createElement('li');
-    li.textContent = `#${i} P${e.player} ${fmtAction(e.action)}${e.changed ? '' : ' (ignored)'}`;
-    if (!e.changed) li.className = 'ignored';
+    const note = !e.changed ? ' (ignored)' : e.back ? ' (back to a position from this turn: counted as ignored)' : '';
+    li.textContent = `#${i} P${e.player} ${fmtAction(e.action)}${note}`;
+    if (note) li.className = 'ignored';
     logEl.prepend(li);
   });
 

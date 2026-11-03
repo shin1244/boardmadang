@@ -24,6 +24,25 @@ test('틱택토는 검사를 통과합니다', () => {
   assert.equal(r.stats.tally[0] + r.stats.tally[1] + r.stats.tally.draw + r.stats.tally.maxActions, 30);
 });
 
+/** 칸을 눌러 고르고(다른 칸을 누르면 바꿈) 같은 칸을 다시 눌러야 두는 틱택토. 한 수가 행동 두 개 이상입니다 */
+const pickToPlace = variant({
+  setup: () => ({ ...tictactoe.setup(), sel: null }),
+  play(state, player, action) {
+    const { sel, ...inner } = state;
+    const next = tictactoe.play(inner, player, action);
+    if (next === inner) return state;
+    const i = action.row * 3 + action.col;
+    return sel === i ? { ...next, sel: null } : { ...state, sel: i };
+  },
+});
+
+test('maxActions는 차례가 넘어간 수만 셉니다 (칸 고르기는 세지 않음)', () => {
+  const r = checkGame(pickToPlace, opts);
+  assert.deepEqual(r.problems, []);
+  assert.equal(r.stats.tally.maxActions, 0, '9수 안에 끝나는 게임은 고르기가 많아도 maxActions(9)에 닿지 않습니다');
+  assert.ok(r.stats.avgMoves >= 5 && r.stats.avgMoves <= 9);
+});
+
 test('필수 멤버가 없으면 대국을 두지 않고 멈춥니다', () => {
   const r = checkGame({ id: 'Bad Id', board: { places: 'cells', rows: 40, cols: 3 }, pieces: 'xo', maxActions: 9 }, opts);
   assert.equal(r.stats, null);

@@ -328,6 +328,8 @@ function fillAbout(entry) {
   $('#gd-timer').textContent = timer.custom
     ? `${timerText(timer.minutes)} · ${t('detail.timer.custom')}`
     : timerText(timer.minutes);
+  $('#gd-clear-row').hidden = !entry.clear;
+  $('#gd-clear').href = `/web/replay.html?clear=${encodeURIComponent(entry.id)}`;
   $('#gd-langs-row').hidden = !listing;
   if (listing) {
     const levels = [...fullLangs(listing).map((l) => t('tag.lang.full', { lang: LANG_NAMES[l] })),

@@ -185,6 +185,8 @@ type Game struct {
 	// 화면이 보드 렌더러로 다시 그립니다. 없거나 깨졌으면 null이고, 화면은 시작 판을 그립니다.
 	// 모양 검사는 찍을 때와 업로드할 때 합니다 (sdk/check.js의 validateThumbnail).
 	Thumbnail json.RawMessage `json:"thumbnail"`
+	// 제작자 클리어 기보가 있는지 (올린 게임만, GET /api/games/<id>/clear). 레포 게임은 클리어 체크를 하지 않습니다
+	Clear bool `json:"clear,omitempty"`
 }
 
 // Has는 레포에 그 id의 게임 폴더가 있는지입니다. 회원은 이 id로 게임을 올릴 수 없습니다.

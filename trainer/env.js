@@ -4,7 +4,9 @@
 //   행동   클릭 rows × cols 개 + specialActions. 번호 = row * cols + col, 특수 행동은 그 뒤
 //   마스크 legal()이 있으면 그 행동 중에서, 없으면 모든 행동 중에서 실제로 상태를 바꾸는 것만
 //   차례   turn()
-//   보상   result()의 승 +1 / 패 −1 / 무 0. 상태를 바꾼 행동이 maxActions에 이르면 무승부
+//   보상   result()의 승 +1 / 패 −1 / 무 0. 둔 수가 maxActions에 이르면 무승부
+//   수     차례가 넘어간 행동 하나. 기물 고르기처럼 차례가 그대로인 행동은 수가 아니고, 그 차례에 이미 나온
+//          판으로 돌아가는 행동은 아무것도 안 한 것이라 무시된 행동으로 봅니다 (혼자 맴돌며 같은 판을 만들지 못하게)
 //
 // 대국 화면과 같은 규칙으로 돕니다 (sdk/check.js의 랜덤 대국과 같음).
 // play()가 오류를 던지거나 상태를 그대로 두면 무시된 행동, view()가 오류면 빈 판, result()가 오류면 진행 중입니다.
@@ -33,8 +35,8 @@ function attempt(f, fallback) {
 }
 
 /**
- * 판 하나. state와 해시, 지금까지 상태를 바꾼 행동 수(maxActions 무승부를 셈)입니다.
- * @typedef {{ state: any, hash: string, effective: number }} Position
+ * 판 하나. state와 해시, 지금까지 둔 수(maxActions 무승부를 셈), 이번 차례에 나온 판의 해시들(차례가 시작된 판부터)입니다.
+ * @typedef {{ state: any, hash: string, moves: number, turnHashes: string[] }} Position
  */
 
 export class Env {
@@ -77,7 +79,8 @@ export class Env {
   /** 새 판 */
   start(seed) {
     const state = this.game.setup(makeRng(seed));
-    return { state, hash: hashOf(state), effective: 0 };
+    const hash = hashOf(state);
+    return { state, hash, moves: 0, turnHashes: [hash] };
   }
 
   /** 지금 둘 차례인 플레이어 (turn()). 아무도 아니면 null */
@@ -94,7 +97,7 @@ export class Env {
   outcome(pos, moves = null) {
     const r = attempt(() => this.game.result(pos.state, this.lang), null);
     if (r) return { winner: r.winner === 0 || r.winner === 1 ? r.winner : null };
-    if (pos.effective >= this.maxActions) return { winner: null };
+    if (pos.moves >= this.maxActions) return { winner: null };
     if (this.toPlay(pos) === null) return { winner: null };
     if (moves && moves.length === 0) return { winner: null };
     return null;
@@ -128,12 +131,15 @@ export class Env {
       .sort((a, b) => a - b);
   }
 
-  /** player가 행동 i를 둔 판. 무시된 행동이면 null */
+  /** player가 행동 i를 둔 판. 무시된 행동이거나 이번 차례에 이미 나온 판으로 돌아가면 null */
   apply(pos, player, i) {
     const state = attempt(() => this.game.play(pos.state, player, this.actionOf(i)), pos.state);
     const hash = hashOf(state);
     if (hash === pos.hash) return null;
-    return { state, hash, effective: pos.effective + 1 };
+    // 차례가 넘어갔거나 판이 끝났으면 한 수입니다
+    if (attempt(() => this.game.turn(state), null) !== player) return { state, hash, moves: pos.moves + 1, turnHashes: [hash] };
+    if (pos.turnHashes.includes(hash)) return null;
+    return { state, hash, moves: pos.moves, turnHashes: [...pos.turnHashes, hash] };
   }
 
   /** 둘 차례인 쪽이 행동 하나를 둡니다. 무시된 행동이면 null */
@@ -221,4 +227,22 @@ export class Env {
     }
     return out;
   }
+}
+
+/**
+ * 학습할 때만 쓰는 무승부 규칙: 차례가 시작된 판이 세 번 나오거나 maxMoves수를 두면 끝냅니다 (체스의 반복 무승부처럼).
+ * 양쪽이 같은 판을 오가면 maxActions까지 가서 학습이 아주 느려지기 때문입니다. 반복은 양쪽이 함께 만들어야 하므로
+ * 이기고 있는 쪽은 피할 수 있습니다 (한 차례 안에서 맴도는 것은 env.apply가 막음).
+ * 판마다 하나 만들고, 둘 판을 넣으면 끝낼지 알려 줍니다.
+ */
+export function drawRule(maxMoves) {
+  const seen = new Map();
+  return (pos) => {
+    if (pos.moves >= maxMoves) return true;
+    // 차례가 시작된 판만 셉니다. 기물을 고른 상태처럼 차례 중간의 판은 수가 아닙니다
+    if (pos.turnHashes.length > 1) return false;
+    const n = (seen.get(pos.hash) ?? 0) + 1;
+    seen.set(pos.hash, n);
+    return n >= 3;
+  };
 }

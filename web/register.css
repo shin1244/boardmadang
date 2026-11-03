@@ -58,7 +58,7 @@ fieldset[aria-invalid="true"], #langs[aria-invalid="true"] { border-color: var(-
 .choice span { display: flex; flex-direction: column; }
 .choice small { color: var(--muted); font-size: 12px; line-height: 1.4; }
 
-/* 단계 표시: 1 게임 파일 → 2 게임과 언어 → 3 설명 글 */
+/* 단계 표시: 1 게임 파일 → 2 직접 깨기 (사이트만) → 3 게임과 언어 → 4 설명 글 */
 .steps { display: flex; gap: 8px; margin: 0 0 20px; padding: 0; list-style: none; }
 .steps li {
   display: flex;
@@ -83,6 +83,7 @@ fieldset[aria-invalid="true"], #langs[aria-invalid="true"] { border-color: var(-
 .steps li[aria-current="step"] b { border-color: var(--accent); background: var(--accent); color: var(--accent-text); }
 .steps li.done { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 .step[hidden] { display: none; }
+.steps li[hidden] { display: none; }
 
 /* 지원 언어: 일부 번역 / 완전 번역 두 줄에 언어 버튼 */
 .lang-group { margin-top: 18px; }
@@ -105,7 +106,7 @@ fieldset[aria-invalid="true"], #langs[aria-invalid="true"] { border-color: var(-
 /* 다른 줄에서 고른 언어 */
 .chip.elsewhere { opacity: 0.4; }
 
-/* 2단계: 언어별 글 */
+/* 4단계: 언어별 글 */
 .text-block {
   margin: 14px 0 0;
   padding: 14px 16px 16px;
@@ -133,6 +134,30 @@ fieldset[aria-invalid="true"], #langs[aria-invalid="true"] { border-color: var(-
 .check-list:empty { display: none; }
 .check-notes { margin-top: 10px; font-size: 14px; color: var(--warn); }
 .check-notes[hidden] { display: none; }
+
+/* 2단계: 직접 깨기와 썸네일 */
+.play { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: flex-start; margin-top: 14px; }
+.play-board { flex: 0 1 420px; min-width: 0; }
+.play-board canvas { display: block; max-width: 100%; }
+.play-board canvas.ended { opacity: 0.75; }
+.play-message { min-height: 1.5em; margin: 8px 0 0; font-size: 14px; font-weight: 600; }
+.play-side { flex: 1 1 220px; min-width: 0; }
+.play-status { margin: 0 0 12px; font-size: 16px; font-weight: 700; }
+.play-status small { display: block; margin-top: 2px; color: var(--muted); font-size: 13px; font-weight: 400; }
+.play-status.win { color: var(--good); }
+.seats { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.seats-label { margin-right: 4px; color: var(--muted); font-size: 13px; }
+.seat .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; }
+.seat:disabled { cursor: not-allowed; opacity: 0.5; }
+.play-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.play-buttons:empty { display: none; }
+.play-buttons .btn { padding: 6px 14px; font-size: 14px; white-space: nowrap; }
+.play-buttons .btn:disabled { cursor: not-allowed; }
+#clear-status:empty { display: none; }
+.thumb-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; margin-top: 12px; }
+.thumb-row canvas { display: block; max-width: 100%; border-radius: 8px; }
+.thumb-row canvas[hidden] { display: none; }
+.thumb-row .status-line { margin: 0 0 10px; }
 
 .need-account p { margin: 0 0 14px; color: var(--muted); }
 .need-account .btn { display: inline-block; text-decoration: none; }

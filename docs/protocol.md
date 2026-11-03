@@ -18,7 +18,8 @@
 | `POST /api/reports` | 신고 `{"game":"tictactoe","comment":"RN92MFYW","reason":"spam","detail":"…"}` → `{"ok":true,"hidden":false}`. `comment`가 없으면 게임 신고 |
 | `GET /api/uploads` | 내가 올린 게임과 오늘 남은 등록 횟수 `{"games":[{"id":"dots","version":"e9ff673cd0205ffa","published":"…"}],"left":4}`. 계정만 |
 | `POST /api/drafts` | 게임 zip을 초안으로 올리기. 본문은 zip 그대로(`Content-Type: application/zip`). 계정만 → `201 {"id":"<초안>","module":"/drafts/<초안>/index.js","version":"…","files":[{"path":"index.js","bytes":3640}],"listing":{…},"thumbnail":{…},"thumbnailProblems":["…"]}` |
-| `POST /api/drafts/{draft}/publish` | 초안 등록 `{"id":"dots","listing":{…},"thumbnail":true}` → `{"game":{…}}` (`/api/games`의 항목). 계정만 |
+| `POST /api/drafts/{draft}/publish` | 초안 등록 `{"id":"dots","listing":{…},"thumbnail":{…},"clear":{"version":"…","seed":3551073280,"moves":[{"player":0,"action":{"kind":"click","row":1,"col":1}}],"winner":0}}` → `{"game":{…}}` (`/api/games`의 항목). 계정만 |
+| `GET /api/games/{id}/clear` | 제작자 클리어 기보. 올린 게임의 지금 버전만 `{"game":"dots","version":"…","seed":3551073280,"moves":[…],"winner":0,"at":"…"}`. 없으면 `404` |
 | `GET /drafts/{draft}/{path}` | 초안의 파일. 등록창이 실행기에 불러와 검사합니다 |
 | `GET /uploads/{id}/{version}/{path}` | 올린 게임의 코드. 버전이 곧 내용의 해시라 오래 캐시합니다 (`immutable`) |
 
@@ -36,8 +37,9 @@
 
 ### 게임 올리기 ([server/internal/upload](../server/internal/upload))
 
-등록창이 `npx boardmadang pack`의 zip을 초안으로 올리고(`POST /api/drafts`), 실행기 안에서 자동 검사를 돌린 뒤 등록합니다
-(`POST /api/drafts/{draft}/publish`). 등록하면 바로 `/api/games`에 나오고, `module`은 `/uploads/<id>/<버전>/index.js`입니다.
+등록창이 `npx boardmadang pack`의 zip을 초안으로 올리고(`POST /api/drafts`), 실행기 안에서 자동 검사를 돌리고,
+제작자가 직접 한 판을 이긴 뒤(클리어 체크) 등록합니다 (`POST /api/drafts/{draft}/publish`).
+등록하면 바로 `/api/games`에 나오고, `module`은 `/uploads/<id>/<버전>/index.js`입니다.
 개발 서버에는 이 API가 없어서 등록창은 `GET /api/uploads`가 404면 개발용(레포 게임의 등록 정보 고치기)으로 돕니다.
 
 - zip 규칙: `.js`, `.mjs` 코드(합쳐서 256KB)와 맨 위의 `listing.json`, `thumbnail.json`만 받습니다. 맨 위에 `index.js`가 있어야 합니다.
@@ -47,7 +49,15 @@
 - 규칙에 맞지 않으면 `422 {"error":"problems","problems":[{"code":"file.badType","file":"notes.txt"}]}`입니다.
   코드: `zip.bad`, `zip.tooBig`(413), `zip.tooManyFiles`, `file.badName`, `file.badType`, `file.duplicate`, `file.tooBig`, `file.badJson`, `file.noIndex`, `code.tooBig`
 - 등록할 때 등록 정보를 `listing.js`의 `validateListing`과 같은 규칙으로 다시 검사합니다 (`422`, 문제 코드는 등록창과 같음).
-  썸네일은 `thumbnail: true`이고 `validateThumbnail`과 같은 검사를 통과해야 씁니다. 틀린 `thumbnail.json`은 문제로 보지 않고 빼고 등록합니다.
+  썸네일은 등록창이 zip의 `thumbnail.json`이나 직접 찍은 판을 게임 코드와 맞는지 본 뒤 `thumbnail`로 보냅니다 (없으면 `null`).
+  서버는 `validateThumbnail`과 같은 검사를 하고, 틀리면 `422 thumbnail.invalid`입니다.
+- 클리어 체크 ([clear.go](../server/internal/upload/clear.go)): `clear`는 제작자가 등록창에서 혼자 양쪽을 둬서 `result()`가 승자를 정한 판입니다.
+  `seed`, 상태를 바꾼 행동만 담은 `moves`(1~4,000개), 승자 `winner`(0 또는 1), 그 판을 둔 코드 `version`입니다.
+  - 무승부, 기권, `maxActions` 도달은 클리어가 아닙니다. 등록창이 그런 판은 보내지 않습니다.
+  - 새 게임이거나 버전이 바뀌었으면 꼭 있어야 합니다(`422 clear.missing`). 같은 버전을 다시 등록할 때는 `null`이면 전에 깬 판을 그대로 씁니다.
+  - `version`이 초안과 다르면 `422 clear.version`, 모양이 틀리면 `422 clear.invalid`입니다.
+  - 서버는 게임 코드를 돌리지 않으므로 정말 이긴 판인지는 모르고 모양만 봅니다. 재생해서 검증하는 건 공개한 뒤에 합니다.
+  - `/api/games`의 항목에 `"clear":true`가 있으면 `GET /api/games/{id}/clear`로 받아 다시보기(`/web/replay.html?clear=<id>`)에서 봅니다.
 - 같은 계정이 같은 id로 다시 등록하면 새 버전이 되고, 옛 버전 코드는 기보 다시보기를 위해 남깁니다. 같은 버전이면 등록 정보만 바뀝니다.
 - 실패: `409 {"error":"id taken"}` 레포 게임이거나 다른 계정이 올린 id, `400 {"error":"bad id"}` id 모양(영문 소문자, 숫자, `-`로 40자까지),
   `429 {"error":"too many"}` 하루 등록 5번 또는 한 시간에 초안 30번, `404` 초안이 없거나 남의 것이거나 하루가 지남
@@ -136,8 +146,8 @@
 - `action`에는 **순번을 넣지 않습니다.** 순번은 서버가 받은 순서대로 붙입니다.
 - `winner`가 `null`이면 무승부입니다.
 - `matched`를 받으면 `setup()`한 시작 상태의 해시를 `seq: -1`로 보냅니다.
-  서버는 `seq`의 해시가 `seq - 1`과 같으면 그 행동이 무시됐다고 봅니다.
-- 상태를 바꾼 행동이 `maxActions`에 이르면 클라이언트가 `result {winner: null, reason: "maxActions"}`를 보냅니다.
+  서버는 `seq`의 해시가 `seq - 1`과 같거나, 차례가 그대로인데 이번 차례에 이미 나온 해시면 그 행동이 무시됐다고 봅니다.
+- 둔 수(차례가 넘어간 행동)가 `maxActions`에 이르면 클라이언트가 `result {winner: null, reason: "maxActions"}`를 보냅니다.
   양쪽이 같은 기록으로 같은 수를 세므로 보고가 일치합니다.
 
 ## 서버 → 클라이언트
@@ -179,7 +189,7 @@
 | `desync` | 해시 불일치로 무효 (`winner`는 `null`) |
 | `disagree` | 양쪽 결과 보고가 다름 (`winner`는 `null`, 분쟁으로 기록) |
 | `spam` | 한쪽이 무시된 행동을 너무 많이 보냄 → 상대 승 |
-| `limit` | 행동 기록이 상한(3,000)에 닿음 → 무효 (`winner`는 `null`) |
+| `limit` | 행동 기록이 상한(5,000)에 닿음 → 무효 (`winner`는 `null`) |
 | `timeout` | 한쪽이 시간을 다 씀 → 상대 승 |
 | `agreed` | 무승부 제안을 상대가 수락함 (`winner`는 `null`) |
 
