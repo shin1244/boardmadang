@@ -45,8 +45,8 @@ func setup(t *testing.T) *fixture {
 	f := &fixture{dir: dir}
 	f.boss, _, _ = accounts.Create("google", "1", "boss")
 	f.author, _, _ = accounts.Create("google", "2", "author")
-	f.r1, _, _ = accounts.Create("google", "3", "reporter1")
-	f.r2, _, _ = accounts.Create("google", "4", "reporter2")
+	f.r1, _, _ = accounts.Create("google", "3", "report1")
+	f.r2, _, _ = accounts.Create("google", "4", "report2")
 	os.MkdirAll(filepath.Join(dir, "uploads", "dots"), 0o755)
 	os.WriteFile(filepath.Join(dir, "uploads", "dots", "game.json"), []byte(strings.Replace(meta, "%s", f.author.ID, 1)), 0o644)
 	uploads, err := upload.Open(dir)

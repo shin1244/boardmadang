@@ -7,7 +7,7 @@
 
 import { localize } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
-import { displayName, isMember, loadMe, renderMe, suspendedText } from './me.js';
+import { NAME_CHARS, displayName, isMember, loadMe, renderMe, suspendedText } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -204,7 +204,11 @@ async function rename(e) {
   e.preventDefault();
   if (accountBusy || !account) return;
   const name = $('#rename-name').value.trim();
-  if ([...name].length < account.min || [...name].length > account.max) {
+  if (!NAME_CHARS.test(name)) {
+    renameStatus = { key: 'signup.error.chars' };
+    return render();
+  }
+  if (name.length < account.min || name.length > account.max) {
     renameStatus = { key: 'signup.error.length' };
     return render();
   }

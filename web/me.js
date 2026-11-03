@@ -23,6 +23,9 @@ export function loadMe() {
 
 export const isMember = (me) => me?.kind === 'member';
 
+/** 계정 이름에 쓸 수 있는 글자: 영문과 숫자만 (서버의 account.ValidName과 같은 규칙. 글자 수는 서버가 알려 줍니다) */
+export const NAME_CHARS = /^[A-Za-z0-9]*$/;
+
 /** 정지된 계정이면 그 안내 글 (언제까지, 무엇이 안 되는지). 아니면 '' */
 export function suspendedText(me) {
   if (!me?.suspended) return '';

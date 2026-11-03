@@ -19,7 +19,7 @@ func TestFindAndCreate(t *testing.T) {
 	if _, ok := s.Find("github", "42"); ok {
 		t.Fatal("found before create")
 	}
-	if _, _, err := s.Create("github", "42", "운영자"); !errors.Is(err, ErrNameReserved) {
+	if _, _, err := s.Create("github", "42", "admin1"); !errors.Is(err, ErrNameReserved) {
 		t.Fatalf("reserved name: %v", err)
 	}
 	a, created, err := s.Create("github", "42", " shin ")
@@ -53,10 +53,12 @@ func TestFindAndCreate(t *testing.T) {
 func TestReopen(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := Open(dir)
-	a, _, _ := s.Create("google", "1001", "재근")
+	a, _, _ := s.Create("google", "1001", "jaegeun")
 
+	// 지금 규칙 전에 정한 이름(한글)은 그대로 읽습니다.
 	// 끝까지 못 쓴 줄이 있어도 나머지는 읽습니다
 	f, _ := os.OpenFile(filepath.Join(dir, "accounts.jsonl"), os.O_APPEND|os.O_WRONLY, 0)
+	f.WriteString(`{"op":"add","id":"m_old","provider":"google","sub":"2002","name":"재근","at":"2026-10-01T00:00:00Z"}` + "\n")
 	f.WriteString(`{"op":"add","id":"m_bro`)
 	f.Close()
 
@@ -67,24 +69,29 @@ func TestReopen(t *testing.T) {
 	if b, ok := s.Find("google", "1001"); !ok || b != a {
 		t.Fatalf("after reopen = %+v, want %+v", b, a)
 	}
+	if name, ok := s.Name("m_old"); !ok || name != "재근" {
+		t.Fatalf("old name = %q, %v", name, ok)
+	}
 }
 
 func TestValidName(t *testing.T) {
 	for in, want := range map[string]error{
-		"shin":          nil,
-		"재근":            nil,
-		"a_b-c.d":       nil,
-		"Player123":     nil,
-		"a":             ErrNameLength,
-		"123456789abcd": ErrNameLength,
-		"":              ErrNameLength,
-		"two words":     ErrNameChars,
-		"<b>hi":         ErrNameChars,
-		"hi😀":           ErrNameChars,
-		"Admin":         ErrNameReserved,
-		"보드마당짱":         ErrNameReserved,
-		"Guest4821":     ErrNameReserved,
-		"게스트1234":       ErrNameReserved,
+		"shin":      nil,
+		" ab12 ":    nil,
+		"Player12":  nil,
+		"12345678":  nil,
+		"abc":       ErrNameLength,
+		"abcdefghi": ErrNameLength,
+		"":          ErrNameLength,
+		"재근":        ErrNameChars, // 글자 수보다 글자를 먼저 봅니다
+		"신준규사오육칠팔":  ErrNameChars,
+		"a_b-c.d":   ErrNameChars,
+		"two words": ErrNameChars,
+		"<b>hi":     ErrNameChars,
+		"hi😀":       ErrNameChars,
+		"ｆｕｌｌ":      ErrNameChars, // 전각 영문
+		"Admin1":    ErrNameReserved,
+		"Guest48":   ErrNameReserved,
 	} {
 		if _, err := ValidName(in); err != want {
 			t.Errorf("ValidName(%q) = %v, want %v", in, err, want)
@@ -94,11 +101,13 @@ func TestValidName(t *testing.T) {
 
 func TestSuggest(t *testing.T) {
 	for in, want := range map[string]string{
-		"octo-cat":              "octo-cat",
-		"Jae Geun":              "JaeGeun",
-		"a":                     "",
-		"admin":                 "",
-		strings.Repeat("가", 20): strings.Repeat("가", MaxName),
+		"octo-cat":         "octocat",
+		"Jae Geun":         "JaeGeun",
+		"jun.kyu_99":       "junkyu99",
+		"verylongname1234": "verylong",
+		"재근":               "",
+		"a":                "",
+		"admin":            "",
 	} {
 		if got := Suggest(in); got != want {
 			t.Errorf("Suggest(%q) = %q, want %q", in, got, want)
@@ -123,7 +132,7 @@ func TestRename(t *testing.T) {
 	s, now := open(t, dir)
 	a, _, _ := s.Create("google", "1", "shin")
 
-	if _, err := s.Rename(a.ID, "운영자"); !errors.Is(err, ErrNameReserved) {
+	if _, err := s.Rename(a.ID, "admin1"); !errors.Is(err, ErrNameReserved) {
 		t.Fatalf("reserved: %v", err)
 	}
 	if _, err := s.Rename(a.ID, " shin "); !errors.Is(err, ErrNameSame) {
@@ -133,14 +142,14 @@ func TestRename(t *testing.T) {
 		t.Fatalf("unknown id: %v", err)
 	}
 	// 가입한 뒤 첫 번째는 바로 됩니다
-	got, err := s.Rename(a.ID, "준규")
-	if err != nil || got.Name != "준규" || !got.Renamed.Equal(*now) {
+	got, err := s.Rename(a.ID, "junkyu")
+	if err != nil || got.Name != "junkyu" || !got.Renamed.Equal(*now) {
 		t.Fatalf("rename = %+v, %v", got, err)
 	}
-	if name, _ := s.Name(a.ID); name != "준규" {
+	if name, _ := s.Name(a.ID); name != "junkyu" {
 		t.Fatalf("Name = %q", name)
 	}
-	if u, _ := s.Find("google", "1"); u.Name != "준규" {
+	if u, _ := s.Find("google", "1"); u.Name != "junkyu" {
 		t.Fatalf("Find = %+v", u)
 	}
 	// RenameEvery가 지나야 다시 바꿉니다
