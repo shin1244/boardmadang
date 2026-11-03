@@ -20,6 +20,7 @@
 //   quit
 
 import { makeRng } from '../sdk/playground/platform.js';
+import { drawRule } from './env.js';
 import { loadEnv } from './load.js';
 import { Node, gumbelSearch, pick, rolloutEvaluator, search, visitPolicy } from './mcts.js';
 import { keyOf, solve } from './solve.js';
@@ -132,21 +133,6 @@ function getSolved(limit = 200_000) {
   return solved;
 }
 
-/**
- * 학습할 때만 쓰는 무승부 규칙: 같은 판이 세 번 나오거나 maxMoves번 두면 끝냅니다 (체스의 반복 무승부처럼).
- * 선택 → 이동인 게임에서 고를 기물만 계속 바꾸며 맴돌면 maxActions까지 가서 학습이 아주 느려지기 때문입니다.
- * 판마다 하나 만들고, 둘 판을 넣으면 끝낼지 알려 줍니다.
- */
-function drawRule(maxMoves) {
-  const seen = new Map();
-  let moves = 0;
-  return (pos) => {
-    const n = (seen.get(pos.hash) ?? 0) + 1;
-    seen.set(pos.hash, n);
-    return n >= 3 || moves++ >= maxMoves;
-  };
-}
-
 async function selfplay(
   { games, parallel = 64, sims = 50, cPuct = 1.5, tempMoves = 4, maxMoves = 512, noise = { eps: 0.25 }, seed = 1, teacher = null, method = 'puct', valueMix = 0 },
   evaluate,
@@ -173,12 +159,12 @@ async function selfplay(
       const q = root.toPlay === 0 ? root.q : -root.q; // 탐색이 본 이 국면의 가치 (둘 차례인 쪽 기준)
       history.push({ planes: env.encode(root.pos), pi, toPlay: root.toPlay, q });
       // 고른 수의 트리를 그대로 이어서 씁니다. 둘 수가 하나도 없었으면 root가 끝난 판이 되어 다음 탐색에서 멈춥니다
-      root = (g ? g.chosen : pick(env, root, history.length <= tempMoves ? 1 : 0, random)) ?? root;
+      root = (g ? g.chosen : pick(env, root, root.pos.moves < tempMoves ? 1 : 0, random)) ?? root;
     }
     const { winner } = outcome;
     if (winner === null) stats.draws++;
     else stats.wins[winner]++;
-    stats.moves += history.length;
+    stats.moves += root.pos.moves;
     // 가치의 정답은 그 국면에서 둘 차례였던 쪽 기준입니다. 최종 승패는 운이 섞여 있어 탐색의 평가를 섞을 수 있습니다
     const z = Float32Array.from(history, (h) => {
       const result = winner === null ? 0 : winner === h.toPlay ? 1 : -1;

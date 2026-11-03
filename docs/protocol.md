@@ -136,8 +136,8 @@
 - `action`에는 **순번을 넣지 않습니다.** 순번은 서버가 받은 순서대로 붙입니다.
 - `winner`가 `null`이면 무승부입니다.
 - `matched`를 받으면 `setup()`한 시작 상태의 해시를 `seq: -1`로 보냅니다.
-  서버는 `seq`의 해시가 `seq - 1`과 같으면 그 행동이 무시됐다고 봅니다.
-- 상태를 바꾼 행동이 `maxActions`에 이르면 클라이언트가 `result {winner: null, reason: "maxActions"}`를 보냅니다.
+  서버는 `seq`의 해시가 `seq - 1`과 같거나, 차례가 그대로인데 이번 차례에 이미 나온 해시면 그 행동이 무시됐다고 봅니다.
+- 둔 수(차례가 넘어간 행동)가 `maxActions`에 이르면 클라이언트가 `result {winner: null, reason: "maxActions"}`를 보냅니다.
   양쪽이 같은 기록으로 같은 수를 세므로 보고가 일치합니다.
 
 ## 서버 → 클라이언트
@@ -179,7 +179,7 @@
 | `desync` | 해시 불일치로 무효 (`winner`는 `null`) |
 | `disagree` | 양쪽 결과 보고가 다름 (`winner`는 `null`, 분쟁으로 기록) |
 | `spam` | 한쪽이 무시된 행동을 너무 많이 보냄 → 상대 승 |
-| `limit` | 행동 기록이 상한(3,000)에 닿음 → 무효 (`winner`는 `null`) |
+| `limit` | 행동 기록이 상한(5,000)에 닿음 → 무효 (`winner`는 `null`) |
 | `timeout` | 한쪽이 시간을 다 씀 → 상대 승 |
 | `agreed` | 무승부 제안을 상대가 수락함 (`winner`는 `null`) |
 

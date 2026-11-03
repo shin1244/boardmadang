@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 from net import Net
-from train import Pool, Worker, unpack_game
+from train import Pool, Worker, fresh_loss, unpack_game
 
 TICTACTOE = Path(__file__).resolve().parent.parent / "games" / "tictactoe"
 
@@ -30,6 +30,22 @@ class NetTest(unittest.TestCase):
         net = Net(channels=14, specials=2, blocks=1, filters=8).eval()
         logits, _ = net(torch.zeros(3, 14, 5, 4))
         self.assertEqual(tuple(logits.shape), (3, 5 * 4 + 2))
+
+    def test_fresh_loss(self):
+        torch.manual_seed(0)
+        net = Net(channels=14, specials=0, blocks=1, filters=8)
+        planes = np.random.default_rng(0).random((7, 14, 3, 3), dtype=np.float32)
+        pis = np.full((7, 9), 1 / 9, np.float32)
+        zs = np.array([1, -1, 0, 1, 1, -1, 0.5], np.float32)
+        # 여러 묶음으로 나눠 재도 한 번에 잰 것과 같아야 합니다
+        got = fresh_loss(net, (planes, pis, zs), "cpu", batch=3)
+        with torch.no_grad():
+            logits, v = net.eval()(torch.from_numpy(planes))
+        pi = torch.from_numpy(pis)
+        self.assertAlmostEqual(got["value"], float(((v - torch.from_numpy(zs)) ** 2).mean()), places=5)
+        self.assertAlmostEqual(got["policy"], float(-(pi * torch.log_softmax(logits, 1)).sum(1).mean()), places=5)
+        self.assertAlmostEqual(got["zero"], float((zs**2).mean()), places=6)
+        self.assertIsNone(fresh_loss(net, (planes[:0], pis[:0], zs[:0]), "cpu"))
 
 
 class WorkerTest(unittest.TestCase):

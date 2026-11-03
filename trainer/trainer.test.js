@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { Env } from './env.js';
+import { Env, drawRule } from './env.js';
 import { loadEnv } from './load.js';
 import { Node, gumbelSearch, pick, rolloutEvaluator, search, visitPolicy } from './mcts.js';
 import { solve } from './solve.js';
@@ -41,6 +41,52 @@ const takeAway = (pile) => ({
   },
   result: (s) => (s.pile === 0 ? { winner: s.last } : null),
   view: (s) => ({ pieces: s.picked ? [{ row: 0, col: s.picked - 1, piece: 'picked' }] : [], text: [{ row: 0, col: 0, text: String(s.pile) }] }),
+});
+
+/** 돌 빼기인데 고른 개수를 바꾸거나(다른 칸) 취소할(같은 칸) 수 있습니다. 스플체스의 기물 고르기처럼 차례 안에서 맴돌 수 있습니다 */
+const repick = (pile) => {
+  const g = takeAway(pile);
+  return {
+    ...g,
+    id: 'take-away-repick',
+    play(s, player, action) {
+      if (s.pile > 0 && player === s.turn && action.kind === 'click' && action.row === 0 && action.col + 1 <= s.pile) {
+        return { ...s, picked: s.picked === action.col + 1 ? null : action.col + 1 };
+      }
+      return g.play(s, player, action);
+    },
+  };
+};
+
+/** 1×3 판의 말 하나를 양쪽이 번갈아 옮깁니다. 말을 눌러 고르고(다시 누르면 취소) 옆 칸을 눌러 옮깁니다. 끝나지 않습니다 */
+const shuffle = {
+  id: 'shuffle',
+  board: { places: 'cells', rows: 1, cols: 3 },
+  pieces: ['token'],
+  maxActions: 100,
+  setup: () => ({ at: 0, turn: 0, picked: false }),
+  turn: (s) => s.turn,
+  play(s, player, { kind, col }) {
+    if (player !== s.turn || kind !== 'click') return s;
+    if (col === s.at) return { ...s, picked: !s.picked };
+    if (s.picked && Math.abs(col - s.at) === 1) return { at: col, turn: 1 - s.turn, picked: false };
+    return s;
+  },
+  result: () => null,
+  view: (s) => ({ pieces: [{ row: 0, col: s.at, piece: 'token' }] }),
+};
+
+/** 1×1 판을 번갈아 누르고, n번째에 선공이 이깁니다. 길기만 한 게임 */
+const long = (n) => ({
+  id: 'long',
+  board: { places: 'cells', rows: 1, cols: 1 },
+  pieces: ['token'],
+  maxActions: n + 1,
+  setup: () => ({ n: 0 }),
+  turn: (s) => (s.n === n ? null : s.n % 2),
+  play: (s, player) => (s.n < n && player === s.n % 2 ? { n: s.n + 1 } : s),
+  result: (s) => (s.n === n ? { winner: 0 } : null),
+  view: () => ({ pieces: [] }),
 });
 
 test('tic-tac-toe adapter', async () => {
@@ -95,6 +141,53 @@ test('special actions and a turn of two actions', () => {
   assert.deepEqual([...r.table.values()].find((e) => e.pos.hash === start.hash).best, [0]);
   const lose = new Env(takeAway(3));
   assert.equal(solve(lose, lose.start(0)).value, -1);
+});
+
+test('a move passes the turn, and a turn cannot come back to a position it already had', () => {
+  const env = new Env(repick(4));
+  const start = env.start(0);
+  const one = env.step(start, 0);
+  assert.equal(one.moves, 0, 'picking is not a move');
+  const two = env.step(one, 1);
+  assert.equal(env.step(two, 0), null, 'switching back to an earlier pick is ignored');
+  assert.equal(env.step(one, 0), null, 'cancelling back to the start of the turn is ignored');
+  assert.deepEqual(env.children(two).map((m) => m.action), [2]);
+  const taken = env.step(two, 2);
+  assert.equal(taken.moves, 1);
+  assert.deepEqual(taken.turnHashes, [taken.hash], 'a new turn starts its own list');
+  assert.ok(env.step(taken, 0), 'the next player may pick what the last player picked');
+  assert.equal(solve(env, start).value, 1);
+});
+
+test('solve walks a long game without running out of stack', () => {
+  const env = new Env(long(20_000));
+  assert.equal(solve(env, env.start(0)).value, 1);
+});
+
+test('the training draw rule counts repeats only where a turn starts', () => {
+  const env = new Env(shuffle);
+  const start = env.start(0);
+  // 혼자서는 같은 판을 못 만듭니다: 골랐다 취소하면 차례가 시작된 판으로 돌아가므로 막힙니다
+  assert.equal(env.step(env.step(start, 0), 0), null);
+  // 양쪽이 말을 오가면 차례가 시작된 판이 세 번째로 나올 때 끝납니다. 고른 상태는 세지 않습니다
+  const cut = drawRule(512);
+  let pos = start;
+  const ends = [cut(pos)];
+  for (const a of [0, 1, 1, 0, 0, 1, 1, 0]) {
+    pos = env.step(pos, a);
+    ends.push(cut(pos));
+  }
+  assert.deepEqual(ends, [false, false, false, false, false, false, false, false, true]);
+  assert.equal(pos.moves, 4);
+  // maxMoves는 행동이 아니라 수를 셉니다
+  const short = drawRule(2);
+  pos = start;
+  const capped = [];
+  for (const a of [0, 1, 1, 0]) {
+    pos = env.step(pos, a);
+    capped.push(short(pos));
+  }
+  assert.deepEqual(capped, [false, false, false, true]);
 });
 
 test('MCTS finds the win and the block', async () => {

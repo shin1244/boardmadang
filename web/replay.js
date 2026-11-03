@@ -25,7 +25,7 @@ let board = null;
 let shown = null; // 그리고 있는 판 { pos, lang, look }. look.views는 두 자리 모두
 let loading = null; // 받아 오는 중인 판 { pos, lang }
 let final = null; // 마지막 수 뒤의 판 (끝난 이유를 쓰려고)
-let effective = 0; // 상태를 바꾼 행동 수 (maxActions 무승부를 알아보려고)
+let moves = 0; // 둔 수: 차례가 넘어간 행동 수 (maxActions 무승부를 알아보려고)
 let pos = 0;
 let viewAs = 0;
 let timer = null;
@@ -36,13 +36,13 @@ const nameOfGame = () => localize(entry?.listing?.name, lang).text || rec?.game 
 const flip = () => runner.info.board.flipForPlayer === viewAs;
 
 /**
- * 시작부터 끝까지 Worker에서 모두 둬 두고(keep), 상태를 바꾼 행동 수를 셉니다. 기록은 최대 3,000수라 금방입니다.
+ * 시작부터 끝까지 Worker에서 모두 둬 두고(keep), 둔 수를 셉니다. 기록은 최대 5,000개라 금방입니다.
  * play()가 오류를 던진 수는 대국 때처럼 상태가 그대로입니다.
  */
 async function replayAll() {
   await runner.start(rec.seed, { players: [] }, true);
   const { steps } = await runner.play(rec.moves.map((m) => ({ player: m.player, action: m.action })), { players: [] });
-  effective = steps.filter((s) => s.changed).length;
+  moves = steps.filter((s, i) => s.changed && s.turn !== rec.moves[i].player).length;
   await loadFinal();
 }
 
@@ -81,7 +81,7 @@ function reasonText() {
     case 'result': {
       const r = final?.result;
       if (r) return r.reason ?? '';
-      return effective >= runner.info.maxActions ? t('match.reason.maxActions') : '';
+      return moves >= runner.info.maxActions ? t('match.reason.maxActions') : '';
     }
     case 'resign':
     case 'left':

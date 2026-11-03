@@ -121,15 +121,15 @@ function choicesOf(game, s, random) {
  * deep이면 한 수마다 state를 고쳤는지, JSON인지, turn()이 0, 1, null인지도 봅니다 (느려서 앞의 몇 판만).
  */
 function playRandom(game, seed, { random, lang, deep }) {
-  const out = { actions: [], effective: 0, end: null, result: null, sumMs: 0, maxMs: 0, legalIgnored: 0, problems: [] };
+  const out = { actions: [], moves: 0, end: null, result: null, sumMs: 0, maxMs: 0, legalIgnored: 0, problems: [] };
   let s = call('setup()', () => game.setup(makeRng(seed)));
   if (deep) out.problems.push(...stateProblems(s, 'setup()'));
   let h = hashOf(s);
   let raw = 0;
   let r = call('result()', () => game.result(s, lang));
   while (!r) {
-    // 상태를 바꾼 행동이 maxActions에 이르면 플랫폼이 무승부로 끝냅니다
-    if (out.effective >= game.maxActions) { out.end = 'maxActions'; break; }
+    // 둔 수(차례가 넘어간 행동)가 maxActions에 이르면 플랫폼이 무승부로 끝냅니다
+    if (out.moves >= game.maxActions) { out.end = 'maxActions'; break; }
     if (raw > game.maxActions * 20) { out.end = 'stuck'; break; }
     const choices = choicesOf(game, s, random);
     if (!choices.length) { out.end = 'noLegal'; break; }
@@ -152,7 +152,8 @@ function playRandom(game, seed, { random, lang, deep }) {
     if (h2 === h) {
       if (game.legal) out.legalIgnored++;
     } else {
-      out.effective++;
+      // 차례가 넘어가면(판이 끝나도) 한 수입니다. 기물 고르기처럼 차례가 그대로인 행동은 세지 않습니다
+      if (call('turn()', () => game.turn(next)) !== player) out.moves++;
       // 대국 시계와 AI 학습은 turn()으로 누가 둘 차례인지 압니다. play()와 어긋나면 안 됩니다
       if (player !== turn) {
         out.problems.push('play() accepted a move from a player whose turn it was not, according to turn(). The two must agree.');
@@ -240,7 +241,7 @@ export function checkGame(game, { n = 200, langs = ['ko'], random = Math.random 
       const g = playRandom(game, seed, { random, lang, deep });
       played++;
       tally[g.end]++;
-      totalMoves += g.effective;
+      totalMoves += g.moves;
       sumMs += g.sumMs;
       maxMs = Math.max(maxMs, g.maxMs);
       calls += g.raw;

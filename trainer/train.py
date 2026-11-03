@@ -8,7 +8,7 @@
 
 결과는 trainer/runs/<게임 id>/에 남습니다.
     model.pt    마지막 신경망과 설정
-    log.jsonl   반복마다 자기대국 통계, 손실, 평가
+    log.jsonl   반복마다 자기대국 통계, 손실(학습 중, 새 판), 평가
 """
 
 import argparse
@@ -227,6 +227,25 @@ def train(net, opt, buffer, steps, batch, device, rng):
     return {"policy": total[0] / steps, "value": total[1] / steps}
 
 
+@torch.no_grad()
+def fresh_loss(net, data, device, batch=4096):
+    """아직 학습에 안 쓴 새 판에서 잰 손실. 학습 손실보다 한참 높으면 일반 규칙 대신 판을 외우고 있는 것입니다.
+    zero는 가치를 늘 0이라고 답할 때의 손실이라, 가치 손실이 이보다 낮아야 승패를 조금이라도 맞히는 것입니다"""
+    planes, pis, zs = data
+    if len(zs) == 0:
+        return None
+    net.eval()
+    lp = lv = 0.0
+    for i in range(0, len(zs), batch):
+        x = torch.from_numpy(planes[i : i + batch]).to(device)
+        pi = torch.from_numpy(pis[i : i + batch]).to(device)
+        z = torch.from_numpy(zs[i : i + batch]).to(device)
+        logits, v = net(x)
+        lp += -(pi * F.log_softmax(logits.float(), 1)).sum().item()
+        lv += ((v.float() - z) ** 2).sum().item()
+    return {"policy": lp / len(zs), "value": lv / len(zs), "zero": float((zs**2).mean())}
+
+
 def wdl(r):
     return "/".join(str(x) for x in r)
 
@@ -405,7 +424,9 @@ def main():
                 "valueMix": args.value_mix,
             }
             stats = pool.split(cmd, infer, on_game=lambda obj, data: games.append(unpack_game(info, obj, data)))
-            buffer.append(tuple(np.concatenate([g[k] for g in games]) for k in range(3)))
+            new = tuple(np.concatenate([g[k] for g in games]) for k in range(3))
+            fresh = fresh_loss(net, new, args.device)  # 버퍼에 넣기 전에 잽니다
+            buffer.append(new)
             buffer = buffer[-args.window :]
             loss = train(net, opt, buffer, args.steps, args.batch, args.device, rng)
             n = sum(len(b[2]) for b in buffer)
@@ -413,11 +434,23 @@ def main():
                 f"iter {it:3d}  first/second/draw {stats['wins'][0]}/{stats['wins'][1]}/{stats['draws']}"
                 + (f" (cut {stats['cut']})" if stats["cut"] else "")
                 + f"  moves {stats['moves'] / args.games:.1f}  loss p {loss['policy']:.3f} v {loss['value']:.3f}"
-                f"  buffer {n}  {time.monotonic() - t0:.0f}s"
+                + (
+                    f"  new games p {fresh['policy']:.3f} v {fresh['value']:.3f} (always 0: {fresh['zero']:.3f})"
+                    if fresh
+                    else ""
+                )
+                + f"  buffer {n}  {time.monotonic() - t0:.0f}s"
                 + ("  (rollout AI)" if warmup else ""),
                 flush=True,
             )
-            entry = {"iteration": it, "selfplay": stats, "loss": loss, "buffer": n, "seconds": time.monotonic() - t0}
+            entry = {
+                "iteration": it,
+                "selfplay": stats,
+                "loss": loss,
+                "fresh": fresh,
+                "buffer": n,
+                "seconds": time.monotonic() - t0,
+            }
             if warmup:
                 entry["teacher"] = "rollout"
             evaluated = None

@@ -408,6 +408,53 @@ func TestChangedActionsAreNotSpam(t *testing.T) {
 	p[0].expectEnded(nil, protocol.ReasonResult)
 }
 
+// 차례가 그대로인데 이번 차례에 이미 나온 판으로 돌아가는 행동(기물을 골랐다 바꾸기)은 무시된 행동으로 센다
+func TestReturningWithinATurnIsIgnored(t *testing.T) {
+	old := MaxIgnored
+	MaxIgnored = 1
+	t.Cleanup(func() { MaxIgnored = old })
+
+	p := match(t, newServer(t))
+	// 선공이 A를 고르고, B로 바꾸고, 다시 A(무시 1), 다시 B(무시 2) → 선공 패배
+	for seq, h := range []string{"pick-a", "pick-b", "pick-a", "pick-b"} {
+		p[0].action(0, seq)
+		p[0].expect(protocol.TypeRelay, nil)
+		p[1].expect(protocol.TypeRelay, nil)
+		p[0].hashTurn(seq, h, seat(0))
+		p[1].hashTurn(seq, h, seat(0))
+	}
+	p[0].expectEnded(seat(1), protocol.ReasonSpam)
+}
+
+// 차례가 넘어가면 새로 센다: 지난 차례에 나온 판이 다음 차례에 다시 나와도 무시가 아니다
+func TestANewTurnStartsFresh(t *testing.T) {
+	old := MaxIgnored
+	MaxIgnored = 0
+	t.Cleanup(func() { MaxIgnored = old })
+
+	p := match(t, newServer(t))
+	steps := []struct {
+		by   int
+		hash string
+		turn int
+	}{
+		{0, "pick", 0},  // 선공이 기물을 고름
+		{0, "moved", 1}, // 옮김 → 후공 차례
+		{1, "start", 0}, // 후공이 되돌려 처음 판과 같아짐 → 선공 차례
+		{0, "pick", 0},  // 지난 차례의 고른 판과 같지만 새 차례
+	}
+	for seq, s := range steps {
+		p[s.by].action(0, seq)
+		p[0].expect(protocol.TypeRelay, nil)
+		p[1].expect(protocol.TypeRelay, nil)
+		p[0].hashTurn(seq, s.hash, seat(s.turn))
+		p[1].hashTurn(seq, s.hash, seat(s.turn))
+	}
+	p[0].result(nil)
+	p[1].result(nil)
+	p[0].expectEnded(nil, protocol.ReasonResult)
+}
+
 func TestRateLimit(t *testing.T) {
 	old := MaxActionsPerSecond
 	MaxActionsPerSecond = 2

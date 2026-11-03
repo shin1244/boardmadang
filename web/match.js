@@ -60,7 +60,7 @@ let snap = null; // 지금 판: 실행기가 돌려준 { result, views, legal }
 let stateHash = '';
 let turn = null; // 지금 누구 차례인지 (게임의 turn()). 서버가 이걸로 시계를 넘깁니다
 let applied = 0; // 적용한 relay 수 = 다음 순번
-let effective = 0; // 상태를 바꾼 행동 수 (maxActions 기준)
+let moves = 0; // 둔 수: 차례가 넘어간 행동 수 (maxActions 기준). 기물 고르기처럼 차례가 그대로인 행동은 세지 않습니다
 let reported = null; // 내가 서버에 보고한 결과. 서버의 ended를 기다리는 중
 let ended = null; // 서버가 보낸 ended. record가 있으면 저장된 기보 id입니다
 let hover = null;
@@ -304,7 +304,7 @@ async function start(m) {
   hostedRoom = null;
   snap = null;
   applied = 0;
-  effective = 0;
+  moves = 0;
   reported = null;
   ended = null;
   hover = null;
@@ -355,7 +355,7 @@ async function applyLog(list) {
   applied += todo.length;
   const { steps, look } = await runner.play(todo.map((m) => ({ player: m.player, action: m.action })), lookOpts());
   steps.forEach((s, i) => {
-    if (s.changed) effective++;
+    if (s.changed && s.turn !== todo[i].player) moves++; // turn()이 없는 게임은 상태를 바꾼 행동마다 한 수
     stateHash = s.hash;
     turn = s.turn;
     send({ type: 'hash', seq: todo[i].seq, hash: s.hash, turn: s.turn });
@@ -368,7 +368,7 @@ async function applyLog(list) {
 function checkResult() {
   if (reported || !snap) return;
   let r = snap.result;
-  if (!r && effective >= runner.info.maxActions) r = { winner: null, reason: 'maxActions' };
+  if (!r && moves >= runner.info.maxActions) r = { winner: null, reason: 'maxActions' };
   if (!r) return;
   reported = r;
   send({ type: 'result', winner: r.winner ?? null, reason: r.reason });
