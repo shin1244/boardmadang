@@ -7,7 +7,7 @@
 - **boardmadang.com 운영 중**: GCP VM 하나, Caddy HTTPS, Google·GitHub 로그인 ([deploy-gcp.md](deploy-gcp.md))
 - **대전**: 빠른 매칭, 방 만들기, 대국 시계, 무승부 제안, 재대결, 관전, 기보 다시보기, 이모티콘, 의견과 신고
 - **게임 코드 샌드박스**: 사이트 화면은 게임 코드를 출처 없는 iframe 안의 Worker에서만 돌립니다 ([architecture.md](architecture.md#보안))
-- **npm 패키지 `boardmadang` 0.1.0**: `npx boardmadang new / dev / check / pack`, 판을 찍는 썸네일 ([sdk/README.ko.md](../sdk/README.ko.md))
+- **npm 패키지 `boardmadang` 0.2.0**: `npx boardmadang new / dev / check / pack`, 판을 찍는 썸네일 ([sdk/README.ko.md](../sdk/README.ko.md))
 - **게임**: 틱택토 하나
 
 ## 1. 공개 전에 꼭 할 것
