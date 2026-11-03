@@ -3,14 +3,14 @@
 // 올리기는 두 단계입니다.
 //  1. 초안: npx boardmadang pack이 만든 zip을 받아 파일 규칙을 검사하고 DATA_DIR/drafts/에 풉니다.
 //     등록창은 /drafts/<초안>/index.js를 게임 실행기(web/engine.js)의 샌드박스에 불러와 자동 검사(sdk/check.js)를 돌립니다.
-//  2. 등록: 등록 정보를 받아 검사하고 초안의 코드를 DATA_DIR/uploads/<게임>/<버전>/으로 옮깁니다.
+//  2. 등록: 등록 정보, 썸네일, 제작자 클리어 기보(clear.go)를 받아 검사하고 초안의 코드를 DATA_DIR/uploads/<게임>/<버전>/으로 옮깁니다.
 //     그때부터 /api/games에 나오고 /uploads/<게임>/<버전>/에서 내보냅니다.
 //
 // DATA_DIR 아래 모양:
 //
 //	drafts/<초안>/draft.json     주인, 올린 때, 버전
 //	drafts/<초안>/files/...      zip에서 푼 코드, listing.json, thumbnail.json
-//	uploads/<게임>/game.json      주인, 지금 버전, 등록 정보, 썸네일, 등록한 때
+//	uploads/<게임>/game.json      주인, 지금 버전, 등록 정보, 썸네일, 클리어 기보, 등록한 때
 //	uploads/<게임>/<버전>/...      코드만. 옛 버전은 다시보기를 위해 지우지 않습니다
 //
 // 서버는 게임 코드를 돌리지 않습니다. 자동 검사는 올린 사람의 브라우저에서 돌기 때문에 서버는 그 결과를 믿지 않습니다.
@@ -96,7 +96,8 @@ type gameMeta struct {
 	Owner     string          `json:"owner"`
 	Version   string          `json:"version"`
 	Listing   Listing         `json:"listing"`
-	Thumbnail json.RawMessage `json:"thumbnail"` // 없으면 null
+	Thumbnail json.RawMessage `json:"thumbnail"`       // 없으면 null
+	Clear     *Clear          `json:"clear,omitempty"` // 제작자 클리어 기보. 클리어 체크 전에 올린 게임이면 없음
 	Created   time.Time       `json:"created"`
 	// 등록할 때마다 하나씩 (같은 버전을 다시 등록해도). 하루 횟수를 세고, 어느 버전이 언제 나왔는지 남깁니다.
 	Published []published `json:"published"`
@@ -267,15 +268,25 @@ func (s *Store) draftDir(id string) string { return filepath.Join(s.dir, "drafts
 
 // ---- 등록 ----
 
+// PublishRequest는 POST /api/drafts/{draft}/publish의 본문입니다.
+type PublishRequest struct {
+	ID      string `json:"id"`
+	Listing any    `json:"listing"` // JSON을 풀어 둔 등록 정보
+	// 썸네일. 등록창이 zip의 thumbnail.json이나 직접 찍은 판을 게임 코드와 맞는지 본 뒤에 보냅니다. 없거나 null이면 썸네일 없이
+	Thumbnail json.RawMessage `json:"thumbnail"`
+	// 제작자 클리어 기보. 없거나 null이면 같은 버전을 다시 등록할 때만 됩니다 (등록 정보만 고칠 때 전에 깬 판을 그대로 씁니다)
+	Clear json.RawMessage `json:"clear"`
+}
+
 // Publish는 초안을 id로 등록합니다. 처음이면 새 게임이고, 내가 올린 게임이면 새 버전입니다 (같은 버전이면 등록 정보만 바뀝니다).
-// listing은 JSON을 풀어 둔 등록 정보이고, keepThumbnail이면 초안의 썸네일을 씁니다 (등록창이 게임 코드와 맞는지 본 뒤에).
-func (s *Store) Publish(u identity.User, draftID, id string, listing any, keepThumbnail bool) (site.Game, error) {
+func (s *Store) Publish(u identity.User, draftID string, req PublishRequest) (site.Game, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	d := s.liveDraft(draftID)
 	if d == nil || d.Owner != u.ID {
 		return site.Game{}, ErrNotFound
 	}
+	id := req.ID
 	if !IDPattern.MatchString(id) {
 		return site.Game{}, ErrBadID
 	}
@@ -286,21 +297,36 @@ func (s *Store) Publish(u identity.User, draftID, id string, listing any, keepTh
 	if s.publishedToday(u.ID) >= PublishesPerDay {
 		return site.Game{}, ErrTooMany
 	}
-	clean, problems := CheckListing(listing)
+	clean, problems := CheckListing(req.Listing)
+	var thumbnail json.RawMessage
+	if !isNull(req.Thumbnail) {
+		var bad []string
+		if thumbnail, bad = CheckThumbnail(req.Thumbnail); len(bad) > 0 {
+			problems = append(problems, Problem{Code: "thumbnail.invalid"})
+		}
+	}
+	var clear *Clear
+	switch {
+	case !isNull(req.Clear):
+		var p Problems
+		clear, p = CheckClear(req.Clear, d.Version)
+		problems = append(problems, p...)
+	case g != nil && g.Clear != nil && g.Clear.Version == d.Version:
+		clear = g.Clear
+	default:
+		problems = append(problems, Problem{Code: "clear.missing"})
+	}
 	if len(problems) > 0 {
 		return site.Game{}, problems
-	}
-	var thumbnail json.RawMessage
-	if keepThumbnail {
-		if body, err := os.ReadFile(filepath.Join(s.draftDir(d.ID), "files", "thumbnail.json")); err == nil {
-			thumbnail, _ = CheckThumbnail(body) // 틀렸으면 썸네일 없이 (로비는 시작 판을 그립니다)
-		}
 	}
 
 	if err := s.copyVersion(d, id); err != nil {
 		return site.Game{}, err
 	}
 	now := s.now()
+	if g == nil || clear != g.Clear {
+		clear.At = now
+	}
 	next := gameMeta{ID: id, Owner: u.ID, Created: now}
 	if g != nil {
 		next = *g
@@ -309,6 +335,7 @@ func (s *Store) Publish(u identity.User, draftID, id string, listing any, keepTh
 	next.Version = d.Version
 	next.Listing = clean
 	next.Thumbnail = thumbnail
+	next.Clear = clear
 	next.Published = append(next.Published, published{Version: d.Version, At: now})
 	if err := writeJSONFile(filepath.Join(s.dir, "uploads", id, "game.json"), &next); err != nil {
 		return site.Game{}, err
@@ -403,6 +430,7 @@ func (g *gameMeta) entry() site.Game {
 		Version:   g.Version,
 		Listing:   listing,
 		Thumbnail: g.Thumbnail,
+		Clear:     g.cleared(),
 	}
 }
 

@@ -218,38 +218,67 @@ func TestDraftLimits(t *testing.T) {
 	}
 }
 
+// clearOf는 그 버전의 클리어 기보입니다.
+func clearOf(version string) json.RawMessage {
+	return json.RawMessage(`{"version":"` + version + `","seed":7,"winner":0,"moves":[
+  {"player":0,"action":{"kind":"click","row":1,"col":1}},{"player":1,"action":{"kind":"pass"}}]}`)
+}
+
+// publishing은 초안 d를 id로 등록하는 본문입니다. 클리어 기보는 있고 썸네일은 없습니다.
+func publishing(id string, d Draft) PublishRequest {
+	return PublishRequest{ID: id, Listing: validListing(), Clear: clearOf(d.Version)}
+}
+
 func TestPublish(t *testing.T) {
 	dir := t.TempDir()
 	s, now := open(t, dir)
 	a, b := member("m_a"), member("m_b")
 	d, _ := s.NewDraft(a, makeZip(t, "index.js", gameCode, "thumbnail.json", thumbnailJSON))
 
-	if _, err := s.Publish(b, d.ID, "dots", validListing(), true); !errors.Is(err, ErrNotFound) {
+	if _, err := s.Publish(b, d.ID, publishing("dots", d)); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("남의 초안: %v", err)
 	}
-	if _, err := s.Publish(a, d.ID, "Dots!", validListing(), true); !errors.Is(err, ErrBadID) {
+	if _, err := s.Publish(a, d.ID, publishing("Dots!", d)); !errors.Is(err, ErrBadID) {
 		t.Fatalf("id 모양: %v", err)
 	}
-	if _, err := s.Publish(a, d.ID, "tictactoe", validListing(), true); !errors.Is(err, ErrTaken) {
+	if _, err := s.Publish(a, d.ID, publishing("tictactoe", d)); !errors.Is(err, ErrTaken) {
 		t.Fatalf("레포 게임 id: %v", err)
 	}
 	bad := validListing()
 	delete(bad, "difficulty")
-	if _, err := s.Publish(a, d.ID, "dots", bad, true); !slices.Equal(codes(err), []string{"difficulty.invalid:"}) {
-		t.Fatalf("등록 정보 문제: %v", err)
+	req := publishing("dots", d)
+	req.Listing = bad
+	req.Thumbnail = json.RawMessage(`{"board":null}`)
+	req.Clear = nil
+	if _, err := s.Publish(a, d.ID, req); !slices.Equal(codes(err), []string{"difficulty.invalid:", "thumbnail.invalid:", "clear.missing:"}) {
+		t.Fatalf("등록 정보, 썸네일, 클리어 문제: %v", codes(err))
+	}
+	req = publishing("dots", d)
+	req.Clear = clearOf("0123456789abcdef")
+	if _, err := s.Publish(a, d.ID, req); !slices.Equal(codes(err), []string{"clear.version:"}) {
+		t.Fatalf("다른 버전의 클리어: %v", codes(err))
 	}
 
-	g, err := s.Publish(a, d.ID, "dots", validListing(), true)
+	req = publishing("dots", d)
+	req.Thumbnail = json.RawMessage(thumbnailJSON)
+	g, err := s.Publish(a, d.ID, req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.Module != "/uploads/dots/"+d.Version+"/index.js" || g.Version != d.Version || g.Thumbnail == nil {
+	if g.Module != "/uploads/dots/"+d.Version+"/index.js" || g.Version != d.Version || g.Thumbnail == nil || !g.Clear {
 		t.Fatalf("등록한 게임: %+v", g)
+	}
+	if strings.Contains(string(g.Thumbnail), "drop me") {
+		t.Fatalf("썸네일은 알려진 칸만 남깁니다: %s", g.Thumbnail)
 	}
 	var listing Listing
 	json.Unmarshal(g.Listing, &listing)
 	if listing.Name["ko"] != "점 잇기" || listing.Name["ja"] != "" || len(listing.Languages) != 2 || *listing.Timer.Minutes != 10 {
 		t.Fatalf("정리한 등록 정보: %s", g.Listing)
+	}
+	c, err := s.ClearOf("dots")
+	if err != nil || c.Game != "dots" || c.Version != d.Version || c.Seed != 7 || len(c.Moves) != 2 || c.Moves[1].Action.Kind != "pass" || !c.At.Equal(*now) {
+		t.Fatalf("클리어 기보: %+v %v", c, err)
 	}
 	if _, err := s.draftFile(d.ID, "index.js"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("등록한 초안은 지웁니다: %v", err)
@@ -263,49 +292,69 @@ func TestPublish(t *testing.T) {
 
 	// 다른 계정은 같은 id로 못 올립니다
 	db, _ := s.NewDraft(b, makeZip(t, "index.js", gameCode))
-	if _, err := s.Publish(b, db.ID, "dots", validListing(), false); !errors.Is(err, ErrTaken) {
+	if _, err := s.Publish(b, db.ID, publishing("dots", db)); !errors.Is(err, ErrTaken) {
 		t.Fatalf("남의 게임 id: %v", err)
 	}
 
-	// 새 버전. 옛 버전 코드는 남깁니다
+	// 새 버전은 다시 깨야 합니다. 옛 버전 코드는 남깁니다
 	*now = now.Add(time.Minute)
 	d2, _ := s.NewDraft(a, makeZip(t, "index.js", gameCode+"// v2\n"))
-	g2, err := s.Publish(a, d2.ID, "dots", validListing(), false)
-	if err != nil || g2.Version == g.Version || g2.Thumbnail != nil {
+	req = publishing("dots", d2)
+	req.Clear = nil
+	if _, err := s.Publish(a, d2.ID, req); !slices.Equal(codes(err), []string{"clear.missing:"}) {
+		t.Fatalf("새 버전인데 클리어 없이: %v", codes(err))
+	}
+	g2, err := s.Publish(a, d2.ID, publishing("dots", d2))
+	if err != nil || g2.Version == g.Version || g2.Thumbnail != nil || !g2.Clear {
 		t.Fatalf("새 버전: %+v %v", g2, err)
 	}
 	if _, err := s.gameFile("dots", g.Version, "index.js"); err != nil {
 		t.Fatalf("옛 버전: %v", err)
 	}
 
+	// 같은 버전을 다시 등록하면(등록 정보만 고칠 때) 전에 깬 판을 그대로 씁니다
+	*now = now.Add(time.Minute)
+	d2b, _ := s.NewDraft(a, makeZip(t, "index.js", gameCode+"// v2\n"))
+	req = publishing("dots", d2b)
+	req.Clear = nil
+	if g, err := s.Publish(a, d2b.ID, req); err != nil || !g.Clear {
+		t.Fatalf("같은 버전: %+v %v", g, err)
+	}
+	if c, _ := s.ClearOf("dots"); c.Version != d2.Version || !c.At.Equal(now.Add(-time.Minute)) {
+		t.Fatalf("같은 버전의 클리어 기보는 그대로: %+v", c)
+	}
+
 	// 다시 열어도 그대로
 	again, _ := open(t, dir)
 	games := again.Games()
-	if len(games) != 1 || games[0].Version != g2.Version {
+	if len(games) != 1 || games[0].Version != g2.Version || !games[0].Clear {
 		t.Fatalf("다시 연 뒤: %+v", games)
 	}
+	if c, err := again.ClearOf("dots"); err != nil || len(c.Moves) != 2 {
+		t.Fatalf("다시 연 뒤 클리어 기보: %+v %v", c, err)
+	}
 	mine := again.Mine("m_a")
-	if len(mine.Games) != 1 || mine.Left != PublishesPerDay-2 {
+	if len(mine.Games) != 1 || mine.Left != PublishesPerDay-3 {
 		t.Fatalf("내 게임: %+v", mine)
 	}
 
 	// 하루 등록 횟수
-	for range PublishesPerDay - 2 {
+	for range PublishesPerDay - 3 {
 		d, _ := s.NewDraft(a, makeZip(t, "index.js", gameCode))
-		if _, err := s.Publish(a, d.ID, "dots", validListing(), false); err != nil {
+		if _, err := s.Publish(a, d.ID, publishing("dots", d)); err != nil {
 			t.Fatal(err)
 		}
 	}
 	d3, _ := s.NewDraft(a, makeZip(t, "index.js", gameCode))
-	if _, err := s.Publish(a, d3.ID, "dots", validListing(), false); !errors.Is(err, ErrTooMany) {
+	if _, err := s.Publish(a, d3.ID, publishing("dots", d3)); !errors.Is(err, ErrTooMany) {
 		t.Fatalf("하루 %d번까지: %v", PublishesPerDay, err)
 	}
 	*now = now.Add(24 * time.Hour)
-	if _, err := s.Publish(a, d3.ID, "dots-two", validListing(), false); !errors.Is(err, ErrNotFound) {
+	if _, err := s.Publish(a, d3.ID, publishing("dots-two", d3)); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("기한이 지난 초안: %v", err)
 	}
 	d4, _ := s.NewDraft(a, makeZip(t, "index.js", gameCode))
-	if _, err := s.Publish(a, d4.ID, "dots-two", validListing(), false); err != nil {
+	if _, err := s.Publish(a, d4.ID, publishing("dots-two", d4)); err != nil {
 		t.Fatalf("다음 날: %v", err)
 	}
 
@@ -313,6 +362,53 @@ func TestPublish(t *testing.T) {
 	s.Reserved = func(id string) bool { return id == "dots" }
 	if games := s.Games(); len(games) != 1 || games[0].ID != "dots-two" {
 		t.Fatalf("레포와 겹친 게임: %+v", games)
+	}
+	if _, err := s.ClearOf("dots"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("레포와 겹친 게임의 클리어 기보: %v", err)
+	}
+}
+
+func TestCheckClear(t *testing.T) {
+	const v = "0123456789abcdef"
+	clear := func(rest string) string { return `{"version":"` + v + `",` + rest + `}` }
+	move := func(a string) string { return clear(`"seed":1,"winner":1,"moves":[{"player":1,"action":` + a + `}]`) }
+	pass := `[{"player":0,"action":{"kind":"pass"}}]`
+	cases := map[string]string{
+		move(`{"kind":"click","row":31,"col":0}`):                                    "",
+		move(`{"kind":"pass"}`):                                                      "",
+		move(`{"kind":"click","row":32,"col":0}`):                                    "clear.invalid",
+		move(`{"kind":"click","row":-1,"col":0}`):                                    "clear.invalid",
+		move(`{"kind":"pass","row":1}`):                                              "clear.invalid",
+		move(`{"kind":""}`):                                                          "clear.invalid",
+		move(`{"kind":"` + strings.Repeat("k", 33) + `"}`):                           "clear.invalid",
+		move(`{"kind":"click","row":1.5,"col":0}`):                                   "clear.invalid",
+		clear(`"seed":1,"winner":null,"moves":` + pass):                              "clear.invalid",
+		clear(`"seed":1,"winner":2,"moves":` + pass):                                 "clear.invalid",
+		clear(`"winner":0,"moves":` + pass):                                          "clear.invalid",
+		clear(`"seed":-1,"winner":0,"moves":` + pass):                                "clear.invalid",
+		clear(`"seed":4294967296,"winner":0,"moves":` + pass):                        "clear.invalid",
+		clear(`"seed":1,"winner":0,"moves":[]`):                                      "clear.invalid",
+		clear(`"seed":1,"winner":0,"moves":[{"player":2,"action":{"kind":"pass"}}]`): "clear.invalid",
+		`{"version":"ffffffffffffffff","seed":1,"winner":0,"moves":` + pass + `}`:    "clear.version",
+		`[1,2]`: "clear.invalid",
+		`"x"`:   "clear.invalid",
+	}
+	for in, want := range cases {
+		c, p := CheckClear(json.RawMessage(in), v)
+		got := ""
+		if len(p) > 0 {
+			got = p[0].Code
+		}
+		if got != want || (want == "") != (c != nil) {
+			t.Errorf("%s: %q, want %q", in, got, want)
+		}
+	}
+	many := make([]string, MaxClearMoves+1)
+	for i := range many {
+		many[i] = `{"player":0,"action":{"kind":"pass"}}`
+	}
+	if _, p := CheckClear(json.RawMessage(clear(`"seed":1,"winner":0,"moves":[`+strings.Join(many, ",")+`]`)), v); len(p) == 0 {
+		t.Errorf("행동 %d개는 너무 많습니다", MaxClearMoves+1)
 	}
 }
 
@@ -393,6 +489,7 @@ func TestHTTP(t *testing.T) {
 	mux.HandleFunc("POST /api/drafts/{draft}/publish", h.ServePublish)
 	mux.HandleFunc("GET /drafts/{draft}/{path...}", h.ServeDraftFile)
 	mux.HandleFunc("GET /uploads/{game}/{version}/{path...}", h.ServeFile)
+	mux.HandleFunc("GET /api/games/{game}/clear", h.ServeClear)
 	guest := &http.Cookie{Name: identity.CookieName, Value: ids.Sign(identity.User{ID: "g_a", Kind: identity.KindGuest, Tag: "1234"})}
 	cookie := &http.Cookie{Name: identity.CookieName, Value: ids.Sign(member("m_a"))}
 
@@ -442,7 +539,7 @@ func TestHTTP(t *testing.T) {
 		}
 	}
 
-	body, _ := json.Marshal(map[string]any{"id": "dots", "listing": validListing(), "thumbnail": false})
+	body, _ := json.Marshal(publishing("dots", d))
 	if rec := do("POST", "/api/drafts/"+d.ID+"/publish", "text/plain", body, cookie); rec.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("JSON이 아닌 본문: %d", rec.Code)
 	}
@@ -458,6 +555,13 @@ func TestHTTP(t *testing.T) {
 		if rec := do("GET", p, "", nil, nil); rec.Code != http.StatusNotFound {
 			t.Errorf("%s: %d", p, rec.Code)
 		}
+	}
+	if rec := do("GET", "/api/games/nope/clear", "", nil, nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("없는 게임의 클리어 기보: %d", rec.Code)
+	}
+	rec = do("GET", "/api/games/dots/clear", "", nil, nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"game":"dots"`) || !strings.Contains(rec.Body.String(), `"seed":7`) || strings.Contains(rec.Body.String(), "m_a") {
+		t.Fatalf("클리어 기보: %d %s", rec.Code, rec.Body)
 	}
 	rec = do("GET", "/api/uploads", "", nil, cookie)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"id":"dots"`) || strings.Contains(rec.Body.String(), "m_a") {

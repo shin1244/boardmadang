@@ -156,6 +156,7 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 	mux.HandleFunc("POST /api/drafts/{draft}/publish", up.ServePublish)
 	mux.HandleFunc("GET /drafts/{draft}/{path...}", up.ServeDraftFile)
 	mux.HandleFunc("GET /uploads/{game}/{version}/{path...}", up.ServeFile)
+	mux.HandleFunc("GET /api/games/{game}/clear", up.ServeClear)
 	// TODO: 등록 정보만 고치기, 내리기 (docs/roadmap.md 1-1)
 	return mux
 }
