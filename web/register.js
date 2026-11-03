@@ -63,12 +63,14 @@ let hasTurn = null;
 /**
  * 2단계: 혼자 두는 판. 초안을 실행기에 불러 두고 양쪽을 번갈아 둡니다.
  * moves에는 상태를 바꾼 행동만 남깁니다. 무시된 행동은 판에 영향이 없어서 다시 둘 때도, 클리어 기보에도 넣지 않습니다.
+ * trail은 moves마다 그 뒤 판의 해시와 차례가 넘어갔는지(한 수인지), startHash는 시작 판의 해시입니다.
  * @type {{ draft: object, runner: object | null, seed: number, moves: { player: 0 | 1, action: object }[], seat: 0 | 1,
+ *          trail: { hash: string, passed: boolean }[], startHash: string,
  *          look: object | null, ended: { winner: 0 | 1 | null, reason?: string, maxActions?: boolean } | null,
  *          busy: boolean, note: string, error: string } | null}
  */
 let play = null;
-/** 이긴 판 { version, seed, moves, winner }. 등록할 때 보냅니다. 다른 zip을 올리면 버립니다 */
+/** 이긴 판 { version, seed, moves, winner, turns }. turns(둔 수)는 화면에만 쓰고 나머지를 등록할 때 보냅니다. 다른 zip을 올리면 버립니다 */
 let cleared = null;
 /** 등록할 썸네일 { data, from: 'zip' | 'kept' | 'shot', moves? }. null이면 썸네일 없이 (로비는 시작 판을 그립니다) */
 let thumb = null;
@@ -294,7 +296,7 @@ async function busy(p, work) {
 function openPlay() {
   if (!current || play?.draft === current.draft) return;
   play?.runner?.close();
-  const p = { draft: current.draft, runner: null, seed: randomSeed(), moves: [], seat: 0, look: null, ended: null, busy: false, note: '', error: '' };
+  const p = { draft: current.draft, runner: null, seed: randomSeed(), moves: [], trail: [], startHash: '', seat: 0, look: null, ended: null, busy: false, note: '', error: '' };
   play = p;
   board = null;
   busy(p, async () => {
@@ -308,10 +310,29 @@ function openPlay() {
 
 /** 시드와 지금까지의 행동으로 판을 처음부터 다시 둡니다 (새 판, 무르기) */
 async function rebuild(p) {
-  let { turn } = await p.runner.start(p.seed, { players: [] });
-  if (p.moves.length) turn = (await p.runner.play(p.moves, { players: [] })).steps.at(-1).turn;
+  const start = await p.runner.start(p.seed, { players: [] });
+  let { turn } = start;
+  p.startHash = start.hash;
+  p.trail = [];
+  if (p.moves.length) {
+    const { steps } = await p.runner.play(p.moves, { players: [] });
+    p.trail = steps.map((s, i) => ({ hash: s.hash, passed: s.turn !== p.moves[i].player }));
+    turn = steps.at(-1).turn;
+  }
   if (turn !== null) p.seat = turn;
   await refresh(p);
+}
+
+/** 둔 수: 차례가 넘어간 행동 수. 기물 고르기처럼 차례가 그대로인 행동은 세지 않습니다 (대전과 같은 규칙) */
+const turnsOf = (p) => p.trail.filter((s) => s.passed).length;
+
+/** 이번 차례에 나온 판들 [그 판까지의 moves 길이, 해시]. 차례가 시작된 판부터입니다 */
+function turnPositions(p) {
+  let i = p.trail.length;
+  while (i > 0 && !p.trail[i - 1].passed) i--;
+  const out = [[i, i ? p.trail[i - 1].hash : p.startHash]];
+  for (let j = i; j < p.trail.length; j++) out.push([j + 1, p.trail[j].hash]);
+  return out;
 }
 
 /** 두는 쪽의 판을 받아 오고 끝났는지 봅니다. 이겼으면 그 판이 클리어 기보가 됩니다 */
@@ -321,11 +342,11 @@ async function refresh(p) {
   p.look = look;
   const r = look.result;
   if (r) p.ended = { winner: r.winner, reason: r.reason };
-  // 플랫폼처럼 상태를 바꾼 행동이 maxActions에 닿으면 무승부입니다
-  else if (p.moves.length >= p.runner.info.maxActions) p.ended = { winner: null, maxActions: true };
+  // 플랫폼처럼 둔 수가 maxActions에 닿으면 무승부입니다
+  else if (turnsOf(p) >= p.runner.info.maxActions) p.ended = { winner: null, maxActions: true };
   else p.ended = null;
   if (p.ended && p.ended.winner !== null && p.moves.length) {
-    cleared = { version: p.draft.version, seed: p.seed, moves: p.moves.map((m) => ({ ...m })), winner: p.ended.winner };
+    cleared = { version: p.draft.version, seed: p.seed, moves: p.moves.map((m) => ({ ...m })), winner: p.ended.winner, turns: turnsOf(p) };
   }
 }
 
@@ -337,7 +358,14 @@ function act(action) {
     const player = p.seat;
     const [step1] = (await p.runner.play([{ player, action }], { players: [] })).steps;
     if (step1.changed) {
-      p.moves.push({ player, action });
+      const passed = step1.turn !== player;
+      // 이번 차례에 이미 나온 판으로 돌아갔으면(기물을 골랐다 바꾸기) 같은 판이므로 그 사이 행동을 기보에서 뺍니다
+      const seen = passed ? null : turnPositions(p).find(([, h]) => h === step1.hash);
+      if (seen) p.moves.length = p.trail.length = seen[0];
+      else {
+        p.moves.push({ player, action });
+        p.trail.push({ hash: step1.hash, passed });
+      }
       if (step1.turn !== null) p.seat = step1.turn;
     }
     await refresh(p);
@@ -389,7 +417,7 @@ function shoot() {
   const data = makeThumbnail({ board: b, pieces }, p.seat, view);
   const bad = validateThumbnail(data);
   thumbProblem = bad.length ? t('register.thumb.cannot', { msg: bad[0] }) : '';
-  if (!bad.length) thumb = { data, from: 'shot', moves: p.moves.length };
+  if (!bad.length) thumb = { data, from: 'shot', moves: turnsOf(p) };
   render();
 }
 
@@ -427,7 +455,7 @@ function renderPlay() {
       status.append(small);
     }
   } else {
-    status.textContent = t('register.play.turn', { who: seatName(p.seat), n: p.moves.length });
+    status.textContent = t('register.play.turn', { who: seatName(p.seat), n: turnsOf(p) });
   }
   drawBoard();
 
@@ -458,7 +486,7 @@ function renderPlay() {
 
   const done = $('#clear-status');
   done.className = 'status-line';
-  if (cleared) done.textContent = t('register.clear.done', { who: seatName(cleared.winner), n: cleared.moves.length });
+  if (cleared) done.textContent = t('register.clear.done', { who: seatName(cleared.winner), n: cleared.turns });
   else if (priorClear()) done.textContent = t('register.clear.prior');
   else done.textContent = t('register.clear.todo');
   done.classList.toggle('good', clearReady());
@@ -819,7 +847,7 @@ async function save(e) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // 클리어가 null이면 서버가 같은 버전에서 전에 깬 판을 씁니다 (priorClear)
-        body: JSON.stringify({ id: current.id, listing, thumbnail: thumb?.data ?? null, clear: cleared }),
+        body: JSON.stringify({ id: current.id, listing, thumbnail: thumb?.data ?? null, clear: cleared && { ...cleared, turns: undefined } }),
       })
       : await fetch(`/api/games/${encodeURIComponent(current.id)}/listing`, {
         method: 'PUT',

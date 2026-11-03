@@ -52,7 +52,7 @@
   썸네일은 등록창이 zip의 `thumbnail.json`이나 직접 찍은 판을 게임 코드와 맞는지 본 뒤 `thumbnail`로 보냅니다 (없으면 `null`).
   서버는 `validateThumbnail`과 같은 검사를 하고, 틀리면 `422 thumbnail.invalid`입니다.
 - 클리어 체크 ([clear.go](../server/internal/upload/clear.go)): `clear`는 제작자가 등록창에서 혼자 양쪽을 둬서 `result()`가 승자를 정한 판입니다.
-  `seed`, 상태를 바꾼 행동만 담은 `moves`(1~2,000개), 승자 `winner`(0 또는 1), 그 판을 둔 코드 `version`입니다.
+  `seed`, 상태를 바꾼 행동만 담은 `moves`(1~4,000개), 승자 `winner`(0 또는 1), 그 판을 둔 코드 `version`입니다.
   - 무승부, 기권, `maxActions` 도달은 클리어가 아닙니다. 등록창이 그런 판은 보내지 않습니다.
   - 새 게임이거나 버전이 바뀌었으면 꼭 있어야 합니다(`422 clear.missing`). 같은 버전을 다시 등록할 때는 `null`이면 전에 깬 판을 그대로 씁니다.
   - `version`이 초안과 다르면 `422 clear.version`, 모양이 틀리면 `422 clear.invalid`입니다.

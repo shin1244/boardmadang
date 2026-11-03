@@ -15,11 +15,12 @@ import (
 // 서버는 게임 코드를 돌리지 않으므로 정말 이긴 판인지는 모르고 모양만 봅니다.
 // 기보를 재생해서 검증하는 건 공개한 뒤에 합니다 (docs/roadmap.md 3).
 
-// MaxClearMoves는 클리어 기보의 행동 수 상한입니다. 상태를 바꾼 행동만 담으므로 실행기의 maxActions 상한과 같습니다.
-const MaxClearMoves = 2000
+// MaxClearMoves는 클리어 기보의 행동 수 상한입니다. 상태를 바꾼 행동을 담으므로 maxActions 상한(2,000수)에
+// 수마다 기물 고르기 같은 차례 안의 행동이 하나쯤 더 붙습니다 (internal/hub의 MaxLog와 같은 셈).
+const MaxClearMoves = 2 * 2000
 
 // maxClearBody는 등록 본문에서 클리어 기보가 차지할 수 있는 크기입니다 (행동 하나가 50바이트 안팎).
-const maxClearBody = 256 << 10
+const maxClearBody = 512 << 10
 
 // Clear는 제작자 클리어 기보입니다.
 type Clear struct {
