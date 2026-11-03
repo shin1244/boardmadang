@@ -450,6 +450,7 @@ func (g *gameMeta) entry() site.Game {
 		Listing:   listing,
 		Thumbnail: g.Thumbnail,
 		Clear:     g.cleared(),
+		Released:  g.Created,
 	}
 }
 

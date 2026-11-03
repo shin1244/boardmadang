@@ -51,6 +51,7 @@ func main() {
 		log.Printf("경고: 화면 폴더를 열지 못해 화면과 게임 목록은 내보내지 않습니다 (SITE_DIR=%s): %v", cfg.SiteDir, err)
 	} else {
 		pages.Uploaded = uploads
+		pages.Played = records
 		uploads.Reserved = pages.Has
 	}
 
@@ -158,7 +159,6 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 	mux.HandleFunc("GET /drafts/{draft}/{path...}", up.ServeDraftFile)
 	mux.HandleFunc("GET /uploads/{game}/{version}/{path...}", up.ServeFile)
 	mux.HandleFunc("GET /api/games/{game}/clear", up.ServeClear)
-	// TODO: 등록 정보만 고치기, 내리기 (docs/roadmap.md 1-1)
 	return mux
 }
 

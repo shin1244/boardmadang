@@ -5,7 +5,7 @@
 | 요청 | 응답 |
 |---|---|
 | `GET /healthz` | `ok` |
-| `GET /api/games` | 게임 목록 `[{"id":"tictactoe","module":"/games/tictactoe/index.js","version":"3f1c9a0b2e7d4c56","private":false,"listing":{...},"thumbnail":{...}}]` |
+| `GET /api/games` | 게임 목록 `[{"id":"tictactoe","module":"/games/tictactoe/index.js","version":"3f1c9a0b2e7d4c56","private":false,"listing":{...},"thumbnail":{...},"plays":12,"released":"…"}]`. `plays`는 둔 판 수로 로비의 인기순에 씁니다 (무효가 된 대국, 행동이 없는 대국, 한 사람이 두 자리에 앉은 대국은 빼고 셈. 0이면 없음). `released`는 올린 게임을 처음 등록한 때로 출시일순에 씁니다 (레포 게임은 없음) |
 | `GET /api/locale` | 접속 나라와 화면 언어 `{"country":"KR","lang":"ko"}` |
 | `GET /api/me` | 지금 신원 `{"id":"g_…","kind":"guest","tag":"4821"}`. 쿠키가 없으면 게스트를 새로 발급합니다 |
 | `GET /api/matches/{id}` | 기보 하나. 시드와 행동 기록이 있어 처음부터 다시 둘 수 있습니다 `{"id":"VJ7QHHVKDY","game":"tictactoe","version":"3f1c9a0b2e7d4c56","seed":3551073280,"minutes":10,"players":[{…},{…}],"you":[0],"moves":[{"player":0,"action":{"kind":"click","row":1,"col":1},"at":10854}],"count":1,"winner":0,"reason":"result","clock":[587103,597876],"started":"…","ended":"…"}` |
@@ -61,6 +61,7 @@
   - `/api/games`의 항목에 `"clear":true`가 있으면 `GET /api/games/{id}/clear`로 받아 다시보기(`/web/replay.html?clear=<id>`)에서 봅니다.
 - 같은 계정이 같은 id로 다시 등록하면 새 버전이 되고, 옛 버전 코드는 기보 다시보기를 위해 남깁니다. 같은 버전이면 등록 정보만 바뀝니다.
 - 등록한 뒤에는 zip 없이 `PATCH /api/uploads/{id}`로 등록 정보만 고치거나 게임을 내립니다. 코드, 썸네일, 클리어 기보는 그대로입니다.
+  화면은 내 프로필(`/web/history.html`)의 "내가 올린 게임"이고, 등록 정보 고치기는 등록 화면을 `/web/register.html?edit=<id>`로 엽니다.
   - 하루 등록 횟수에 세지 않고, 한 시간에 30번까지입니다 (`429 {"error":"too many"}`).
   - 내 게임이 아니면 `404`, 바꿀 것이 없으면 `400 {"error":"nothing to change"}`, 등록 정보가 틀리면 등록할 때와 같은 `422`입니다.
   - 내린 게임은 `/api/games`와 클리어 기보에서 빠집니다. 코드(`/uploads/…`)는 그대로 내보내서 이미 둔 대국의 기보는 계속 다시볼 수 있고,
@@ -98,6 +99,7 @@
 - `/api/me`: 게스트와 계정, 세션 쿠키는 [identity.md](identity.md)에 정리했습니다.
   Go 서버는 서명한 쿠키로 신원을 정합니다. 개발 서버는 늘 같은 가짜 신원을 돌려주고, `DEV_AS=guest`로 게스트를 흉내 냅니다.
 - `/api/games`, `/api/locale`은 개발 서버(`sdk/playground/serve.js`)와 Go 서버(`server/internal/site`)가 같은 모양으로 제공합니다.
+  둔 판 수(`plays`)와 출시일(`released`)은 기보와 올린 게임이 있는 Go 서버에만 있습니다.
   Go 서버는 화면(`/web/`), 화면이 import하는 SDK 모듈(`/sdk/playground/`의 `board.js`, `listing.js`, `platform.js`), 게임 코드(`/games/`)도 내보냅니다.
   테스트 파일과 점으로 시작하는 파일은 내보내지 않습니다. 개발 서버에만 있는 것은 플레이그라운드 화면과 `PUT /api/games/<id>/listing`(등록창 저장), `PUT /api/games/<id>/thumbnail`(썸네일 저장)입니다.
   플레이그라운드는 게임 제작자가 자기 컴퓨터에서 쓰는 도구라 사이트의 메뉴와 버튼에는 없습니다.

@@ -29,6 +29,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
 // types는 내보낼 파일의 종류입니다 (serve.js의 TYPES와 같음). 여기에 없는 확장자는 404입니다.
@@ -55,6 +56,8 @@ type Site struct {
 	fsys fs.FS
 	// Uploaded는 회원이 올린 게임입니다 (internal/upload). 있으면 /api/games에서 레포 게임 뒤에 붙입니다.
 	Uploaded interface{ Games() []Game }
+	// Played는 게임마다 둔 판 수입니다 (internal/record). 있으면 /api/games의 plays에 넣습니다.
+	Played interface{ Plays(game string) int }
 }
 
 // Open은 dir(레포 루트)을 엽니다. dir/web/index.html이 없으면 에러입니다.
@@ -187,6 +190,10 @@ type Game struct {
 	Thumbnail json.RawMessage `json:"thumbnail"`
 	// 제작자 클리어 기보가 있는지 (올린 게임만, GET /api/games/<id>/clear). 레포 게임은 클리어 체크를 하지 않습니다
 	Clear bool `json:"clear,omitempty"`
+	// 둔 판 수 (/api/games에만). 로비의 인기순에 씁니다. 0이거나 개발 서버면 없습니다
+	Plays int `json:"plays,omitempty"`
+	// 처음 등록한 때 (올린 게임만). 로비의 출시일순에 씁니다. 레포 게임은 없어서 출시일순에서 맨 뒤로 갑니다
+	Released time.Time `json:"released,omitzero"`
 }
 
 // Has는 레포에 그 id의 게임 폴더가 있는지입니다. 회원은 이 id로 게임을 올릴 수 없습니다.
@@ -309,6 +316,11 @@ func (s *Site) ServeGames(w http.ResponseWriter, r *http.Request) {
 			if !slices.ContainsFunc(list, func(x Game) bool { return x.ID == g.ID }) {
 				list = append(list, g)
 			}
+		}
+	}
+	if s.Played != nil {
+		for i := range list {
+			list[i].Plays = s.Played.Plays(list[i].ID)
 		}
 	}
 	writeJSON(w, http.StatusOK, list)

@@ -5,6 +5,7 @@
 //
 //	matches/<id 앞 두 글자>/<id>.json   대국 하나
 //	users/<user id>.log                 그 유저가 둔 대국 id. 한 줄에 하나, 끝난 순서대로
+//	plays.json                          게임마다 둔 판 수 {"<게임 id>": 판 수}. 로비의 인기순에 씁니다
 //
 // 서버 한 대(VM 디스크)를 전제로 합니다. 서버를 여러 대로 늘리면 DB나 Cloud Storage로 옮깁니다.
 //
@@ -18,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -89,8 +91,9 @@ type Store struct {
 
 	mu      sync.Mutex
 	pending map[string]*Match // 파일에 쓰는 중인 대국. 다 쓸 때까지 Get이 여기서 찾습니다
+	plays   map[string]int    // 게임마다 둔 판 수 (counts). plays.json에 남깁니다
 
-	writeMu sync.Mutex // users/*.log에 덧붙이는 것을 한 번에 하나씩
+	writeMu sync.Mutex // users/*.log에 덧붙이는 것과 plays.json을 쓰는 것을 한 번에 하나씩
 	wg      sync.WaitGroup
 }
 
@@ -101,14 +104,75 @@ func Open(dir string) (*Store, error) {
 			return nil, err
 		}
 	}
-	return &Store{dir: dir, pending: make(map[string]*Match)}, nil
+	s := &Store{dir: dir, pending: make(map[string]*Match)}
+	if err := s.loadPlays(); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// counts는 둔 판 수에 세는 대국인지입니다. 무효가 된 대국, 행동이 하나도 없는 대국,
+// 한 사람이 두 자리에 앉은 대국은 세지 않습니다 (혼자 판 수를 부풀리지 못하게).
+func counts(m *Match) bool {
+	switch m.Reason {
+	case protocol.ReasonDesync, protocol.ReasonDisagree, protocol.ReasonLimit:
+		return false
+	}
+	return len(m.Moves) > 0 && m.Players[0].ID != m.Players[1].ID
+}
+
+// loadPlays는 plays.json을 읽습니다. 없거나 깨졌으면(판 수를 세기 전의 데이터) 기보를 다 훑어 다시 셉니다.
+func (s *Store) loadPlays() error {
+	data, err := os.ReadFile(filepath.Join(s.dir, "plays.json"))
+	if err == nil && json.Unmarshal(data, &s.plays) == nil && s.plays != nil {
+		return nil
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	s.plays = make(map[string]int)
+	err = filepath.WalkDir(filepath.Join(s.dir, "matches"), func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".json") {
+			return err
+		}
+		m := new(Match)
+		if data, err := os.ReadFile(p); err == nil && json.Unmarshal(data, m) == nil && counts(m) {
+			s.plays[m.Game]++
+		}
+		return nil // 깨진 파일은 건너뜁니다
+	})
+	if err != nil {
+		return err
+	}
+	return s.writePlays()
+}
+
+// writePlays는 지금 판 수를 plays.json에 씁니다. writeMu를 잡고 부릅니다 (나중에 잡은 쪽이 더 새 값을 씁니다).
+func (s *Store) writePlays() error {
+	s.mu.Lock()
+	data, err := json.Marshal(s.plays)
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return writeAtomic(filepath.Join(s.dir, "plays.json"), data)
+}
+
+// Plays는 그 게임을 둔 판 수입니다 (counts). 로비의 인기순에 씁니다.
+func (s *Store) Plays(game string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.plays[game]
 }
 
 // Save는 대국을 저장합니다. 파일은 뒤에서 쓰고 바로 돌아오므로 방의 락을 잡은 채로 불러도 됩니다.
-// 쓰는 동안에도 Get과 ListByUser에는 바로 보입니다. 실패하면 로그만 남깁니다.
+// 쓰는 동안에도 Get, ListByUser, Plays에는 바로 보입니다. 실패하면 로그만 남깁니다.
 func (s *Store) Save(m *Match) {
 	s.mu.Lock()
 	s.pending[m.ID] = m
+	if counts(m) {
+		s.plays[m.Game]++
+	}
 	s.mu.Unlock()
 	s.wg.Add(1)
 	go func() {
@@ -174,7 +238,10 @@ func (s *Store) write(m *Match) error {
 			return err
 		}
 	}
-	return nil
+	if !counts(m) {
+		return nil
+	}
+	return s.writePlays()
 }
 
 // ErrNotFound는 그런 기보가 없을 때입니다.

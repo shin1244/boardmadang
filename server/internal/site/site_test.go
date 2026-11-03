@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // writeTree는 dir 아래에 files(슬래시 경로 → 내용)를 씁니다.
@@ -327,5 +328,32 @@ func TestServeGamesJSON(t *testing.T) {
 	s.ServeGames(rec, httptest.NewRequest("GET", "/api/games", nil))
 	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "[]" {
 		t.Errorf("no games: %d %q, want 200 []", rec.Code, rec.Body.String())
+	}
+}
+
+type uploaded []Game
+
+func (u uploaded) Games() []Game { return u }
+
+type played map[string]int
+
+func (p played) Plays(game string) int { return p[game] }
+
+// 레포 게임과 올린 게임 모두 둔 판 수를 붙이고, 0이면 빼고 보냅니다. 출시일은 올린 게임만 있습니다
+func TestServeGamesPlays(t *testing.T) {
+	s := openSite(t, map[string]string{"web/index.html": "", "games/a/index.js": "a", "games/b/index.js": "b"})
+	s.Uploaded = uploaded{{ID: "u", Released: time.Date(2026, 11, 3, 1, 2, 3, 0, time.UTC)}}
+	s.Played = played{"b": 3, "u": 5}
+	rec := httptest.NewRecorder()
+	s.ServeGames(rec, httptest.NewRequest("GET", "/api/games", nil))
+	var list []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil || len(list) != 3 {
+		t.Fatalf("games: %v %s", err, rec.Body)
+	}
+	if _, ok := list[0]["plays"]; ok || list[1]["plays"] != 3.0 || list[2]["plays"] != 5.0 {
+		t.Errorf("plays = %v %v %v, want none 3 5", list[0]["plays"], list[1]["plays"], list[2]["plays"])
+	}
+	if _, ok := list[0]["released"]; ok || list[2]["released"] != "2026-11-03T01:02:03Z" {
+		t.Errorf("released = %v %v, want none and the publish time", list[0]["released"], list[2]["released"])
 	}
 }

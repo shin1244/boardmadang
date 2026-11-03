@@ -16,7 +16,8 @@
 
 다 됐습니다 ([server/internal/upload](../server/internal/upload), [docs/protocol.md](protocol.md#게임-올리기-serverinternalupload)).
 "게임 등록" 화면에서 zip 올리기 → 자동 검사 → 직접 깨기와 썸네일 → 등록 정보 → 등록까지 합니다.
-올린 게임은 같은 화면의 "내가 올린 게임"에서 등록 정보만 고치거나 내립니다. 개발 서버에서는 예전처럼 레포 게임의 등록 정보를 고칩니다.
+올린 게임은 내 프로필(상단의 내 이름)의 "내가 올린 게임"에서 내리거나, 등록 화면을 고치기로 열어(`?edit=<id>`) 등록 정보만 고칩니다.
+개발 서버에서는 예전처럼 레포 게임의 등록 정보를 고칩니다.
 
 - [x] **업로드 API** (계정만): `POST /api/drafts`로 초안을 올리고 `POST /api/drafts/{draft}/publish`로 등록
   - `npx boardmadang pack`이 만든 zip을 받음 (300KB 이하)
