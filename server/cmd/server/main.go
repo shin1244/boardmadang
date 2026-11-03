@@ -43,7 +43,10 @@ func main() {
 		log.Fatalf("계정 기록을 읽지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
 	}
 	ids.Members = accounts
+	comments.Names = accounts
 	login := &auth.Handler{Providers: providers(cfg), IDs: ids, Accounts: accounts, Records: records, PublicURL: cfg.PublicURL}
+	// 탈퇴하면 계정을 지운 뒤 기보의 자리, 의견, 올린 게임에서 그 계정을 지웁니다
+	mine := account.Handler{Store: accounts, IDs: ids, Forget: []func(string) error{records.Forget, comments.Forget, uploads.Forget}}
 	h := hub.New(cfg, ids, records)
 	pages, err := site.Open(cfg.SiteDir)
 	if err != nil {
@@ -57,7 +60,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           routes(h, ids, records, comments, uploads, login, pages),
+		Handler:           routes(h, ids, records, comments, uploads, login, mine, pages),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -121,7 +124,7 @@ func providers(cfg config.Config) []*auth.Provider {
 }
 
 // pages가 nil이면 화면과 게임 목록 없이 API만 엽니다.
-func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *comment.Store, uploads *upload.Store, login *auth.Handler, pages *site.Site) http.Handler {
+func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *comment.Store, uploads *upload.Store, login *auth.Handler, mine account.Handler, pages *site.Site) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
 	mux.HandleFunc("GET /api/locale", site.ServeLocale)
@@ -140,10 +143,13 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 	mux.HandleFunc("POST /auth/logout", login.ServeLogout)
 	mux.HandleFunc("GET /auth/signup", login.ServeSignupInfo)
 	mux.HandleFunc("POST /auth/signup", login.ServeSignup)
+	mux.HandleFunc("GET /api/account", mine.ServeGet)
+	mux.HandleFunc("PATCH /api/account", mine.ServeRename)
+	mux.HandleFunc("DELETE /api/account", mine.ServeDelete)
 	mux.HandleFunc("GET /ws", h.ServeWS)
 	mux.HandleFunc("GET /api/rooms", h.ServeRooms)
 	mux.HandleFunc("GET /api/live", h.ServeLive)
-	matches := record.Handler{Store: records, IDs: ids}
+	matches := record.Handler{Store: records, IDs: ids, Names: ids.Members}
 	mux.HandleFunc("GET /api/matches", matches.ServeMine)
 	mux.HandleFunc("GET /api/matches/{id}", matches.ServeMatch)
 	talk := comment.Handler{Store: comments, IDs: ids}

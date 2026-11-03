@@ -689,3 +689,50 @@ func TestHTTP(t *testing.T) {
 		t.Fatalf("내린 게임의 코드는 기보 다시보기에 씁니다: %d", rec.Code)
 	}
 }
+
+func TestForget(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := open(t, dir)
+	a, b := member("m_a"), member("m_b")
+	d, _ := s.NewDraft(a, makeZip(t, "index.js", gameCode))
+	g, err := s.Publish(a, d.ID, publishing("dots", d))
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, _ := s.NewDraft(a, makeZip(t, "index.js", gameCode+"// 다음 버전\n"))
+	db, _ := s.NewDraft(b, makeZip(t, "index.js", gameCode))
+	if _, err := s.Publish(b, db.ID, publishing("lines", db)); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Forget("m_a"); err != nil {
+		t.Fatal(err)
+	}
+	check := func(s *Store) {
+		t.Helper()
+		var ids []string
+		for _, g := range s.Games() {
+			ids = append(ids, g.ID)
+		}
+		if !slices.Equal(ids, []string{"lines"}) {
+			t.Fatalf("로비 = %v", ids)
+		}
+		if mine := s.Mine("m_a").Games; len(mine) != 1 || !mine[0].Hidden {
+			t.Fatalf("Mine = %+v", mine)
+		}
+		// 코드는 남아 기보를 다시볼 수 있고, id는 다른 사람이 쓰지 못합니다
+		if _, err := s.gameFile("dots", g.Version, "index.js"); err != nil {
+			t.Fatalf("code: %v", err)
+		}
+		d, _ := s.NewDraft(b, makeZip(t, "index.js", gameCode))
+		if _, err := s.Publish(b, d.ID, publishing("dots", d)); !errors.Is(err, ErrTaken) {
+			t.Fatalf("남의 id: %v", err)
+		}
+	}
+	check(s)
+	if _, err := s.draftFile(draft.ID, "index.js"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("초안은 지웁니다: %v", err)
+	}
+	again, _ := open(t, dir)
+	check(again)
+}

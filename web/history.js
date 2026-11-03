@@ -3,6 +3,7 @@
 //   등록 정보 고치기는 게임 등록 화면을 ?edit=<id>로 엽니다. 개발 서버에는 /api/uploads가 없어서(404) 빠집니다.
 // 내 대국: 서버에 저장된 내 기보를 최근 것부터 보여줍니다 (GET /api/matches).
 // 게스트의 기록은 이 브라우저의 세션 쿠키에 묶여 있습니다. 쿠키를 지우면 새 게스트가 되어 목록이 비어 보입니다.
+// 계정(계정만, GET /api/account): 이름 바꾸기(PATCH)와 탈퇴(DELETE, 지금 이름을 적어야 함). 개발 서버에는 없어서(404) 빠집니다.
 
 import { localize } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
@@ -120,6 +121,148 @@ function editError(status, body) {
   return body.error ?? String(status);
 }
 
+// ---- 계정 ----
+
+const PROVIDER_NAMES = { google: 'Google', github: 'GitHub', dev: 'dev' };
+/** 서버가 알려 주는 이름이 안 되는 이유 (이름 정하기 화면과 같은 글) */
+const NAME_ERRORS = {
+  'name length': 'signup.error.length',
+  'name chars': 'signup.error.chars',
+  'name reserved': 'signup.error.reserved',
+  'name same': 'account.rename.same',
+};
+
+/** GET /api/account의 내 계정 { name, provider, created, renameAfter?, min, max }. 게스트이거나 개발 서버면 null */
+let account = null;
+let accountError = '';
+/** 이름 바꾸기와 탈퇴의 결과 글. 화면 언어를 바꿔도 다시 그리도록 { key, params, ok }로 둡니다 */
+let renameStatus = null;
+let leaveStatus = null;
+/** 이름 바꾸기나 탈퇴를 보내는 중 */
+let accountBusy = false;
+/** 방금 탈퇴함. 다른 칸은 다 숨기고 인사만 보입니다 */
+let left = false;
+
+const longDate = (s) => new Date(s).toLocaleDateString(lang, { dateStyle: 'long' });
+const statusText = (s) => (s ? t(s.key, s.params) : '');
+
+async function loadAccount() {
+  try {
+    const res = await fetch('/api/account', { cache: 'no-store' });
+    if (res.status === 404) return; // 개발 서버
+    if (!res.ok) throw new Error(res.status);
+    account = await res.json();
+  } catch (e) {
+    accountError = e.message;
+  }
+}
+
+/** 이름을 다시 바꿀 수 있는 때. 지금 바꿀 수 있으면 null */
+function renameAfter() {
+  const after = account?.renameAfter;
+  return after && new Date(after) > new Date() ? after : null;
+}
+
+function renderAccount() {
+  const section = $('#account');
+  section.hidden = left || !isMember(me) || (!account && !accountError);
+  if (section.hidden) return;
+  $('#rename').hidden = $('#leave').hidden = !account;
+  if (!account) {
+    $('#account-info').textContent = t('account.loadFailed', { msg: accountError });
+    return;
+  }
+  $('#account-info').textContent = t('account.info', {
+    provider: PROVIDER_NAMES[account.provider] ?? account.provider,
+    date: longDate(account.created),
+  });
+
+  const after = renameAfter();
+  const input = $('#rename-name');
+  input.maxLength = account.max;
+  input.placeholder = account.name;
+  input.disabled = $('#rename-submit').disabled = accountBusy || !!after;
+  $('#rename-hint').textContent = after
+    ? t('account.rename.after', { date: longDate(after) })
+    : t('account.rename.rules', { min: account.min, max: account.max });
+  const status = $('#rename-status');
+  status.textContent = statusText(renameStatus);
+  status.classList.toggle('good', !!renameStatus?.ok);
+
+  $('#leave-label').textContent = t('account.leave.label', { name: account.name });
+  $('#leave-submit').disabled = accountBusy;
+  $('#leave-status').textContent = statusText(leaveStatus);
+}
+
+async function rename(e) {
+  e.preventDefault();
+  if (accountBusy || !account) return;
+  const name = $('#rename-name').value.trim();
+  if ([...name].length < account.min || [...name].length > account.max) {
+    renameStatus = { key: 'signup.error.length' };
+    return render();
+  }
+  accountBusy = true;
+  renameStatus = null;
+  render();
+  try {
+    const res = await fetch('/api/account', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok) {
+      account = body;
+      me = { ...me, name: body.name };
+      $('#rename-name').value = '';
+      renameStatus = { key: 'account.rename.done', ok: true };
+    } else if (res.status === 429 && body.renameAfter) {
+      account = { ...account, renameAfter: body.renameAfter };
+      renameStatus = { key: 'account.rename.soon', params: { date: longDate(body.renameAfter) } };
+    } else if (NAME_ERRORS[body.error]) {
+      renameStatus = { key: NAME_ERRORS[body.error] };
+    } else {
+      renameStatus = { key: 'account.rename.failed', params: { msg: body.error ?? res.status } };
+    }
+  } catch (err) {
+    renameStatus = { key: 'account.rename.failed', params: { msg: err.message } };
+  }
+  accountBusy = false;
+  render();
+}
+
+async function leave(e) {
+  e.preventDefault();
+  if (accountBusy || !account) return;
+  const name = $('#leave-name').value.trim();
+  if (name !== account.name) {
+    leaveStatus = { key: 'account.leave.mismatch' };
+    return render();
+  }
+  accountBusy = true;
+  leaveStatus = null;
+  render();
+  try {
+    const res = await fetch('/api/account', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: name }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error ?? res.status);
+    }
+    left = true;
+    // 서버가 세션 쿠키를 지웠으므로 상단은 새 게스트로 그립니다
+    me = await fetch('/api/me').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  } catch (err) {
+    leaveStatus = { key: 'account.leave.failed', params: { msg: err.message } };
+  }
+  accountBusy = false;
+  render();
+}
+
 // ---- 내 대국 ----
 
 /** 내 쪽에서 본 결과: [글, class] */
@@ -162,8 +305,11 @@ function renderMatch(m) {
 function render() {
   applyStatic('profile.title');
   renderMe(me);
-  $('#who').textContent = me ? displayName(me) : t('profile.title');
+  $('#who').textContent = left ? t('account.left.title') : me ? displayName(me) : t('profile.title');
   renderMine();
+  renderAccount();
+  $('#left').hidden = !left;
+  $('#matches').hidden = left;
   const list = matches ?? [];
   $('#list').replaceChildren(...list.map(renderMatch));
   $('#count').textContent = matches ? `${list.length}` : '';
@@ -175,6 +321,8 @@ function render() {
 async function main() {
   setupLangButtons(render);
   setLang(await detectLang());
+  $('#rename').addEventListener('submit', rename);
+  $('#leave-form').addEventListener('submit', leave);
   render();
   me = await loadMe();
   render();
@@ -183,6 +331,7 @@ async function main() {
       fetch('/api/games'),
       fetch('/api/matches', { cache: 'no-store' }),
       isMember(me) ? loadMine() : null,
+      isMember(me) ? loadAccount() : null,
     ]);
     games = new Map((await gamesRes.json()).map((g) => [g.id, g]));
     if (!matchesRes.ok) throw new Error(matchesRes.status);

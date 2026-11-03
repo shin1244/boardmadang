@@ -14,6 +14,7 @@
 //	uploads/<게임>/<버전>/...      코드만. 옛 버전은 다시보기를 위해 지우지 않습니다
 //
 // 등록한 뒤에는 주인이 등록 정보만 고치거나 게임을 내릴 수 있습니다 (Edit). 내린 게임도 코드는 지우지 않습니다.
+// 주인이 탈퇴하면 그 사람의 게임을 모두 내립니다 (Forget).
 //
 // 서버는 게임 코드를 돌리지 않습니다. 자동 검사는 올린 사람의 브라우저에서 돌기 때문에 서버는 그 결과를 믿지 않습니다.
 // 남의 게임 코드가 보는 사람을 해칠 수 없는 건 실행기의 샌드박스 덕분이고, 서버는 파일 모양과 크기, 횟수만 지킵니다.
@@ -528,6 +529,33 @@ func (s *Store) Edit(u identity.User, id string, req EditRequest) (MyGame, error
 	}
 	s.games[id] = &next
 	return next.mine(), nil
+}
+
+// Forget은 탈퇴한 계정 owner가 올린 게임을 모두 내리고 초안을 지웁니다.
+// 내린 게임처럼 코드는 남겨 이미 둔 대국의 기보를 다시볼 수 있게 하고, 게임 id는 다른 사람이 쓰지 못하게 그대로 둡니다
+// (주인 id만 남고, 그 계정으로는 다시 로그인할 수 없습니다).
+func (s *Store) Forget(owner string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, d := range s.drafts {
+		if d.Owner == owner {
+			s.dropDraft(d.ID)
+		}
+	}
+	for id, g := range s.games {
+		if g.Owner != owner || g.Hidden {
+			continue
+		}
+		next := *g
+		next.Hidden = true
+		if err := writeJSONFile(filepath.Join(s.dir, "uploads", id, "game.json"), &next); err != nil {
+			return err
+		}
+		s.games[id] = &next
+	}
+	delete(s.recent, owner)
+	delete(s.edits, owner)
+	return nil
 }
 
 // ---- 파일 ----

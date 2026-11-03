@@ -57,6 +57,41 @@
 .mine-status { margin: 8px 0 0; color: var(--bad); font-size: 14px; }
 .mine-status:empty { display: none; }
 
+/* 내 프로필: 계정 (이름 바꾸기, 탈퇴) */
+.account-card {
+  margin: 0 0 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.account-card[hidden], #left[hidden] { display: none; }
+.account-field { display: grid; gap: 6px; font-size: 14px; font-weight: 600; }
+.account-row { display: flex; gap: 8px; }
+.account-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-weight: 400;
+}
+.account-row input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.account-row input:disabled { opacity: 0.6; }
+.account-row .btn { flex: none; padding: 8px 18px; }
+.account-hint { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+.account-status { margin: 8px 0 0; color: var(--bad); font-size: 14px; }
+.account-status.good { color: var(--good); }
+.account-status:empty { display: none; }
+.account-leave summary { color: var(--bad); font-weight: 600; cursor: pointer; }
+.account-leave p { margin: 12px 0 6px; }
+.account-list { margin: 0 0 14px; padding-left: 20px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.btn.danger { border-color: var(--bad); background: var(--bad); color: #fff; }
+#left .btn { display: inline-block; padding: 8px 18px; }
+
 @media (max-width: 760px) {
   .rooms { padding: 20px 16px 48px; }
   .room { flex-wrap: wrap; }

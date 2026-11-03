@@ -29,6 +29,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/shin1244/boardmadang/server/internal/identity"
 	"github.com/shin1244/boardmadang/server/internal/protocol"
 )
 
@@ -92,8 +93,10 @@ type Store struct {
 	mu      sync.Mutex
 	pending map[string]*Match // 파일에 쓰는 중인 대국. 다 쓸 때까지 Get이 여기서 찾습니다
 	plays   map[string]int    // 게임마다 둔 판 수 (counts). plays.json에 남깁니다
+	// 서버가 켜진 뒤 탈퇴한 계정 (Forget). 그때 진행 중이던 대국이 나중에 끝나도 그 자리를 지우고 씁니다
+	gone map[string]bool
 
-	writeMu sync.Mutex // users/*.log에 덧붙이는 것과 plays.json을 쓰는 것을 한 번에 하나씩
+	writeMu sync.Mutex // 기보 파일, users/*.log, plays.json을 쓰는 것을 한 번에 하나씩
 	wg      sync.WaitGroup
 }
 
@@ -104,7 +107,7 @@ func Open(dir string) (*Store, error) {
 			return nil, err
 		}
 	}
-	s := &Store{dir: dir, pending: make(map[string]*Match)}
+	s := &Store{dir: dir, pending: make(map[string]*Match), gone: make(map[string]bool)}
 	if err := s.loadPlays(); err != nil {
 		return nil, err
 	}
@@ -216,12 +219,20 @@ func writeAtomic(file string, data []byte) error {
 }
 
 func (s *Store) write(m *Match) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	// 탈퇴한 사람의 자리는 지우고 씁니다. m은 Get이 그대로 내주므로 고치지 않고 복사본을 씁니다
+	s.mu.Lock()
+	if slices.ContainsFunc(m.Players[:], func(p Player) bool { return s.gone[p.ID] }) {
+		c := *m
+		forgetSeats(&c, func(id string) bool { return s.gone[id] })
+		m = &c
+	}
+	s.mu.Unlock()
 	if err := s.writeMatch(m); err != nil {
 		return err
 	}
 
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
 	for i, p := range m.Players {
 		if !userPattern.MatchString(p.ID) || (i == 1 && p.ID == m.Players[0].ID) {
 			continue // 혼자 두 자리에 앉았으면 한 번만
@@ -362,4 +373,58 @@ func (s *Store) Adopt(guestID string, to Player) (int, error) {
 		return 0, err
 	}
 	return len(moved), os.Remove(guestLog)
+}
+
+// Forget은 탈퇴한 계정 userID를 기보에서 지웁니다. 그 사람이 앉은 자리는 id와 이름 없이 "탈퇴한 사용자"(identity.KindGone)로
+// 바꾸고, 그 사람의 목록 파일을 지웁니다. 상대에게는 그 대국이 그대로 남습니다.
+// 그때 진행 중이거나 쓰는 중이던 대국도, 나중에 파일에 쓸 때 같은 자리를 지웁니다 (서버가 켜져 있는 동안 기억합니다).
+func (s *Store) Forget(userID string) error {
+	if !userPattern.MatchString(userID) {
+		return nil
+	}
+	// write보다 먼저 표시해 둡니다. 이 뒤에 writeMu를 잡는 write는 지운 자리로 쓰고,
+	// 먼저 잡은 write는 목록 파일에 이미 덧붙였으므로 아래에서 고칩니다.
+	s.mu.Lock()
+	s.gone[userID] = true
+	s.mu.Unlock()
+
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	file := filepath.Join(s.dir, "users", userID+".log")
+	data, err := os.ReadFile(file)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	isGone := func(id string) bool { return id == userID }
+	for _, id := range strings.Fields(string(data)) {
+		m, err := s.Get(id)
+		if err != nil {
+			continue // 지워졌거나 깨진 파일은 건너뜁니다
+		}
+		c := *m // 쓰는 중인 대국이면 m을 다른 곳에서 읽고 있을 수 있어 복사본을 고칩니다
+		forgetSeats(&c, isGone)
+		if err := s.writeMatch(&c); err != nil {
+			return err
+		}
+	}
+	return os.Remove(file)
+}
+
+// forgetSeats는 gone인 사람이 앉은 자리를 "탈퇴한 사용자"로 바꿉니다.
+// 자리마다 다른 id를 넣어 혼자 둔 대국인지(counts)는 그대로 둡니다. 혼자 두 자리에 앉았으면 두 자리가 같은 id입니다.
+func forgetSeats(m *Match, gone func(id string) bool) {
+	solo := m.Players[0].ID == m.Players[1].ID
+	for i, p := range m.Players {
+		if !gone(p.ID) {
+			continue
+		}
+		id := fmt.Sprintf("gone-%d", i)
+		if solo {
+			id = "gone"
+		}
+		m.Players[i] = Player{ID: id, Kind: identity.KindGone}
+	}
 }

@@ -32,14 +32,14 @@ type View struct {
 	Ended   time.Time              `json:"ended"`
 }
 
-func viewOf(m *Match, viewer string, withMoves bool) View {
+func (h Handler) viewOf(m *Match, viewer string, withMoves bool) View {
 	v := View{
 		ID: m.ID, Game: m.Game, Version: m.Version, Seed: m.Seed, Minutes: m.Minutes,
 		You: []int{}, Count: len(m.Moves),
 		Winner: m.Winner, Reason: m.Reason, Clock: m.Clock, Started: m.Started, Ended: m.Ended,
 	}
 	for i, p := range m.Players {
-		v.Players[i] = protocol.PlayerInfo{Kind: p.Kind, Tag: p.Tag, Name: p.Name}
+		v.Players[i] = identity.Public(identity.User{ID: p.ID, Kind: p.Kind, Tag: p.Tag, Name: p.Name}, h.Names)
 		if viewer != "" && p.ID == viewer {
 			v.You = append(v.You, i)
 		}
@@ -57,6 +57,7 @@ func viewOf(m *Match, viewer string, withMoves bool) View {
 type Handler struct {
 	Store *Store
 	IDs   *identity.Issuer
+	Names identity.Members // 있으면 계정 이름을 지금 이름으로 보냅니다 (identity.Public)
 }
 
 func (h Handler) viewer(r *http.Request) string {
@@ -78,7 +79,7 @@ func (h Handler) ServeMatch(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server error"})
 		return
 	}
-	writeJSON(w, http.StatusOK, viewOf(m, h.viewer(r), true))
+	writeJSON(w, http.StatusOK, h.viewOf(m, h.viewer(r), true))
 }
 
 // ServeMine은 쿠키가 없으면 빈 목록입니다. 게스트를 새로 발급하지는 않습니다.
@@ -92,7 +93,7 @@ func (h Handler) ServeMine(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, m := range list {
-			out = append(out, viewOf(m, me, false))
+			out = append(out, h.viewOf(m, me, false))
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

@@ -6,6 +6,7 @@
 //	reports.jsonl              모든 신고 (의견과 게임). 운영자가 보는 용도입니다
 //
 // 게임마다 처음 부를 때 파일을 처음부터 읽어 메모리에 올려 둡니다. 서버 한 대(VM 디스크)를 전제로 합니다.
+// 탈퇴한 계정의 의견은 Forget이 파일에서 아예 지웁니다.
 //
 // 서로 다른 사람 HideAfter명이 신고한 의견은 글을 가립니다. 의견과 신고는 계정만 할 수 있습니다(http.go).
 // 게스트도 받으면 쿠키를 지워 가며 한 사람이 여러 번 신고해 남의 의견을 혼자 가릴 수 있기 때문입니다.
@@ -15,6 +16,7 @@ package comment
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -99,10 +101,10 @@ type View struct {
 	Hidden   bool                `json:"hidden,omitempty"`
 }
 
-func (c *Comment) view(viewer string) View {
+func (c *Comment) view(viewer string, names identity.Members) View {
 	v := View{
 		ID:       c.ID,
-		Author:   protocol.PlayerInfo{Kind: c.Author.Kind, Tag: c.Author.Tag, Name: c.Author.Name},
+		Author:   identity.Public(c.Author, names),
 		At:       c.At,
 		Mine:     viewer != "" && c.Author.ID == viewer,
 		Reported: viewer != "" && c.reporters[viewer],
@@ -144,6 +146,8 @@ type thread struct {
 type Store struct {
 	dir string
 	now func() time.Time // 테스트에서 시간을 바꾸려고 둡니다
+	// Names가 있으면 쓴 사람의 이름을 지금 계정 이름으로 보냅니다 (identity.Public). 남길 때의 이름은 파일에 그대로 둡니다
+	Names identity.Members
 
 	mu          sync.Mutex
 	threads     map[string]*thread
@@ -293,7 +297,7 @@ func (s *Store) List(game, viewer string) ([]View, int, error) {
 		}
 		count++
 		if len(out) < ListLimit {
-			out = append(out, c.view(viewer))
+			out = append(out, c.view(viewer, s.Names))
 		}
 	}
 	return out, count, nil
@@ -348,7 +352,7 @@ func (s *Store) Post(game string, u identity.User, text string) (View, error) {
 			}
 		}
 	}
-	return t.byID[l.ID].view(u.ID), nil
+	return t.byID[l.ID].view(u.ID, s.Names), nil
 }
 
 // Delete는 u가 자기 의견을 지웁니다.
@@ -426,4 +430,58 @@ func (s *Store) Report(u identity.User, r Report) (hidden bool, err error) {
 		return false, err
 	}
 	return c.hidden(), nil
+}
+
+// Forget은 탈퇴한 계정 userID가 남긴 의견을 모두 지웁니다. 지움(del) 줄을 덧붙이는 게 아니라 그 의견의 줄
+// (남김, 지움, 그 의견에 받은 신고)을 빼고 파일을 새로 써서 글이 남지 않게 합니다.
+// 그 사람이 남의 의견에 한 신고는 가린 의견이 다시 보이지 않게 남깁니다 (계정 id만 있습니다).
+// reports.jsonl은 운영 기록이라 그대로 둡니다 (의견 글은 들어 있지 않습니다).
+func (s *Store) Forget(userID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	files, err := filepath.Glob(filepath.Join(s.dir, "comments", "*.jsonl"))
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		var lines []line
+		mine := make(map[string]bool)
+		err := eachLine(file, func(data []byte) {
+			var l line
+			if json.Unmarshal(data, &l) != nil {
+				return // 깨진 줄은 읽을 때도 건너뛰므로 버립니다
+			}
+			if l.Op == "add" && l.By == userID {
+				mine[l.ID] = true
+			}
+			lines = append(lines, l)
+		})
+		if err != nil {
+			return err
+		}
+		if len(mine) == 0 {
+			continue
+		}
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf) // 한 줄에 하나씩 쓰고 줄바꿈을 붙입니다
+		for _, l := range lines {
+			if mine[l.ID] {
+				continue
+			}
+			if err := enc.Encode(l); err != nil {
+				return err
+			}
+		}
+		tmp := file + ".tmp"
+		if err := os.WriteFile(tmp, buf.Bytes(), 0o644); err != nil {
+			return err
+		}
+		if err := os.Rename(tmp, file); err != nil {
+			return err
+		}
+		delete(s.threads, strings.TrimSuffix(filepath.Base(file), ".jsonl")) // 다음에 부를 때 파일에서 다시 읽습니다
+	}
+	delete(s.lastPost, userID)
+	delete(s.reportTimes, userID)
+	return nil
 }
