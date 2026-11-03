@@ -152,6 +152,7 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 	mux.HandleFunc("POST /api/reports", talk.ServeReport)
 	up := upload.Handler{Store: uploads, IDs: ids}
 	mux.HandleFunc("GET /api/uploads", up.ServeMine)
+	mux.HandleFunc("PATCH /api/uploads/{game}", up.ServeEdit)
 	mux.HandleFunc("POST /api/drafts", up.ServeNewDraft)
 	mux.HandleFunc("POST /api/drafts/{draft}/publish", up.ServePublish)
 	mux.HandleFunc("GET /drafts/{draft}/{path...}", up.ServeDraftFile)

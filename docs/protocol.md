@@ -16,7 +16,8 @@
 | `POST /api/games/{id}/comments` | 의견 남기기 `{"text":"…"}` → `201`과 남긴 의견 |
 | `DELETE /api/games/{id}/comments/{comment}` | 내 의견 지우기 → `{"ok":true}` |
 | `POST /api/reports` | 신고 `{"game":"tictactoe","comment":"RN92MFYW","reason":"spam","detail":"…"}` → `{"ok":true,"hidden":false}`. `comment`가 없으면 게임 신고 |
-| `GET /api/uploads` | 내가 올린 게임과 오늘 남은 등록 횟수 `{"games":[{"id":"dots","version":"e9ff673cd0205ffa","published":"…"}],"left":4}`. 계정만 |
+| `GET /api/uploads` | 내가 올린 게임과 오늘 남은 등록 횟수 `{"games":[{"id":"dots","module":"…","version":"e9ff673cd0205ffa","listing":{…},"thumbnail":{…},"clear":true,"published":"…","hidden":true}],"left":4}`. 게임마다 `/api/games`의 항목에 마지막으로 등록한 때와 내렸는지(`hidden`)를 더한 것입니다. 계정만 |
+| `PATCH /api/uploads/{id}` | 내 게임의 등록 정보만 고치기 `{"listing":{…}}`, 내리기 `{"hidden":true}`, 다시 올리기 `{"hidden":false}` → `{"game":{…}}` (`GET /api/uploads`의 항목). 계정만 |
 | `POST /api/drafts` | 게임 zip을 초안으로 올리기. 본문은 zip 그대로(`Content-Type: application/zip`). 계정만 → `201 {"id":"<초안>","module":"/drafts/<초안>/index.js","version":"…","files":[{"path":"index.js","bytes":3640}],"listing":{…},"thumbnail":{…},"thumbnailProblems":["…"]}` |
 | `POST /api/drafts/{draft}/publish` | 초안 등록 `{"id":"dots","listing":{…},"thumbnail":{…},"clear":{"version":"…","seed":3551073280,"moves":[{"player":0,"action":{"kind":"click","row":1,"col":1}}],"winner":0}}` → `{"game":{…}}` (`/api/games`의 항목). 계정만 |
 | `GET /api/games/{id}/clear` | 제작자 클리어 기보. 올린 게임의 지금 버전만 `{"game":"dots","version":"…","seed":3551073280,"moves":[…],"winner":0,"at":"…"}`. 없으면 `404` |
@@ -59,6 +60,11 @@
   - 서버는 게임 코드를 돌리지 않으므로 정말 이긴 판인지는 모르고 모양만 봅니다. 재생해서 검증하는 건 공개한 뒤에 합니다.
   - `/api/games`의 항목에 `"clear":true`가 있으면 `GET /api/games/{id}/clear`로 받아 다시보기(`/web/replay.html?clear=<id>`)에서 봅니다.
 - 같은 계정이 같은 id로 다시 등록하면 새 버전이 되고, 옛 버전 코드는 기보 다시보기를 위해 남깁니다. 같은 버전이면 등록 정보만 바뀝니다.
+- 등록한 뒤에는 zip 없이 `PATCH /api/uploads/{id}`로 등록 정보만 고치거나 게임을 내립니다. 코드, 썸네일, 클리어 기보는 그대로입니다.
+  - 하루 등록 횟수에 세지 않고, 한 시간에 30번까지입니다 (`429 {"error":"too many"}`).
+  - 내 게임이 아니면 `404`, 바꿀 것이 없으면 `400 {"error":"nothing to change"}`, 등록 정보가 틀리면 등록할 때와 같은 `422`입니다.
+  - 내린 게임은 `/api/games`와 클리어 기보에서 빠집니다. 코드(`/uploads/…`)는 그대로 내보내서 이미 둔 대국의 기보는 계속 다시볼 수 있고,
+    id도 그대로 주인의 것입니다. 다시 올리거나 새로 등록하면 다시 나옵니다.
 - 실패: `409 {"error":"id taken"}` 레포 게임이거나 다른 계정이 올린 id, `400 {"error":"bad id"}` id 모양(영문 소문자, 숫자, `-`로 40자까지),
   `429 {"error":"too many"}` 하루 등록 5번 또는 한 시간에 초안 30번, `404` 초안이 없거나 남의 것이거나 하루가 지남
 - 초안은 하루가 지나면 지우고, 계정마다 최근 3개만 남깁니다. 등록하면 그 초안은 없어집니다.
@@ -83,8 +89,8 @@
     내 의견은 신고할 수 없고(`400 own comment`), 같은 것을 두 번 신고하면 그냥 받습니다. 한 사람이 한 시간에 20번까지입니다 (`429 too many reports`).
   - 서로 다른 세 사람이 신고한 의견은 `hidden: true`가 되고 글(`text`)을 보내지 않습니다.
   - `author`에는 쓴 사람의 `kind`, `tag`, `name`만 들어갑니다. `mine`은 보는 사람이 쓴 의견, `reported`는 보는 사람이 이미 신고한 의견입니다.
-- 기보의 `version`이 지금 게임 코드와 다르면 다시보기 화면이 "판이 다르게 보일 수 있다"고 알립니다.
-  예전 코드를 보관해 그 코드로 재생하는 건 아직 하지 않습니다.
+- 기보의 `version`이 지금 게임 코드와 다르면, 다시보기 화면은 올린 게임의 옛 버전 코드(`/uploads/<id>/<version>/index.js`)로 재생합니다.
+  내린 게임도 같습니다. 옛 코드가 없는 레포 게임은 지금 코드로 재생하고 "판이 다르게 보일 수 있다"고 알립니다.
 - `/api/locale`: 나라는 앞에 선 프록시가 넣어 주는 헤더에서 읽습니다. GCP 부하 분산기의 커스텀 요청 헤더
   `X-Client-Region: {client_region}`, 없으면 Cloudflare의 `CF-IPCountry`(모르는 나라인 `XX`는 빼고)입니다.
   KR이면 `ko`, 다른 나라면 `en`, 나라를 모르면 `Accept-Language`로 정합니다. 화면 언어 고르기에만 쓰므로
