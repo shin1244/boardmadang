@@ -265,7 +265,8 @@ func TestPublish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.Module != "/uploads/dots/"+d.Version+"/index.js" || g.Version != d.Version || g.Thumbnail == nil || !g.Clear {
+	released := *now
+	if g.Module != "/uploads/dots/"+d.Version+"/index.js" || g.Version != d.Version || g.Thumbnail == nil || !g.Clear || !g.Released.Equal(released) {
 		t.Fatalf("등록한 게임: %+v", g)
 	}
 	if strings.Contains(string(g.Thumbnail), "drop me") {
@@ -305,7 +306,8 @@ func TestPublish(t *testing.T) {
 		t.Fatalf("새 버전인데 클리어 없이: %v", codes(err))
 	}
 	g2, err := s.Publish(a, d2.ID, publishing("dots", d2))
-	if err != nil || g2.Version == g.Version || g2.Thumbnail != nil || !g2.Clear {
+	// 출시일은 처음 등록한 때 그대로입니다
+	if err != nil || g2.Version == g.Version || g2.Thumbnail != nil || !g2.Clear || !g2.Released.Equal(released) {
 		t.Fatalf("새 버전: %+v %v", g2, err)
 	}
 	if _, err := s.gameFile("dots", g.Version, "index.js"); err != nil {

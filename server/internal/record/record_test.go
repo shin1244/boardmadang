@@ -118,6 +118,55 @@ func TestListIncludesPending(t *testing.T) {
 	}
 }
 
+func TestPlays(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := Open(dir)
+	other := sample("g_a", "g_b")
+	other.Game = "dots"
+	solo := sample("g_a", "g_a")
+	invalid := sample("g_a", "g_b")
+	invalid.Reason = protocol.ReasonDesync
+	empty := sample("g_a", "g_b")
+	empty.Moves = nil
+	empty.Reason = protocol.ReasonLeft
+	for _, m := range []*Match{sample("g_a", "g_b"), sample("g_c", "g_d"), other, solo, invalid, empty} {
+		s.Save(m)
+	}
+	// 쓰는 중에도 바로 셉니다
+	if s.Plays("tictactoe") != 2 || s.Plays("dots") != 1 || s.Plays("none") != 0 {
+		t.Fatalf("plays while pending: %d %d", s.Plays("tictactoe"), s.Plays("dots"))
+	}
+	s.Close()
+
+	// 서버를 다시 켜도 plays.json에서 읽습니다
+	s2, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s2.Plays("tictactoe") != 2 || s2.Plays("dots") != 1 {
+		t.Fatalf("plays after reopen: %d %d", s2.Plays("tictactoe"), s2.Plays("dots"))
+	}
+
+	// plays.json이 없거나 깨졌으면 기보를 훑어 다시 셉니다 (판 수를 세기 전에 쌓인 기보)
+	for _, body := range []string{"", "{broken", "null"} {
+		file := filepath.Join(dir, "plays.json")
+		os.Remove(file)
+		if body != "" {
+			os.WriteFile(file, []byte(body), 0o644)
+		}
+		s3, err := Open(dir)
+		if err != nil {
+			t.Fatalf("%q: %v", body, err)
+		}
+		if s3.Plays("tictactoe") != 2 || s3.Plays("dots") != 1 {
+			t.Fatalf("%q: rebuilt plays %d %d", body, s3.Plays("tictactoe"), s3.Plays("dots"))
+		}
+		if data, _ := os.ReadFile(file); string(data) != `{"dots":1,"tictactoe":2}` {
+			t.Fatalf("%q: rebuilt plays.json %s", body, data)
+		}
+	}
+}
+
 func TestNewIDIsValid(t *testing.T) {
 	seen := map[string]bool{}
 	for i := 0; i < 1000; i++ {

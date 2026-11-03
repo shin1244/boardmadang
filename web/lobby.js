@@ -4,7 +4,7 @@
 
 import { BoardView } from '/sdk/playground/board.js';
 import { loadGame } from './engine.js';
-import { DIFFICULTIES, LANGS, LANG_NAMES, NO_TIMER, fullLangs, gameLang, localize, timerOf } from '/sdk/playground/listing.js';
+import { LANGS, LANG_NAMES, NO_TIMER, fullLangs, gameLang, localize, timerOf } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { displayName, isMember, loadMe, renderMe } from './me.js';
 
@@ -150,6 +150,11 @@ function tagsOf(entry) {
     }
   }
   if (game.specialActions?.length) tags.push([t('tag.special', { n: game.specialActions.length })]);
+  // 둔 판 수 (서버의 /api/games에만 있음). 아직 아무도 안 둔 게임은 붙이지 않습니다
+  if (entry.plays) {
+    const n = entry.plays.toLocaleString(lang);
+    tags.unshift([entry.plays === 1 ? t('tag.plays.one') : t('tag.plays', { n }), 'plays-tag', t('tag.plays.title')]);
+  }
   return tags;
 }
 
@@ -715,11 +720,12 @@ function apply() {
     return true;
   });
 
-  const area = (e) => (e.game ? e.game.board.rows * e.game.board.cols : Infinity);
-  // 난이도가 없는(등록 전) 게임은 뒤로
-  const level = (e) => { const i = DIFFICULTIES.indexOf(e.listing?.difficulty); return i < 0 ? Infinity : i; };
-  const by = { size: area, difficulty: level }[sort];
-  shown.sort((a, b) => (by ? by(a) - by(b) || 0 : 0) || nameOf(a).localeCompare(nameOf(b), lang));
+  const plays = (e) => -(e.plays ?? 0); // 많이 둔 게임부터
+  // 최근에 처음 등록한 게임부터. 출시일이 없는 레포 게임은 뒤로
+  const released = (e) => (e.released ? -Date.parse(e.released) : Infinity);
+  const by = { plays, released }[sort] ?? plays;
+  // 같으면 이름순 (둘 다 Infinity면 NaN이라 이름으로 넘어갑니다)
+  shown.sort((a, b) => by(a) - by(b) || nameOf(a).localeCompare(nameOf(b), lang));
 
   $('#grid').replaceChildren(...shown.map((e) => cards.get(e)));
   $('#count').textContent = `${shown.length}`;
