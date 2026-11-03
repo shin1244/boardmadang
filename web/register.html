@@ -60,6 +60,15 @@
     <form id="form" novalidate>
       <!-- 1단계: 게임 코드. 사이트에서는 zip을 올려 자동 검사하고, 개발 서버에서는 games/의 게임을 고릅니다 (register.js의 mode) -->
       <div class="step" id="step-1">
+        <!-- 사이트: 내 게임의 등록 정보만 고칠 때 (내 프로필에서 ?edit=<id>로 열림). 코드를 바꾸려면 아래에 zip을 새로 올립니다 -->
+        <section class="block" id="editing" hidden>
+          <h2 class="block-title" data-i18n="register.editing">고칠 게임</h2>
+          <p id="editing-name" class="editing-name"></p>
+          <p id="editing-hint" class="hint" data-i18n="register.editing.hint"></p>
+          <p id="editing-status" class="status-line bad" role="status"></p>
+          <a class="btn ghost" href="/web/history.html" data-i18n="register.toProfile">내 프로필에서 보기</a>
+        </section>
+
         <section class="block" id="upload" hidden>
           <label class="block-title" for="zip" data-i18n="register.zip">게임 파일 (zip)</label>
           <input id="zip" type="file" accept=".zip,application/zip">
@@ -78,14 +87,6 @@
             <b data-i18n="register.check.warnings">참고</b>
             <ul class="check-list"></ul>
           </div>
-        </section>
-
-        <!-- 사이트: 내가 올린 게임. 코드를 다시 올리지 않고 등록 정보만 고치거나, 로비에서 내리거나 다시 올립니다 -->
-        <section class="block" id="mine" hidden>
-          <h2 class="block-title" data-i18n="register.mine">내가 올린 게임</h2>
-          <p class="hint" data-i18n="register.mine.lead"></p>
-          <ul id="mine-list" class="mine-list"></ul>
-          <p id="mine-status" class="status-line bad" role="status"></p>
         </section>
 
         <section class="block" id="pick" hidden>

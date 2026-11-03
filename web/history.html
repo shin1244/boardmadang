@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>내 대국 · 보드마당</title>
+  <title>내 프로필 · 보드마당</title>
   <link rel="stylesheet" href="lobby.css">
   <link rel="stylesheet" href="rooms.css">
 </head>
@@ -32,15 +32,30 @@
     </div>
   </header>
 
-  <!-- 방 목록과 같은 줄 모양을 씁니다 (rooms.css) -->
+  <!-- 내 프로필: 내가 올린 게임(계정만)과 내 대국. 방 목록과 같은 줄 모양을 씁니다 (rooms.css) -->
   <main class="rooms">
-    <div class="list-head">
-      <h1><span data-i18n="history.title">내 대국</span> <span id="count" class="count"></span></h1>
-    </div>
-    <p class="rooms-lead" data-i18n="history.lead"></p>
+    <h1 id="who" class="profile-name"></h1>
 
-    <ul id="list" class="room-list"></ul>
-    <p id="empty" class="empty" hidden></p>
+    <!-- 등록 정보 고치기는 게임 등록 화면(?edit=<id>)에서, 내리기와 다시 올리기는 여기서 바로 합니다 -->
+    <section id="mine" class="profile-block" hidden>
+      <div class="list-head">
+        <h2><span data-i18n="mine.title">내가 올린 게임</span> <span id="mine-count" class="count"></span></h2>
+        <div class="rooms-tools"><a class="btn ghost" href="/web/register.html" data-i18n="mine.new">새 게임 등록</a></div>
+      </div>
+      <p class="rooms-lead" data-i18n="mine.lead"></p>
+      <ul id="mine-list" class="room-list"></ul>
+      <p id="mine-empty" class="empty" hidden></p>
+      <p id="mine-status" class="mine-status" role="status"></p>
+    </section>
+
+    <section class="profile-block">
+      <div class="list-head">
+        <h2><span data-i18n="history.title">내 대국</span> <span id="count" class="count"></span></h2>
+      </div>
+      <p class="rooms-lead" data-i18n="history.lead"></p>
+      <ul id="list" class="room-list"></ul>
+      <p id="empty" class="empty" hidden></p>
+    </section>
   </main>
 
   <script type="module" src="history.js"></script>

@@ -8,7 +8,8 @@
 //   3단계: 난이도, 타이머, 지원 언어 (일부 번역 / 완전 번역으로 나눠 언어를 고릅니다)
 //   4단계: 고른 언어마다 이름, 소개, 룰북
 // 사이트에서는 등록(POST /api/drafts/<초안>/publish)하면 바로 로비에 나옵니다 (server/internal/upload).
-// 이미 올린 게임은 1단계의 "내가 올린 게임"에서 등록 정보만 고치거나(3, 4단계만 거쳐 PATCH /api/uploads/<id>) 로비에서 내립니다.
+// 이미 올린 게임은 내 프로필(history.html)의 "내가 올린 게임"에서 고치거나 내립니다.
+// 등록 정보 고치기는 이 화면을 ?edit=<id>로 열어 3, 4단계만 거칩니다 (PATCH /api/uploads/<id>).
 // 개발 서버에서는 PUT /api/games/<id>/listing 으로 games/<id>/listing.json 에 저장합니다.
 // 어느 쪽인지는 GET /api/uploads로 압니다. 개발 서버에는 없어서 404입니다.
 //
@@ -42,9 +43,8 @@ let mode = null;
 let games = [];
 /** 사이트: GET /api/uploads. 내가 올린 게임(로비 항목 + published, hidden)과 오늘 남은 등록 횟수 */
 let mine = null;
-/** 사이트: 내리기나 다시 올리기를 보내는 중인 게임 id, 그리고 실패한 이유 */
-let mineBusy = null;
-let mineError = '';
+/** 사이트: ?edit=<id>로 열었는데 내 게임에 그 id가 없음 */
+let editMissing = false;
 /**
  * 사이트: 올린 zip과 검사.
  * @type {{ state: 'uploading' | 'failed' | 'checking' | 'done', draft?: object, info?: object, check?: object,
@@ -98,6 +98,9 @@ async function uploadZip(file) {
     }
     dirty = false;
   }
+  // 새로 고쳐도 고치기로 돌아가지 않게 주소의 ?edit=를 뗍니다
+  if (new URLSearchParams(location.search).has('edit')) history.replaceState(null, '', location.pathname);
+  editMissing = false;
   const u = { state: 'uploading' };
   upload = u;
   current = null;
@@ -268,101 +271,38 @@ function fileReady() {
   return upload?.state === 'done' && !!current && !siteProblems(upload).length;
 }
 
-// ---- 1단계 (사이트): 내가 올린 게임 ----
-
-function renderMine() {
-  const list = mine?.games ?? [];
-  $('#mine').hidden = !list.length;
-  $('#mine-list').replaceChildren(...list.map((g) => {
-    const li = document.createElement('li');
-    li.classList.toggle('off', !!g.hidden);
-    if (current?.edit && current.id === g.id) li.setAttribute('aria-current', 'true');
-
-    const info = document.createElement('div');
-    info.className = 'mine-info';
-    const name = document.createElement('span');
-    name.className = 'mine-name';
-    name.textContent = localize(g.listing?.name, lang).text || g.id;
-    const tag = (key) => {
-      const s = document.createElement('small');
-      s.className = 'mine-tag';
-      s.textContent = t(key);
-      name.append(s);
-    };
-    if (g.hidden) tag('register.mine.hidden');
-    if (current?.edit && current.id === g.id) tag('register.mine.editing');
-    const meta = document.createElement('small');
-    meta.className = 'mine-meta';
-    meta.textContent = t('register.mine.meta', { id: g.id, version: g.version.slice(0, 8), date: new Date(g.published).toLocaleDateString(lang) });
-    info.append(name, meta);
-
-    const actions = document.createElement('div');
-    actions.className = 'mine-actions';
-    const button = (key, onClick) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'btn ghost';
-      b.textContent = t(key);
-      b.disabled = mineBusy !== null;
-      b.addEventListener('click', onClick);
-      actions.append(b);
-    };
-    button('register.mine.edit', () => startEdit(g.id));
-    button(g.hidden ? 'register.mine.show' : 'register.mine.hide', () => setHidden(g.id, !g.hidden));
-    if (!g.hidden) {
-      const a = document.createElement('a');
-      a.className = 'btn ghost';
-      a.href = `/web/?game=${encodeURIComponent(g.id)}`;
-      a.textContent = t('register.toLobby');
-      actions.append(a);
-    }
-    li.append(info, actions);
-    return li;
-  }));
-  $('#mine-status').textContent = mineError;
-}
+// ---- 1단계 (사이트): 내 게임의 등록 정보만 고치기 (?edit=<id>) ----
 
 /** 내 게임의 등록 정보만 고칩니다. 코드는 그대로라 직접 깨기 없이 3단계로 갑니다 */
 function startEdit(id) {
   const g = myGame(id);
-  if (!g || (dirty && !confirm(t('register.discard')))) return;
-  upload = null;
-  $('#zip').value = '';
-  closePlay();
+  if (!g) {
+    editMissing = true;
+    return render();
+  }
   current = { ...g, edit: true };
   fill(g.listing);
   checkTurn(current);
   goStep(STEP.langs);
 }
 
-/** 로비에서 내리거나(hidden = true) 다시 올립니다 */
-async function setHidden(id, hidden) {
-  const g = myGame(id);
-  const name = localize(g?.listing?.name, lang).text || id;
-  if (!g || mineBusy !== null || (hidden && !confirm(t('register.mine.hideConfirm', { name })))) return;
-  mineBusy = id;
-  mineError = '';
-  render();
-  try {
-    const res = await fetch(`/api/uploads/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hidden }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) mineError = t('register.mine.failed', { msg: editError(res.status, body) });
-    else if (current?.edit && current.id === id) current.hidden = body.game?.hidden ?? hidden;
-  } catch (err) {
-    mineError = t('register.mine.failed', { msg: err.message });
-  }
-  mineBusy = null;
-  await refreshLists();
+/** 고치는 게임 (1단계로 돌아왔을 때). 코드를 바꾸려면 그 아래에서 zip을 새로 올립니다 */
+function renderEditing() {
+  $('#editing').hidden = !current?.edit && !editMissing;
+  const name = $('#editing-name');
+  name.replaceChildren();
+  $('#editing-status').textContent = editMissing ? t('mine.gone') : '';
+  $('#editing-hint').hidden = !current?.edit;
+  if (!current?.edit) return;
+  const meta = document.createElement('small');
+  meta.textContent = t('mine.meta', { id: current.id, version: current.version.slice(0, 8), date: new Date(current.published).toLocaleDateString(lang) });
+  name.append(localize(current.listing?.name, lang).text || current.id, meta);
 }
 
-/** PATCH /api/uploads/<id>의 실패 이유 */
+/** PATCH /api/uploads/<id>의 실패 이유 (내 프로필과 같음) */
 function editError(status, body) {
-  if (status === 429) return t('register.mine.tooMany');
-  if (status === 404) return t('register.mine.gone');
+  if (status === 429) return t('mine.tooMany');
+  if (status === 404) return t('mine.gone');
   return body.error ?? String(status);
 }
 
@@ -891,12 +831,15 @@ function renderStatus() {
   } else {
     s.classList.add('good');
     s.append(t(site ? 'register.published' : 'register.saved'));
+    const link = (key, href) => {
+      const a = document.createElement('a');
+      a.href = href;
+      a.textContent = t(key);
+      s.append(' ', a);
+    };
     // 내린 게임은 로비에 없습니다
-    if (current?.hidden) return;
-    const a = document.createElement('a');
-    a.href = mode === 'site' ? `/web/?game=${encodeURIComponent(current.id)}` : '/web/';
-    a.textContent = t('register.toLobby');
-    s.append(' ', a);
+    if (!current?.hidden) link('register.toLobby', mode === 'site' ? `/web/?game=${encodeURIComponent(current.id)}` : '/web/');
+    if (mode === 'site') link('register.toProfile', '/web/history.html');
   }
 }
 
@@ -910,11 +853,10 @@ function render() {
   $('#pick').hidden = mode !== 'dev';
   if (mode === 'site') {
     renderUpload();
-    renderMine();
   } else {
     $('#check').hidden = true;
-    $('#mine').hidden = true;
   }
+  renderEditing();
   if (mode === 'dev') renderGame();
   if (mode === 'site' && step === STEP.clear) renderPlay();
   renderTimer();
@@ -1111,7 +1053,9 @@ async function main() {
     if (dirty) e.preventDefault();
   });
 
-  if (mode === 'dev') choose(new URLSearchParams(location.search).get('game'));
+  const params = new URLSearchParams(location.search);
+  if (mode === 'dev') choose(params.get('game'));
+  if (mode === 'site' && params.has('edit')) startEdit(params.get('edit'));
   render();
 }
 

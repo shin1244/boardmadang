@@ -136,25 +136,11 @@ fieldset[aria-invalid="true"], #langs[aria-invalid="true"] { border-color: var(-
 .check-notes[hidden] { display: none; }
 
 /* 1단계: 내가 올린 게임. 한 줄에 이름과 버전, 오른쪽에 버튼 */
-.mine-list { display: grid; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
-.mine-list li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-.mine-list li[aria-current="true"] { border-color: var(--accent); }
-.mine-list li.off .mine-name { color: var(--muted); }
-.mine-info { display: flex; flex-direction: column; min-width: 0; }
-.mine-name { font-weight: 700; overflow-wrap: anywhere; }
-.mine-meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-.mine-tag { margin-left: 6px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: 12px; font-weight: 400; }
-.mine-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.mine-actions .btn { flex: none; padding: 6px 12px; }
+/* 1단계 (사이트): 내 게임의 등록 정보만 고칠 때 */
+.editing-name { margin: 8px 0 0; font-weight: 700; overflow-wrap: anywhere; }
+.editing-name small { margin-left: 8px; color: var(--muted); font-size: 12px; font-weight: 400; }
+#editing .btn { display: inline-block; margin-top: 10px; text-decoration: none; }
+#editing-status:empty, #editing-hint[hidden] { display: none; }
 
 /* 2단계: 직접 깨기와 썸네일 */
 .play { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: flex-start; margin-top: 14px; }

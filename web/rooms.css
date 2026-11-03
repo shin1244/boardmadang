@@ -44,8 +44,23 @@
 .result-tag.lose { color: var(--bad); }
 .result-tag.draw, .result-tag.void { color: var(--muted); }
 
+/* 내 프로필: 이름, 내가 올린 게임, 내 대국 */
+.profile-name { margin: 0 0 20px; font-size: 24px; overflow-wrap: anywhere; }
+.profile-block + .profile-block { margin-top: 36px; }
+.profile-block .list-head h2 { margin: 0; font-size: 20px; }
+.room.mine { flex-wrap: wrap; }
+.room.mine .room-game { white-space: normal; overflow-wrap: anywhere; }
+.room.mine.off .room-game { color: var(--muted); }
+.mine-tag { margin-left: 8px; padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.mine-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.room .mine-actions .btn { padding: 6px 12px; }
+.mine-status { margin: 8px 0 0; color: var(--bad); font-size: 14px; }
+.mine-status:empty { display: none; }
+
 @media (max-width: 760px) {
   .rooms { padding: 20px 16px 48px; }
   .room { flex-wrap: wrap; }
   .room .btn { flex-basis: 100%; text-align: center; }
+  .mine-actions { flex-basis: 100%; }
+  .room .mine-actions .btn { flex: 1 1 auto; flex-basis: auto; }
 }
