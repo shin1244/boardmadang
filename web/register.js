@@ -21,7 +21,7 @@ import { LANGS, LANG_NAMES, LIMITS, NO_TIMER, TIMER_MINUTES, fullLangs, gameLang
 import { makeThumbnail, sameAction, validateThumbnail } from '/sdk/check.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { loadGame } from './engine.js';
-import { isMember, loadMe, renderMe } from './me.js';
+import { isMember, loadMe, renderMe, suspendedText } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
 const TEXT_FIELDS = ['name', 'description', 'rulebook'];
@@ -127,6 +127,7 @@ async function uploadZip(file) {
 
 function uploadError(status, body) {
   if (status === 403 && body.error === 'member only') return t('register.memberOnly');
+  if (status === 403 && body.error === 'suspended') return t('suspended');
   if (status === 429) return t('register.upload.tooMany');
   if (body.error === 'problems') return t('register.upload.problems');
   return body.error ?? String(status);
@@ -848,7 +849,10 @@ function render() {
   renderMe(me);
   // 게스트는 업로드할 수 없습니다. 서버도 올리기와 저장을 403으로 막습니다.
   $('#need-account').hidden = !me || isMember(me);
-  $('#member-only').hidden = !isMember(me);
+  const suspended = mode === 'site' ? suspendedText(me) : '';
+  $('#suspended-note').textContent = suspended;
+  $('#suspended-note').hidden = !suspended;
+  $('#member-only').hidden = !isMember(me) || !!suspended;
   $('#upload').hidden = mode !== 'site';
   $('#pick').hidden = mode !== 'dev';
   if (mode === 'site') {
@@ -945,6 +949,7 @@ function saveRequest(listing) {
 
 function saveError(status, body) {
   if (status === 403 && body.error === 'member only') return t('register.memberOnly');
+  if (status === 403 && body.error === 'suspended') return t('suspended');
   if (current?.edit) return editError(status, body);
   if (mode !== 'site') return body.error ?? status;
   if (status === 409) return t('register.check.taken', { id: current.id });

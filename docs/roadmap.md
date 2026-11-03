@@ -55,7 +55,8 @@
 
 ### 1-4. 운영
 
-- [ ] 운영자 화면: 신고 목록을 보고 의견이나 게임을 가리거나 되살리기 (`server/internal/comment`의 TODO)
+- [x] 운영자 화면: 신고를 대상별로 묶어 보고 의견 가리기, 올린 게임 내리기, 계정 정지(1일, 7일, 30일, 영구) ([moderation.md](moderation.md))
+  - 운영에 켜려면 Secret Manager에 `admin-ids`(내 계정 id)를 넣고 다시 배포
 - [ ] 장애 알림: GCP 가동 시간 확인(uptime check)과 메일 알림
 - [ ] 디스크 사용량과 스냅샷이 잘 쌓이는지 가끔 확인
 

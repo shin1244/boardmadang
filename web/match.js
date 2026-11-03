@@ -283,6 +283,7 @@ async function onMessage(m) {
           'room not found': t('match.roomGone'),
           'version mismatch': t('match.versionMismatch'),
           'member only': t('match.memberOnly'),
+          suspended: t('suspended'),
         }[m.message] ?? t('match.serverError', { msg: m.message });
         break;
       }

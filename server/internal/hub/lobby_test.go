@@ -93,6 +93,26 @@ func TestGuestCannotCreate(t *testing.T) {
 	other.expect(protocol.TypeMatched, &m)
 }
 
+// 정지된 계정은 방을 만들 수 없고, 빠른 매칭으로 두는 것은 됩니다
+func TestSuspendedCannotCreate(t *testing.T) {
+	srv := newServer(t)
+	bad := connectMember(t, srv, "suspended")
+	bad.send(protocol.Create{Type: protocol.TypeCreate, Game: "tictactoe"})
+	var e protocol.Error
+	bad.expect(protocol.TypeError, &e)
+	if e.Message != "suspended" {
+		t.Fatalf("error = %q, want suspended", e.Message)
+	}
+	if rooms := listRooms(t, srv); len(rooms) != 0 {
+		t.Fatalf("suspended room listed: %+v", rooms)
+	}
+	other := connect(t, srv)
+	bad.send(protocol.Join{Type: protocol.TypeJoin, Game: "tictactoe"})
+	bad.expect(protocol.TypeWaiting, nil)
+	other.send(protocol.Join{Type: protocol.TypeJoin, Game: "tictactoe"})
+	other.expect(protocol.TypeMatched, nil)
+}
+
 func TestRoomWithoutTimer(t *testing.T) {
 	srv := newServer(t)
 	host, guest := connectMember(t, srv, "host"), connect(t, srv)

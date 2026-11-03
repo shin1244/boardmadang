@@ -688,6 +688,75 @@ func TestHTTP(t *testing.T) {
 	if rec := do("GET", "/uploads/dots/"+d.Version+"/index.js", "", nil, nil); rec.Code != http.StatusOK {
 		t.Fatalf("내린 게임의 코드는 기보 다시보기에 씁니다: %d", rec.Code)
 	}
+
+	// 정지된 계정은 올리기와 고치기가 안 되고, 내 게임 보기는 됩니다
+	ids.Members = suspendedNames{names{"m_a": "maker"}}
+	if rec := do("POST", "/api/drafts", "application/zip", zipped, cookie); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), `"suspended"`) {
+		t.Fatalf("정지된 계정 초안: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do("PATCH", "/api/uploads/dots", "application/json", []byte(`{"hidden":false}`), cookie); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), `"suspended"`) {
+		t.Fatalf("정지된 계정 고치기: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do("GET", "/api/uploads", "", nil, cookie); rec.Code != http.StatusOK {
+		t.Fatalf("정지된 계정 내 게임: %d", rec.Code)
+	}
+}
+
+// suspendedNames는 정지도 알려 주는 테스트용 계정 저장소입니다. 모든 계정이 영구 정지입니다.
+type suspendedNames struct{ names }
+
+func (suspendedNames) Suspension(string) (time.Time, bool) { return time.Time{}, true }
+
+func TestBlock(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := open(t, dir)
+	s.Reserved = func(id string) bool { return id == "tictactoe" }
+	a := member("m_a")
+	d, _ := s.NewDraft(a, makeZip(t, "index.js", gameCode))
+	if _, err := s.Publish(a, d.ID, publishing("dots", d)); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"nope", "tictactoe"} {
+		if err := s.Block(id, true); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("Block(%s): %v", id, err)
+		}
+		if _, ok := s.Admin(id); ok {
+			t.Fatalf("Admin(%s) found", id)
+		}
+	}
+	if err := s.Block("dots", true); err != nil {
+		t.Fatal(err)
+	}
+	// 주인이 다시 올리거나 새 버전을 등록해도 운영자가 되살릴 때까지 로비에 나오지 않습니다
+	show := false
+	if _, err := s.Edit(a, "dots", EditRequest{Hidden: &show}); err != nil {
+		t.Fatal(err)
+	}
+	next, _ := s.NewDraft(a, makeZip(t, "index.js", gameCode+"// fix\n"))
+	if _, err := s.Publish(a, next.ID, publishing("dots", next)); err != nil {
+		t.Fatal(err)
+	}
+	check := func(s *Store, blocked bool) {
+		t.Helper()
+		if listed := len(s.Games()) == 1; listed == blocked {
+			t.Fatalf("blocked=%v인데 로비 = %+v", blocked, s.Games())
+		}
+		if mine := s.Mine("m_a").Games; len(mine) != 1 || mine[0].Blocked != blocked || mine[0].Hidden {
+			t.Fatalf("Mine = %+v", mine)
+		}
+		g, ok := s.Admin("dots")
+		if !ok || g.Owner != "m_a" || g.Blocked != blocked || g.Version != next.Version {
+			t.Fatalf("Admin = %+v, %v", g, ok)
+		}
+	}
+	check(s, true)
+	again, _ := open(t, dir)
+	again.Reserved = s.Reserved
+	check(again, true)
+	if err := again.Block("dots", false); err != nil {
+		t.Fatal(err)
+	}
+	check(again, false)
 }
 
 func TestForget(t *testing.T) {

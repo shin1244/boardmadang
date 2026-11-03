@@ -9,6 +9,8 @@
 | 게임 업로드·등록 정보 수정 | **안 됨** | 됨 (자기 게임만) |
 | 랭킹 | 정하지 않음 | 됨 (예정) |
 
+운영자가 정지한 계정은 대전과 관전만 되고 쓰기(방 만들기, 의견, 신고, 업로드, 이름 바꾸기)가 막힙니다 ([moderation.md](moderation.md#계정-정지)).
+
 로그인이 없어도 대전하려면 서버가 "이 연결이 누구인지"는 알아야 합니다. 그래서 신원을 먼저 만들고,
 로그인은 이 구조에 붙였습니다. 로그인은 "게스트를 계정으로 바꾸는 일"입니다.
 
@@ -27,6 +29,11 @@
 | `kind` | `guest` 또는 `member`. 기보와 의견에는 탈퇴한 계정 `gone`(태그와 이름 없음)도 옵니다 |
 | `tag` | id에서 계산한 네 자리 숫자. 이름이 같은 사람을 구분하고, 게스트는 화면에 "게스트 4821"로 나옵니다 |
 | `name` | 계정만. 게스트 이름은 화면 언어로 브라우저가 만듭니다 ("게스트 4821" / "Guest 4821") |
+| `admin` | 운영자(`ADMIN_IDS`)면 `true`. 상단 메뉴에 "운영"이 보입니다 ([moderation.md](moderation.md)) |
+| `suspended`, `suspendedUntil` | 정지된 계정이면 `true`와 풀리는 때 (영구면 `suspendedUntil` 없음) |
+
+토큰에는 `id`와 `kind`만 믿고 씁니다. 이름, 운영자, 정지는 요청마다 계정 기록과 `ADMIN_IDS`에서 다시 읽으므로
+바꾸면 다시 로그인하지 않아도 바로 적용됩니다.
 
 계정 이름은 처음 로그인할 때 사람이 직접 정합니다 (`/web/signup.html`). 이름 칸의 기본값은 GitHub 아이디(`login`)나
 Google 이름(`given_name`, 성은 뺍니다)에서 영문과 숫자만 남겨 8글자로 자른 것입니다 (한글 이름이면 대개 빈 칸).
@@ -73,6 +80,8 @@ bm_session = v1.<내용 base64url>.<서명 base64url>
 | 업로드·등록 정보 저장 | 계정만 됩니다. 게스트면 `403 {"error":"member only"}` |
 | `POST /api/games/{game}/comments`, `POST /api/reports` | 의견 남기기와 신고는 계정만 됩니다. 게스트면 `403 {"error":"member only"}` |
 | `create` 메시지 (방 만들기) | 계정만 됩니다. 게스트면 `{"type":"error","message":"member only"}` |
+| 위의 쓰기 (방 만들기, 의견, 신고, 업로드, 이름 바꾸기) | 정지된 계정이면 `403 {"error":"suspended"}` (방 만들기는 `{"type":"error","message":"suspended"}`) |
+| `GET /api/admin`, `POST /api/admin/actions` | 운영자만 됩니다. 아니면 `403 {"error":"admin only"}` ([moderation.md](moderation.md)) |
 
 ## 소셜 로그인
 

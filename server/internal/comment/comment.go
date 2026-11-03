@@ -8,10 +8,11 @@
 // 게임마다 처음 부를 때 파일을 처음부터 읽어 메모리에 올려 둡니다. 서버 한 대(VM 디스크)를 전제로 합니다.
 // 탈퇴한 계정의 의견은 Forget이 파일에서 아예 지웁니다.
 //
-// 서로 다른 사람 HideAfter명이 신고한 의견은 글을 가립니다. 의견과 신고는 계정만 할 수 있습니다(http.go).
+// 서로 다른 사람 HideAfter명이 신고한 의견은 글을 가립니다. 운영자는 신고 수와 상관없이 가리거나 보이게 할 수 있습니다 (Moderate).
+// 의견과 신고는 계정만 할 수 있습니다(http.go).
 // 게스트도 받으면 쿠키를 지워 가며 한 사람이 여러 번 신고해 남의 의견을 혼자 가릴 수 있기 때문입니다.
 // 계정도 여러 개 만들 수 있으므로 완전히 막지는 못합니다.
-// TODO: IP별 제한, 운영자 화면에서 신고를 보고 가리거나 되살리기
+// TODO: IP별 제한
 package comment
 
 import (
@@ -85,9 +86,18 @@ type Comment struct {
 	At        time.Time
 	deleted   bool
 	reporters map[string]bool
+	mod       string // 운영자의 결정 (Moderate): ModHidden, ModShown, 없으면 신고 수로 정합니다
 }
 
-func (c *Comment) hidden() bool { return len(c.reporters) >= HideAfter }
+// 운영자가 정한 의견의 상태 (Moderate)
+const (
+	ModHidden = "hidden" // 신고 수와 상관없이 가림
+	ModShown  = "shown"  // 신고가 HideAfter명을 넘어도 보임
+)
+
+func (c *Comment) hidden() bool {
+	return c.mod == ModHidden || (c.mod != ModShown && len(c.reporters) >= HideAfter)
+}
 
 // View는 브라우저에 보내는 의견입니다. 쓴 사람의 내부 id는 빼고, 보는 사람과의 관계를 붙입니다.
 // 가려진 의견은 글을 보내지 않습니다.
@@ -128,13 +138,14 @@ type Report struct {
 
 // line은 comments/<게임>.jsonl의 한 줄입니다.
 type line struct {
-	Op   string    `json:"op"` // add, del, report
+	Op   string    `json:"op"` // add, del, report, mod
 	ID   string    `json:"id"`
-	By   string    `json:"by,omitempty"`
+	By   string    `json:"by,omitempty"` // add는 쓴 사람, report는 신고한 사람, mod는 운영자
 	Kind string    `json:"kind,omitempty"`
 	Tag  string    `json:"tag,omitempty"`
 	Name string    `json:"name,omitempty"`
 	Text string    `json:"text,omitempty"`
+	Mod  string    `json:"mod,omitempty"` // mod만. ModHidden, ModShown, 비었으면 신고 수로 정하게 되돌림
 	At   time.Time `json:"at"`
 }
 
@@ -267,6 +278,10 @@ func (t *thread) apply(l line) {
 	case "report":
 		if c := t.byID[l.ID]; c != nil {
 			c.reporters[l.By] = true
+		}
+	case "mod":
+		if c := t.byID[l.ID]; c != nil {
+			c.mod = l.Mod
 		}
 	}
 }
@@ -430,6 +445,72 @@ func (s *Store) Report(u identity.User, r Report) (hidden bool, err error) {
 		return false, err
 	}
 	return c.hidden(), nil
+}
+
+// ---- 운영자 (internal/admin) ----
+
+// Moderate는 운영자 by가 의견을 가리거나(ModHidden) 신고와 상관없이 보이게(ModShown) 합니다. mod가 비었으면 신고 수로 정하게 되돌립니다.
+func (s *Store) Moderate(game, id, mod, by string) error {
+	if mod != ModHidden && mod != ModShown && mod != "" {
+		return errors.New("comment: bad mod " + mod)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, err := s.thread(game)
+	if err != nil {
+		return err
+	}
+	if c := t.byID[id]; c == nil || c.deleted {
+		return ErrNotFound
+	}
+	return s.write(game, t, line{Op: "mod", ID: id, By: by, Mod: mod, At: s.now()})
+}
+
+// Info는 운영자 화면에 보이는 의견 하나입니다. 쓴 사람의 내부 id까지 있습니다 (정지할 때 씁니다).
+type Info struct {
+	ID        string        `json:"id"`
+	Author    identity.User `json:"author"`
+	Text      string        `json:"text"`
+	At        time.Time     `json:"at"`
+	Deleted   bool          `json:"deleted,omitempty"` // 쓴 사람이 지움
+	Hidden    bool          `json:"hidden,omitempty"`  // 지금 가려져 있음 (신고 수나 운영자)
+	Mod       string        `json:"mod,omitempty"`
+	Reporters int           `json:"reporters"` // 신고한 사람 수
+}
+
+// Info는 게임의 의견 하나를 운영자에게 보여줄 모양으로 돌려줍니다. 없으면 ErrNotFound (탈퇴로 지워졌거나 잘못된 id).
+func (s *Store) Info(game, id string) (Info, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, err := s.thread(game)
+	if err != nil {
+		return Info{}, err
+	}
+	c := t.byID[id]
+	if c == nil {
+		return Info{}, ErrNotFound
+	}
+	author := c.Author
+	if s.Names != nil && author.IsMember() {
+		if name, ok := s.Names.Name(author.ID); ok {
+			author.Name = name
+		}
+	}
+	return Info{ID: c.ID, Author: author, Text: c.Text, At: c.At, Deleted: c.deleted, Hidden: c.hidden(), Mod: c.mod, Reporters: len(c.reporters)}, nil
+}
+
+// Reports는 받은 신고를 모두 받은 순서대로 돌려줍니다 (reports.jsonl).
+func (s *Store) Reports() ([]Report, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Report
+	err := eachLine(filepath.Join(s.dir, "reports.jsonl"), func(data []byte) {
+		var r Report
+		if json.Unmarshal(data, &r) == nil {
+			out = append(out, r)
+		}
+	})
+	return out, err
 }
 
 // Forget은 탈퇴한 계정 userID가 남긴 의견을 모두 지웁니다. 지움(del) 줄을 덧붙이는 게 아니라 그 의견의 줄

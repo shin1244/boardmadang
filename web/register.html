@@ -43,6 +43,9 @@
       <a class="btn ghost" href="/web/" data-i18n="register.needAccount.back">게임 목록으로</a>
     </section>
 
+    <!-- 정지된 계정은 올리기와 저장이 안 됩니다 (서버도 403 suspended로 막습니다) -->
+    <p id="suspended-note" class="suspended-note" role="note" hidden></p>
+
     <div id="member-only">
     <ol class="steps">
       <!-- 번호는 register.js가 보이는 단계 순서대로 씁니다. 직접 깨기는 사이트에서만 합니다 -->

@@ -163,6 +163,59 @@ func TestMemberNameFromStore(t *testing.T) {
 	}
 }
 
+// suspended는 정지도 알려 주는 테스트용 계정 저장소입니다.
+type suspended struct {
+	members
+	until map[string]time.Time
+}
+
+func (s suspended) Suspension(id string) (time.Time, bool) {
+	until, ok := s.until[id]
+	return until, ok
+}
+
+func TestRefreshAdminAndSuspension(t *testing.T) {
+	is := NewIssuer(secret)
+	until := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
+	is.Members = suspended{members{"m_boss": "boss", "m_bad": "bad", "m_ok": "ok"}, map[string]time.Time{"m_bad": until}}
+	is.Admins = map[string]bool{"m_boss": true}
+
+	boss, ok := is.Verify(is.Sign(Member("m_boss", "")))
+	if !ok || !boss.Admin || boss.Suspended {
+		t.Fatalf("admin = %+v, %v", boss, ok)
+	}
+	bad, _ := is.Verify(is.Sign(Member("m_bad", "")))
+	if bad.Admin || !bad.Suspended || !bad.SuspendedUntil.Equal(until) {
+		t.Fatalf("suspended = %+v", bad)
+	}
+	if status, reason := WriteDenied(bad); status != http.StatusForbidden || reason != "suspended" {
+		t.Errorf("WriteDenied(suspended) = %d %q", status, reason)
+	}
+	ok2, _ := is.Verify(is.Sign(Member("m_ok", "")))
+	if _, reason := WriteDenied(ok2); reason != "" {
+		t.Errorf("WriteDenied(member) = %q", reason)
+	}
+	guest, _ := is.NewGuest()
+	if status, reason := WriteDenied(guest); status != http.StatusForbidden || reason != "member only" {
+		t.Errorf("WriteDenied(guest) = %d %q", status, reason)
+	}
+
+	// 붙어 있는 사이에 정지되면 Refresh가 바로 압니다 (토큰에는 정지가 들어 있지 않습니다)
+	is.Members.(suspended).until["m_ok"] = time.Time{}
+	if u, ok := is.Refresh(ok2); !ok || !u.Suspended || !u.SuspendedUntil.IsZero() {
+		t.Fatalf("Refresh after permanent suspend = %+v, %v", u, ok)
+	}
+	delete(is.Members.(suspended).until, "m_ok")
+	if u, _ := is.Refresh(ok2); u.Suspended {
+		t.Fatalf("Refresh after unsuspend = %+v", u)
+	}
+	// 정지를 알려 주지 않는 저장소면 정지는 없습니다
+	is.Members = members{"m_bad": "bad"}
+	if u, _ := is.Refresh(bad); u.Suspended {
+		t.Fatalf("plain store suspended = %+v", u)
+	}
+}
+
 func TestClearCookie(t *testing.T) {
 	is := NewIssuer(secret)
 	rec := httptest.NewRecorder()

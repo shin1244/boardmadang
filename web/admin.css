@@ -1,0 +1,81 @@
+/* 운영자 화면. 색과 상단 메뉴는 lobby.css, 목록 모양은 rooms.css를 같이 씁니다. */
+
+.admin-check { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 14px; cursor: pointer; }
+.admin-status { margin: 0 0 12px; color: var(--bad); font-size: 14px; }
+.admin-status.good { color: var(--good); }
+.admin-status:empty { display: none; }
+
+.admin-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.admin-target {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.admin-target.open { border-left: 4px solid var(--warn); }
+.admin-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.admin-badge {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.admin-badge.open { border-color: var(--warn); color: var(--warn); font-weight: 600; }
+/* 제목이 좁아지면 신고 수 줄이 아래로 내려갑니다 */
+.admin-title { flex: 1 1 10em; min-width: 0; overflow-wrap: anywhere; font-size: 16px; }
+.admin-title a { color: inherit; }
+.admin-when { color: var(--muted); font-size: 13px; }
+.admin-quote {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--border);
+  background: var(--bg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.admin-meta, .admin-last { margin: 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.admin-meta .mine-tag { margin-left: 0; }
+.admin-user { color: var(--text); }
+.admin-id { color: var(--muted); font-family: ui-monospace, monospace; font-size: 12px; }
+.admin-reports { display: grid; gap: 4px; margin: 0; padding-left: 18px; font-size: 14px; }
+.admin-detail { overflow-wrap: anywhere; }
+.admin-by { color: var(--muted); font-size: 13px; }
+
+.admin-note {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+.admin-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.admin-actions .btn, .admin-list .btn { flex: none; padding: 6px 12px; }
+.admin-suspend { display: inline-flex; gap: 6px; }
+.admin-suspend select {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.admin-log { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 14px; }
+.admin-log li { padding-bottom: 6px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+
+#body[hidden], #denied[hidden] { display: none; }
+
+@media (max-width: 760px) {
+  .admin-actions .btn { flex: 1 1 auto; }
+  .admin-suspend { flex-basis: 100%; }
+  .admin-suspend .btn { flex: 1 1 auto; }
+}

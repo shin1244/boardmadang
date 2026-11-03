@@ -74,6 +74,12 @@ func TestHTTP(t *testing.T) {
 	if rec := do("PATCH", "application/json", `{"name":"shin"}`, cookie); rec.Code != 400 || errorOf(rec) != "name same" {
 		t.Fatalf("same name: %d %s", rec.Code, rec.Body)
 	}
+	// 정지된 동안에는 이름을 바꿀 수 없습니다
+	s.Suspend(me.ID, now.Add(time.Hour))
+	if rec := do("PATCH", "application/json", `{"name":"junkyu"}`, cookie); rec.Code != http.StatusForbidden || errorOf(rec) != "suspended" {
+		t.Fatalf("suspended rename: %d %s", rec.Code, rec.Body)
+	}
+	s.Unsuspend(me.ID)
 	rec = do("PATCH", "application/json", `{"name":"junkyu"}`, cookie)
 	if json.Unmarshal(rec.Body.Bytes(), &info); rec.Code != 200 || info.Name != "junkyu" || !info.RenameAfter.Equal(now.Add(RenameEvery)) {
 		t.Fatalf("rename = %d %s", rec.Code, rec.Body)

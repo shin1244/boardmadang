@@ -7,7 +7,7 @@
 
 import { localize } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
-import { NAME_CHARS, displayName, isMember, loadMe, renderMe } from './me.js';
+import { NAME_CHARS, displayName, isMember, loadMe, renderMe, suspendedText } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -53,21 +53,25 @@ function renderMine() {
 function renderMyGame(g) {
   const li = document.createElement('li');
   li.className = 'room mine';
-  li.classList.toggle('off', !!g.hidden);
+  li.classList.toggle('off', !!(g.hidden || g.blocked));
   li.innerHTML = `
     <div class="room-info"><b class="room-game"></b><span class="room-sub"></span></div>
     <div class="mine-actions"></div>`;
   const name = li.querySelector('.room-game');
   name.textContent = localize(g.listing?.name, lang).text || g.id;
-  if (g.hidden) {
+  // 운영자가 내린 게임은 주인이 다시 올릴 수 없습니다 (docs/moderation.md)
+  for (const [on, key] of [[g.blocked, 'mine.blocked'], [g.hidden, 'mine.hidden']]) {
+    if (!on) continue;
     const tag = document.createElement('small');
     tag.className = 'mine-tag';
-    tag.textContent = t('mine.hidden');
+    tag.textContent = t(key);
     name.append(tag);
   }
-  li.querySelector('.room-sub').textContent = t('mine.meta', {
+  const sub = li.querySelector('.room-sub');
+  sub.textContent = t('mine.meta', {
     id: g.id, version: g.version.slice(0, 8), date: new Date(g.published).toLocaleDateString(lang),
   });
+  if (g.blocked) sub.append(document.createElement('br'), t('mine.blockedHint'));
 
   const actions = li.querySelector('.mine-actions');
   const link = (key, href) => {
@@ -79,11 +83,12 @@ function renderMyGame(g) {
   };
   const id = encodeURIComponent(g.id);
   link('mine.edit', `/web/register.html?edit=${id}`);
+  if (g.blocked) return li;
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'btn ghost';
   toggle.textContent = t(g.hidden ? 'mine.show' : 'mine.hide');
-  toggle.disabled = mineBusy !== null;
+  toggle.disabled = mineBusy !== null || !!me?.suspended;
   toggle.addEventListener('click', () => setHidden(g, !g.hidden));
   actions.append(toggle);
   // 내린 게임은 로비에 없습니다
@@ -116,6 +121,7 @@ async function setHidden(g, hidden) {
 
 /** PATCH /api/uploads/<id>의 실패 이유 (게임 등록 화면과 같음) */
 function editError(status, body) {
+  if (status === 403 && body.error === 'suspended') return t('suspended');
   if (status === 429) return t('mine.tooMany');
   if (status === 404) return t('mine.gone');
   return body.error ?? String(status);
@@ -181,9 +187,9 @@ function renderAccount() {
   const input = $('#rename-name');
   input.maxLength = account.max;
   input.placeholder = account.name;
-  input.disabled = $('#rename-submit').disabled = accountBusy || !!after;
-  $('#rename-hint').textContent = after
-    ? t('account.rename.after', { date: longDate(after) })
+  input.disabled = $('#rename-submit').disabled = accountBusy || !!after || !!me?.suspended;
+  $('#rename-hint').textContent = me?.suspended ? t('suspended')
+    : after ? t('account.rename.after', { date: longDate(after) })
     : t('account.rename.rules', { min: account.min, max: account.max });
   const status = $('#rename-status');
   status.textContent = statusText(renameStatus);
@@ -226,6 +232,8 @@ async function rename(e) {
       renameStatus = { key: 'account.rename.soon', params: { date: longDate(body.renameAfter) } };
     } else if (NAME_ERRORS[body.error]) {
       renameStatus = { key: NAME_ERRORS[body.error] };
+    } else if (body.error === 'suspended') {
+      renameStatus = { key: 'suspended' };
     } else {
       renameStatus = { key: 'account.rename.failed', params: { msg: body.error ?? res.status } };
     }
@@ -310,6 +318,9 @@ function render() {
   applyStatic('profile.title');
   renderMe(me);
   $('#who').textContent = left ? t('account.left.title') : me ? displayName(me) : t('profile.title');
+  const note = $('#suspended-note');
+  note.textContent = left ? '' : suspendedText(me);
+  note.hidden = !note.textContent;
   renderMine();
   renderAccount();
   $('#left').hidden = !left;

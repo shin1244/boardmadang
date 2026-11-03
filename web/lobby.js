@@ -6,7 +6,7 @@ import { BoardView } from '/sdk/playground/board.js';
 import { loadGame } from './engine.js';
 import { LANGS, LANG_NAMES, NO_TIMER, fullLangs, gameLang, localize, timerOf } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
-import { displayName, isMember, loadMe, renderMe } from './me.js';
+import { displayName, isMember, loadMe, renderMe, suspendedText } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -382,6 +382,7 @@ const ERRORS = {
   'too many reports': 'report.error.tooMany',
   'not found': 'report.error.gone',
   'member only': 'comments.error.memberOnly',
+  suspended: 'suspended',
 };
 
 let talk = null; // 창에 띄운 게임의 의견 { game, list, count, error }. list가 null이면 불러오는 중
@@ -441,10 +442,12 @@ function renderTalk() {
     : `${displayName(latest.author)} · ${ago(latest.at)}\n${latest.hidden ? t('comments.preview.hidden') : latest.text}`;
   $('#gd-talk-preview').textContent = preview;
 
-  // 의견은 계정만 남깁니다. 게스트에게는 남기는 칸 대신 로그인 안내를 보여줍니다
-  $('#comment-form').hidden = !isMember(me);
+  // 의견은 계정만 남깁니다. 게스트에게는 남기는 칸 대신 로그인 안내를, 정지된 계정에는 정지 안내를 보여줍니다
+  const writer = isMember(me) && !me.suspended;
+  $('#comment-form').hidden = !writer;
   $('#comment-login').hidden = isMember(me);
-  $('.comments-foot').hidden = !isMember(me); // 게임 신고도 계정만
+  showSuspended('#comment-suspended');
+  $('.comments-foot').hidden = !writer; // 게임 신고도 계정만
   $('#comment-as').textContent = me ? t('comments.as', { name: displayName(me) }) : '';
   syncCommentLength();
   const note = $('#comments-note');
@@ -484,7 +487,7 @@ function renderComment(c) {
   const actions = li.querySelector('.comment-actions');
   if (c.mine) {
     actions.append(textButton(t('comments.delete'), () => deleteComment(c)));
-  } else if (!c.hidden && isMember(me)) { // 신고는 계정만
+  } else if (!c.hidden && isMember(me) && !me.suspended) { // 신고는 계정만 (정지된 계정은 안 됨)
     const report = textButton(t(c.reported ? 'comments.reported' : 'comments.report'), () => openReport({ comment: c }));
     report.disabled = !!c.reported;
     actions.append(report);
@@ -636,10 +639,18 @@ function fillCreate(entry) {
   $('#create-picks').hidden = !timer.custom;
   $('#create-fixed').hidden = timer.custom;
   $('#create-fixed').textContent = t('detail.fixed', { timer: timerText(timer.minutes) });
-  // 방은 계정만 만듭니다
+  // 방은 계정만 만듭니다 (정지된 계정은 안 됨)
   $('#create-login').hidden = isMember(me);
-  $('#create-submit').disabled = !isMember(me);
+  $('#create-submit').disabled = !isMember(me) || !!me.suspended;
+  showSuspended('#create-suspended');
   syncCreateForm();
+}
+
+/** 정지된 계정이면 그 안내를 보여줍니다 */
+function showSuspended(sel) {
+  const text = suspendedText(me);
+  $(sel).hidden = !text;
+  $(sel).textContent = text;
 }
 
 function syncCreateForm() {

@@ -2,9 +2,13 @@
 // /api/me를 부르면 서버가 세션 쿠키를 주거나 새로 발급합니다. 웹소켓에 붙기 전에 꼭 한 번 불러 둡니다.
 // 개발 서버는 가짜 신원을 돌려줍니다 (DEV_AS=guest면 게스트). 진짜로 로그인하면 그 계정을 그대로 돌려줍니다.
 
-import { t } from './i18n.js';
+import { lang, t } from './i18n.js';
 
-/** @typedef {{ id: string, kind: 'guest' | 'member', tag: string, name?: string }} Me */
+/**
+ * @typedef {{ id: string, kind: 'guest' | 'member', tag: string, name?: string,
+ *   admin?: boolean, suspended?: boolean, suspendedUntil?: string }} Me
+ * admin은 운영자(서버의 ADMIN_IDS), suspended는 정지된 계정입니다 (suspendedUntil이 없으면 영구). docs/moderation.md
+ */
 
 /** @type {Promise<Me | null> | null} */
 let pending = null;
@@ -21,6 +25,14 @@ export const isMember = (me) => me?.kind === 'member';
 
 /** 계정 이름에 쓸 수 있는 글자: 영문과 숫자만 (서버의 account.ValidName과 같은 규칙. 글자 수는 서버가 알려 줍니다) */
 export const NAME_CHARS = /^[A-Za-z0-9]*$/;
+
+/** 정지된 계정이면 그 안내 글 (언제까지, 무엇이 안 되는지). 아니면 '' */
+export function suspendedText(me) {
+  if (!me?.suspended) return '';
+  if (!me.suspendedUntil) return t('suspended.forever');
+  const date = new Date(me.suspendedUntil).toLocaleString(lang, { dateStyle: 'long', timeStyle: 'short' });
+  return t('suspended.until', { date });
+}
 
 /**
  * 화면에 보일 이름. 게스트 이름은 화면 언어로 만듭니다 ("게스트 4821" / "Guest 4821").
@@ -149,4 +161,17 @@ export function renderMe(me) {
   button.title = providers?.length === 0 ? t('soon') : '';
   if (member) openMenu(false);
   renderMenu();
+
+  // 운영자면 메뉴 끝에 운영 화면 (서버도 운영자만 /api/admin을 열어 줍니다)
+  let admin = document.querySelector('.menu .menu-admin');
+  if (me?.admin && !admin) {
+    admin = document.createElement('a');
+    admin.className = 'menu-admin';
+    admin.href = '/web/admin.html';
+    document.querySelector('.menu')?.append(admin);
+  }
+  if (admin) {
+    admin.hidden = !me?.admin;
+    admin.textContent = t('menu.admin');
+  }
 }

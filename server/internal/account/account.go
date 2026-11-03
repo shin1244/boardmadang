@@ -2,7 +2,7 @@
 //
 // DATA_DIR 아래에 이렇게 씁니다.
 //
-//	accounts.jsonl   계정 기록. 만듦(add)과 이름 바꿈(rename)을 한 줄에 하나씩 덧붙입니다
+//	accounts.jsonl   계정 기록. 만듦(add), 이름 바꿈(rename), 정지(suspend)와 풂(unsuspend)을 한 줄에 하나씩 덧붙입니다
 //
 // 서버가 켤 때 파일을 처음부터 읽어 메모리에 올려 둡니다. 서버 한 대(VM 디스크)를 전제로 합니다.
 // 비밀번호, 이메일, 소셜 로그인의 토큰은 저장하지 않습니다. 로그인한 곳(provider)과 그곳의 사용자 번호(sub)만 남깁니다.
@@ -11,6 +11,7 @@
 // (이메일 확인 여부가 로그인한 곳마다 달라서, 남의 이메일로 만든 계정이 내 계정을 가져갈 수 있습니다).
 // 이름은 처음 로그인할 때 사람이 직접 정합니다 (ValidName). 계정은 이름을 정하는 순간 만들어지므로 이름 없는 계정은 없습니다.
 // 이름은 RenameEvery에 한 번 바꿀 수 있습니다 (가입한 뒤 첫 번째는 바로).
+// 운영자는 계정을 정지(suspend)하고 풀(unsuspend) 수 있습니다. 정지된 동안은 쓰기를 막습니다 (identity.WriteDenied).
 //
 // 탈퇴(Delete)하면 그 계정의 줄을 파일에서 아예 지웁니다 (파일을 새로 씁니다). 그 계정의 세션 토큰은 identity가
 // 저장소에서 계정을 못 찾아 바로 거절합니다. 기보, 의견, 올린 게임은 http.go의 Handler.Forget이 지웁니다.
@@ -51,6 +52,7 @@ var (
 	ErrNameReserved = errors.New("name reserved")
 	ErrNameSame     = errors.New("name same")       // 지금 이름과 같음
 	ErrRenameSoon   = errors.New("rename too soon") // RenameEvery가 지나지 않음
+	ErrSuspended    = errors.New("suspended")       // 정지된 계정은 이름을 바꿀 수 없음
 	ErrNotFound     = errors.New("not found")
 )
 
@@ -65,6 +67,15 @@ type Account struct {
 	Name     string
 	Created  time.Time
 	Renamed  time.Time // 마지막으로 이름을 바꾼 때. 안 바꿨으면 0
+
+	// 운영자가 정지한 계정 (Suspend). SuspendedUntil이 0이면 영구, 지났으면 풀린 것입니다 (SuspendedAt으로 봅니다).
+	Suspended      bool
+	SuspendedUntil time.Time
+}
+
+// SuspendedAt은 now에 정지된 상태인지입니다.
+func (a Account) SuspendedAt(now time.Time) bool {
+	return a.Suspended && (a.SuspendedUntil.IsZero() || now.Before(a.SuspendedUntil))
 }
 
 // RenameAfter는 이름을 다시 바꿀 수 있는 때입니다. 지금 바꿀 수 있으면 0입니다.
@@ -77,11 +88,12 @@ func (a Account) RenameAfter(now time.Time) time.Time {
 
 // line은 accounts.jsonl의 한 줄입니다.
 type line struct {
-	Op       string    `json:"op"` // add, rename
+	Op       string    `json:"op"` // add, rename, suspend, unsuspend
 	ID       string    `json:"id"`
 	Provider string    `json:"provider,omitempty"` // add만
 	Sub      string    `json:"sub,omitempty"`      // add만
-	Name     string    `json:"name"`
+	Name     string    `json:"name,omitempty"`     // add, rename
+	Until    time.Time `json:"until,omitzero"`     // suspend만. 없으면 영구
 	At       time.Time `json:"at"`
 }
 
@@ -127,6 +139,14 @@ func Open(dir string) (*Store, error) {
 		case "rename":
 			if a := s.byID[l.ID]; a != nil {
 				a.Name, a.Renamed = l.Name, l.At
+			}
+		case "suspend":
+			if a := s.byID[l.ID]; a != nil {
+				a.Suspended, a.SuspendedUntil = true, l.Until
+			}
+		case "unsuspend":
+			if a := s.byID[l.ID]; a != nil {
+				a.Suspended, a.SuspendedUntil = false, time.Time{}
 			}
 		}
 	}
@@ -211,6 +231,9 @@ func (s *Store) Rename(id, name string) (Account, error) {
 		return Account{}, ErrNameSame
 	}
 	now := s.now().UTC()
+	if a.SuspendedAt(now) {
+		return Account{}, ErrSuspended
+	}
 	if !a.RenameAfter(now).IsZero() {
 		return Account{}, ErrRenameSoon
 	}
@@ -244,7 +267,70 @@ func (s *Store) Delete(id string) error {
 	return nil
 }
 
-// rewrite는 accounts.jsonl을 list의 계정만으로 새로 씁니다. 계정마다 add 한 줄(지금 이름), 이름을 바꿨으면 rename 한 줄입니다.
+// Suspend는 계정을 until까지 정지합니다 (운영자, internal/admin). until이 0이면 영구입니다. 이미 정지돼 있으면 기간을 바꿉니다.
+func (s *Store) Suspend(id string, until time.Time) error {
+	return s.setSuspended(id, line{Op: "suspend", ID: id, Until: until.UTC()})
+}
+
+// Unsuspend는 정지를 풉니다.
+func (s *Store) Unsuspend(id string) error {
+	return s.setSuspended(id, line{Op: "unsuspend", ID: id})
+}
+
+func (s *Store) setSuspended(id string, l line) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.byID[id]
+	if !ok {
+		return ErrNotFound
+	}
+	l.At = s.now().UTC()
+	if err := s.append(l); err != nil {
+		return err
+	}
+	a.Suspended, a.SuspendedUntil = l.Op == "suspend", l.Until
+	return nil
+}
+
+// Suspension은 계정이 지금 정지돼 있는지와 풀리는 때(영구면 0)입니다. identity.Suspensions를 채웁니다.
+func (s *Store) Suspension(id string) (time.Time, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.byID[id]
+	if !ok || !a.SuspendedAt(s.now()) {
+		return time.Time{}, false
+	}
+	return a.SuspendedUntil, true
+}
+
+// Suspended는 지금 정지된 계정입니다. 풀리는 때가 가까운 것부터, 영구 정지는 맨 뒤에.
+func (s *Store) Suspended() []Account {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now()
+	var out []Account
+	for _, a := range s.byID {
+		if a.SuspendedAt(now) {
+			out = append(out, *a)
+		}
+	}
+	slices.SortFunc(out, func(a, b Account) int {
+		switch {
+		case a.SuspendedUntil.IsZero() != b.SuspendedUntil.IsZero():
+			if a.SuspendedUntil.IsZero() {
+				return 1
+			}
+			return -1
+		case !a.SuspendedUntil.Equal(b.SuspendedUntil):
+			return a.SuspendedUntil.Compare(b.SuspendedUntil)
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
+	return out
+}
+
+// rewrite는 accounts.jsonl을 list의 계정만으로 새로 씁니다. 계정마다 add 한 줄(지금 이름), 이름을 바꿨으면 rename 한 줄,
+// 지금 정지돼 있으면 suspend 한 줄입니다.
 // 반쯤 쓴 파일이 보이지 않게 임시 파일에 쓰고 이름을 바꿉니다. s.mu를 잡고 부릅니다.
 func (s *Store) rewrite(list []*Account) error {
 	slices.SortFunc(list, func(a, b *Account) int { return a.Created.Compare(b.Created) })
@@ -256,6 +342,11 @@ func (s *Store) rewrite(list []*Account) error {
 		}
 		if !a.Renamed.IsZero() {
 			if err := enc.Encode(line{Op: "rename", ID: a.ID, Name: a.Name, At: a.Renamed}); err != nil {
+				return err
+			}
+		}
+		if a.SuspendedAt(s.now()) {
+			if err := enc.Encode(line{Op: "suspend", ID: a.ID, Until: a.SuspendedUntil, At: s.now().UTC()}); err != nil {
 				return err
 			}
 		}

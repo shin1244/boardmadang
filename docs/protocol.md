@@ -7,9 +7,9 @@
 | `GET /healthz` | `ok` |
 | `GET /api/games` | 게임 목록 `[{"id":"tictactoe","module":"/games/tictactoe/index.js","version":"3f1c9a0b2e7d4c56","private":false,"listing":{...},"thumbnail":{...},"plays":12,"released":"…"}]`. `plays`는 둔 판 수로 로비의 인기순에 씁니다 (무효가 된 대국, 행동이 없는 대국, 한 사람이 두 자리에 앉은 대국은 빼고 셈. 0이면 없음). `released`는 올린 게임을 처음 등록한 때로 출시일순에 씁니다 (레포 게임은 없음) |
 | `GET /api/locale` | 접속 나라와 화면 언어 `{"country":"KR","lang":"ko"}` |
-| `GET /api/me` | 지금 신원 `{"id":"g_…","kind":"guest","tag":"4821"}`. 쿠키가 없으면 게스트를 새로 발급합니다 |
+| `GET /api/me` | 지금 신원 `{"id":"g_…","kind":"guest","tag":"4821"}`. 쿠키가 없으면 게스트를 새로 발급합니다. 계정이면 운영자(`"admin":true`)와 정지(`"suspended":true,"suspendedUntil":"…"`, 영구면 `suspendedUntil` 없음)도 옵니다 |
 | `GET /api/account` | 내 계정 `{"name":"shin","provider":"google","created":"…","renameAfter":"…","min":4,"max":8}`. `renameAfter`는 이름을 다시 바꿀 수 있는 때 (지금 바꿀 수 있으면 없음). 계정만 |
-| `PATCH /api/account` | 이름 바꾸기 `{"name":"…"}` → `GET /api/account`와 같은 모양. 30일에 한 번 (가입한 뒤 첫 번째는 바로). 안 되는 이름은 `400 {"error":"name length\|name chars\|name reserved\|name same"}`, 너무 일찍 바꾸면 `429 {"error":"rename too soon","renameAfter":"…"}`. 계정만 |
+| `PATCH /api/account` | 이름 바꾸기 `{"name":"…"}` → `GET /api/account`와 같은 모양. 30일에 한 번 (가입한 뒤 첫 번째는 바로). 안 되는 이름은 `400 {"error":"name length\|name chars\|name reserved\|name same"}`, 너무 일찍 바꾸면 `429 {"error":"rename too soon","renameAfter":"…"}`, 정지된 계정이면 `403 {"error":"suspended"}`. 계정만 |
 | `DELETE /api/account` | 탈퇴 `{"confirm":"<지금 이름>"}` → `204`, 세션 쿠키를 지웁니다. 이름이 다르면 `400 {"error":"confirm"}`. 계정만 ([identity.md](identity.md#이름-바꾸기와-탈퇴)) |
 | `GET /api/matches/{id}` | 기보 하나. 시드와 행동 기록이 있어 처음부터 다시 둘 수 있습니다 `{"id":"VJ7QHHVKDY","game":"tictactoe","version":"3f1c9a0b2e7d4c56","seed":3551073280,"minutes":10,"players":[{…},{…}],"you":[0],"moves":[{"player":0,"action":{"kind":"click","row":1,"col":1},"at":10854}],"count":1,"winner":0,"reason":"result","clock":[587103,597876],"started":"…","ended":"…"}` |
 | `GET /api/matches` | 내가 둔 대국 목록, 최근 것부터 50개 (`moves` 없이). 쿠키가 없으면 `[]` |
@@ -26,6 +26,8 @@
 | `GET /api/games/{id}/clear` | 제작자 클리어 기보. 올린 게임의 지금 버전만 `{"game":"dots","version":"…","seed":3551073280,"moves":[…],"winner":0,"at":"…"}`. 없으면 `404` |
 | `GET /drafts/{draft}/{path}` | 초안의 파일. 등록창이 실행기에 불러와 검사합니다 |
 | `GET /uploads/{id}/{version}/{path}` | 올린 게임의 코드. 버전이 곧 내용의 해시라 오래 캐시합니다 (`immutable`) |
+| `GET /api/admin` | 운영자 화면. 신고 목록, 정지된 계정, 최근 운영 기록. 운영자만 ([moderation.md](moderation.md#api)) |
+| `POST /api/admin/actions` | 운영 조치 하나 `{"action":"comment.hide","game":"…","comment":"…","note":"…"}` → `{"ok":true}`. 운영자만 |
 
 - `version`은 게임 코드 버전입니다. 게임 폴더의 `.js`, `.mjs` 파일(테스트와 `node_modules` 제외)을 `/`로 구분한 상대 경로 순으로
   "경로\0내용\0"씩 이어 SHA-256을 구하고 앞 16글자를 씁니다. 개발 서버와 Go 서버의 계산이 같아야 합니다.
@@ -101,6 +103,8 @@
   헤더를 위조해도 문제 없습니다. 유저가 로비에서 직접 고른 언어가 있으면 브라우저가 이 요청보다 그걸 먼저 씁니다.
 - `/api/me`: 게스트와 계정, 세션 쿠키는 [identity.md](identity.md)에 정리했습니다.
 - 기보(`players`)와 의견(`author`)의 계정 이름은 남긴 때의 이름이 아니라 지금 이름입니다. 탈퇴한 계정은 `{"kind":"gone"}`(태그와 이름 없음)으로 옵니다.
+- 정지된 계정은 의견 남기기, 신고, 게임 올리기와 등록, 등록 정보 고치기, 이름 바꾸기가 `403 {"error":"suspended"}`입니다 ([moderation.md](moderation.md#계정-정지)).
+- `GET /api/uploads`의 게임에는 운영자가 내렸는지(`"blocked":true`)도 옵니다. 운영자가 내린 게임은 주인이 다시 올릴 수 없습니다.
   Go 서버는 서명한 쿠키로 신원을 정합니다. 개발 서버는 늘 같은 가짜 신원을 돌려주고, `DEV_AS=guest`로 게스트를 흉내 냅니다.
 - `/api/games`, `/api/locale`은 개발 서버(`sdk/playground/serve.js`)와 Go 서버(`server/internal/site`)가 같은 모양으로 제공합니다.
   둔 판 수(`plays`)와 출시일(`released`)은 기보와 올린 게임이 있는 Go 서버에만 있습니다.
@@ -224,6 +228,7 @@
 | `too many actions` | 초당 행동 수 제한(20)을 넘음. 그 행동은 버립니다 |
 | `bad emote` | 없는 이모티콘 |
 | `member only` | 게스트가 `create`를 보냄. 방은 계정만 만들 수 있습니다 |
+| `suspended` | 정지된 계정이 `create`를 보냄. 빠른 매칭과 열린 방에 들어가기는 됩니다 |
 
 - 메시지 하나는 1 KB까지입니다. 넘으면 연결을 끊습니다.
 - 서버가 보낼 메시지가 64개 넘게 밀리면(느린 연결) 연결을 끊습니다.

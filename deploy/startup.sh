@@ -29,11 +29,11 @@ fi
 install -d -m 700 "$CONF"
 install -d -o 65532 -g 65532 "$DATA" # 컨테이너 안의 nonroot 사용자가 씁니다
 
-# 비밀값. SESSION_SECRET은 꼭 있어야 하고, 소셜 로그인은 넣어 둔 것만 켜집니다.
+# 비밀값. SESSION_SECRET은 꼭 있어야 하고, 소셜 로그인과 운영자(ADMIN_IDS)는 넣어 둔 것만 켜집니다.
 # Secret Manager의 이름은 환경변수 이름을 소문자와 -로 바꾼 것입니다 (GITHUB_CLIENT_ID → github-client-id).
 {
   echo "PUBLIC_URL=https://$DOMAIN"
-  for name in SESSION_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET; do
+  for name in SESSION_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET ADMIN_IDS; do
     secret=$(echo "$name" | tr 'A-Z_' 'a-z-')
     if value=$(gcloud secrets versions access latest --secret="$secret" --project="$PROJECT" 2>/dev/null); then
       echo "$name=$value"

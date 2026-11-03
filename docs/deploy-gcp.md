@@ -103,6 +103,13 @@ GCP 프로젝트 `boardmadang`에 이렇게 놓았습니다. gcloud의 기본 �
    gcloud secrets create google-client-secret --project boardmadang --data-file=-
    ```
 
+6. **운영자**: 내 계정 id(로그인한 뒤 `/api/me`의 `m_…`)를 `admin-ids`에 넣고 다시 배포하면 운영자 화면(`/web/admin.html`)이 열립니다.
+   여러 명이면 쉼표로 잇습니다 ([moderation.md](moderation.md)).
+
+   ```bash
+   gcloud secrets create admin-ids --project boardmadang --data-file=-
+   ```
+
 ## 단일 인스턴스의 한계와 다음 단계
 
 - **서버가 재시작되면 진행 중인 대국이 사라집니다.** MVP에서는 감수합니다.
