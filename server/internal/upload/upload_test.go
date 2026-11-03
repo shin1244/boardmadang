@@ -368,6 +368,95 @@ func TestPublish(t *testing.T) {
 	}
 }
 
+func TestEdit(t *testing.T) {
+	dir := t.TempDir()
+	s, now := open(t, dir)
+	a, b := member("m_a"), member("m_b")
+	d, _ := s.NewDraft(a, makeZip(t, "index.js", gameCode))
+	g, err := s.Publish(a, d.ID, publishing("dots", d))
+	if err != nil {
+		t.Fatal(err)
+	}
+	left := s.Mine("m_a").Left
+	hide, show := true, false
+
+	if _, err := s.Edit(b, "dots", EditRequest{Hidden: &hide}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("남의 게임: %v", err)
+	}
+	if _, err := s.Edit(a, "nope", EditRequest{Hidden: &hide}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("없는 게임: %v", err)
+	}
+	if _, err := s.Edit(a, "dots", EditRequest{}); !errors.Is(err, ErrNoChange) {
+		t.Fatalf("바꿀 것이 없음: %v", err)
+	}
+	bad := validListing()
+	delete(bad, "difficulty")
+	if _, err := s.Edit(a, "dots", EditRequest{Listing: bad}); !slices.Equal(codes(err), []string{"difficulty.invalid:"}) {
+		t.Fatalf("틀린 등록 정보: %v", codes(err))
+	}
+
+	// 등록 정보만 고치면 코드 버전과 클리어 기보는 그대로이고, 하루 등록 횟수에 세지 않습니다
+	l := validListing()
+	l["name"] = map[string]any{"ko": "새 이름", "en": "New"}
+	my, err := s.Edit(a, "dots", EditRequest{Listing: l})
+	var listing Listing
+	json.Unmarshal(my.Listing, &listing)
+	if err != nil || my.Version != g.Version || !my.Clear || my.Hidden || listing.Name["ko"] != "새 이름" {
+		t.Fatalf("등록 정보 고치기: %+v %v", my, err)
+	}
+	if s.Mine("m_a").Left != left {
+		t.Fatal("등록 정보 고치기는 하루 등록 횟수에 세지 않습니다")
+	}
+	if games := s.Games(); len(games) != 1 || !strings.Contains(string(games[0].Listing), "새 이름") {
+		t.Fatalf("로비에 고친 등록 정보: %+v", games)
+	}
+
+	// 내리면 로비와 클리어 기보에서 빠지지만, 기보를 다시보려고 코드는 남깁니다
+	if my, err := s.Edit(a, "dots", EditRequest{Hidden: &hide}); err != nil || !my.Hidden {
+		t.Fatalf("내리기: %+v %v", my, err)
+	}
+	if games := s.Games(); len(games) != 0 {
+		t.Fatalf("내린 게임이 로비에: %+v", games)
+	}
+	if _, err := s.ClearOf("dots"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("내린 게임의 클리어 기보: %v", err)
+	}
+	if _, err := s.gameFile("dots", g.Version, "index.js"); err != nil {
+		t.Fatalf("내린 게임의 코드: %v", err)
+	}
+	if mine := s.Mine("m_a"); len(mine.Games) != 1 || !mine.Games[0].Hidden || !strings.Contains(string(mine.Games[0].Listing), "새 이름") {
+		t.Fatalf("내 게임에는 내린 게임도: %+v", mine)
+	}
+	db, _ := s.NewDraft(b, makeZip(t, "index.js", gameCode))
+	if _, err := s.Publish(b, db.ID, publishing("dots", db)); !errors.Is(err, ErrTaken) {
+		t.Fatalf("내린 게임의 id도 주인의 것: %v", err)
+	}
+	if again, _ := open(t, dir); len(again.Games()) != 0 || !again.Mine("m_a").Games[0].Hidden {
+		t.Fatal("다시 열어도 내린 채로")
+	}
+
+	// 다시 올리거나, 새로 등록하면 다시 나옵니다
+	if my, err := s.Edit(a, "dots", EditRequest{Hidden: &show}); err != nil || my.Hidden || len(s.Games()) != 1 {
+		t.Fatalf("다시 올리기: %+v %v", my, err)
+	}
+	s.Edit(a, "dots", EditRequest{Hidden: &hide})
+	d2, _ := s.NewDraft(a, makeZip(t, "index.js", gameCode))
+	if _, err := s.Publish(a, d2.ID, publishing("dots", d2)); err != nil || len(s.Games()) != 1 {
+		t.Fatalf("내린 게임을 다시 등록: %v %+v", err, s.Games())
+	}
+
+	// 한 시간에 EditsPerHour번까지
+	*now = now.Add(time.Hour)
+	for range EditsPerHour {
+		if _, err := s.Edit(a, "dots", EditRequest{Hidden: &show}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Edit(a, "dots", EditRequest{Hidden: &show}); !errors.Is(err, ErrTooMany) {
+		t.Fatalf("한 시간에 %d번까지: %v", EditsPerHour, err)
+	}
+}
+
 func TestCheckClear(t *testing.T) {
 	const v = "0123456789abcdef"
 	clear := func(rest string) string { return `{"version":"` + v + `",` + rest + `}` }
@@ -481,10 +570,11 @@ func (n names) Name(id string) (string, bool) {
 func TestHTTP(t *testing.T) {
 	s, _ := open(t, t.TempDir())
 	ids := identity.NewIssuer([]byte(strings.Repeat("k", 32)))
-	ids.Members = names{"m_a": "maker"}
+	ids.Members = names{"m_a": "maker", "m_b": "other"}
 	h := Handler{Store: s, IDs: ids}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/uploads", h.ServeMine)
+	mux.HandleFunc("PATCH /api/uploads/{game}", h.ServeEdit)
 	mux.HandleFunc("POST /api/drafts", h.ServeNewDraft)
 	mux.HandleFunc("POST /api/drafts/{draft}/publish", h.ServePublish)
 	mux.HandleFunc("GET /drafts/{draft}/{path...}", h.ServeDraftFile)
@@ -564,7 +654,36 @@ func TestHTTP(t *testing.T) {
 		t.Fatalf("클리어 기보: %d %s", rec.Code, rec.Body)
 	}
 	rec = do("GET", "/api/uploads", "", nil, cookie)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"id":"dots"`) || strings.Contains(rec.Body.String(), "m_a") {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"id":"dots"`) || !strings.Contains(rec.Body.String(), `"listing":{`) || strings.Contains(rec.Body.String(), "m_a") {
 		t.Fatalf("내 게임: %d %s", rec.Code, rec.Body)
+	}
+
+	// 등록 정보만 고치기와 내리기
+	other := &http.Cookie{Name: identity.CookieName, Value: ids.Sign(member("m_b"))}
+	hide := []byte(`{"hidden":true}`)
+	if rec := do("PATCH", "/api/uploads/dots", "application/json", hide, guest); rec.Code != http.StatusForbidden {
+		t.Fatalf("게스트가 고치기: %d", rec.Code)
+	}
+	if rec := do("PATCH", "/api/uploads/dots", "application/json", hide, other); rec.Code != http.StatusNotFound {
+		t.Fatalf("남의 게임 고치기: %d", rec.Code)
+	}
+	if rec := do("PATCH", "/api/uploads/dots", "text/plain", hide, cookie); rec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("JSON이 아닌 본문: %d", rec.Code)
+	}
+	if rec := do("PATCH", "/api/uploads/dots", "application/json", []byte(`{}`), cookie); rec.Code != http.StatusBadRequest {
+		t.Fatalf("바꿀 것이 없음: %d", rec.Code)
+	}
+	if rec := do("PATCH", "/api/uploads/dots", "application/json", []byte(`{"listing":{}}`), cookie); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("틀린 등록 정보: %d %s", rec.Code, rec.Body)
+	}
+	rec = do("PATCH", "/api/uploads/dots", "application/json", hide, cookie)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"hidden":true`) {
+		t.Fatalf("내리기: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do("GET", "/api/games/dots/clear", "", nil, nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("내린 게임의 클리어 기보: %d", rec.Code)
+	}
+	if rec := do("GET", "/uploads/dots/"+d.Version+"/index.js", "", nil, nil); rec.Code != http.StatusOK {
+		t.Fatalf("내린 게임의 코드는 기보 다시보기에 씁니다: %d", rec.Code)
 	}
 }

@@ -8,6 +8,7 @@
 //   3단계: 난이도, 타이머, 지원 언어 (일부 번역 / 완전 번역으로 나눠 언어를 고릅니다)
 //   4단계: 고른 언어마다 이름, 소개, 룰북
 // 사이트에서는 등록(POST /api/drafts/<초안>/publish)하면 바로 로비에 나옵니다 (server/internal/upload).
+// 이미 올린 게임은 1단계의 "내가 올린 게임"에서 등록 정보만 고치거나(3, 4단계만 거쳐 PATCH /api/uploads/<id>) 로비에서 내립니다.
 // 개발 서버에서는 PUT /api/games/<id>/listing 으로 games/<id>/listing.json 에 저장합니다.
 // 어느 쪽인지는 GET /api/uploads로 압니다. 개발 서버에는 없어서 404입니다.
 //
@@ -39,15 +40,21 @@ let me = null;
 let mode = null;
 /** /api/games */
 let games = [];
-/** 사이트: GET /api/uploads. 내가 올린 게임과 오늘 남은 등록 횟수 */
+/** 사이트: GET /api/uploads. 내가 올린 게임(로비 항목 + published, hidden)과 오늘 남은 등록 횟수 */
 let mine = null;
+/** 사이트: 내리기나 다시 올리기를 보내는 중인 게임 id, 그리고 실패한 이유 */
+let mineBusy = null;
+let mineError = '';
 /**
  * 사이트: 올린 zip과 검사.
  * @type {{ state: 'uploading' | 'failed' | 'checking' | 'done', draft?: object, info?: object, check?: object,
  *          problems?: object[], msg?: string } | null}
  */
 let upload = null;
-/** 등록할 게임 { id, listing, ... }. 사이트에서는 검사를 마친 초안이고 개발 서버에서는 games의 항목입니다 */
+/**
+ * 등록할 게임 { id, listing, ... }. 사이트에서는 검사를 마친 초안이고 개발 서버에서는 games의 항목입니다.
+ * 사이트에서 내 게임의 등록 정보만 고칠 때는 mine의 항목에 edit: true를 붙인 것입니다 (직접 깨기 없이 3, 4단계만)
+ */
 let current = null;
 let step = 1;
 /** 언어 → 'full' | 'rulebook'. 없으면 지원 안 함 */
@@ -83,6 +90,14 @@ let hover = null;
 // ---- 1단계 (사이트): zip 올리기와 자동 검사 ----
 
 async function uploadZip(file) {
+  // 내 게임을 고치다가 zip을 올리면 고치던 글을 버리고 새 zip의 등록 정보로 채웁니다
+  if (current?.edit) {
+    if (dirty && !confirm(t('register.discard'))) {
+      $('#zip').value = '';
+      return;
+    }
+    dirty = false;
+  }
   const u = { state: 'uploading' };
   upload = u;
   current = null;
@@ -121,9 +136,8 @@ async function checkDraft(u) {
   try {
     runner = await loadGame({ module: draft.module });
     u.info = runner.info;
-    // zip에 썸네일이 없으면 지금 등록된 내 게임의 썸네일이 새 코드와도 맞는지 봅니다. 맞으면 그대로 씁니다
-    const mineNow = ['same', 'update'].includes(kindOf(u)) ? games.find((g) => g.id === u.info.id) : null;
-    u.prior = draft.thumbnail ? null : mineNow?.thumbnail ?? null;
+    // zip에 썸네일이 없으면 지금 등록된 내 게임(내린 게임도)의 썸네일이 새 코드와도 맞는지 봅니다. 맞으면 그대로 씁니다
+    u.prior = draft.thumbnail ? null : myGame(u.info.id)?.thumbnail ?? null;
     const langs = fullLangs(draft.listing);
     u.check = await runner.check({ n: CHECK_GAMES, langs: langs.length ? langs : [lang], thumbnail: draft.thumbnail ?? u.prior });
   } catch (err) {
@@ -135,8 +149,7 @@ async function checkDraft(u) {
   u.state = 'done';
   if (u.info && !siteProblems(u).length) {
     const id = u.info.id;
-    const before = kindOf(u) === 'new' ? null : games.find((g) => g.id === id);
-    current = { id, draft, listing: draft.listing ?? before?.listing ?? null };
+    current = { id, draft, listing: draft.listing ?? myGame(id)?.listing ?? null };
     // zip의 썸네일(서버 검사를 통과한 것)이나 지금 등록된 썸네일은 게임 코드와 맞을 때만 씁니다. 2단계에서 바꿀 수 있습니다
     const fits = Array.isArray(u.check.thumbnail) && !u.check.thumbnail.length;
     thumb = !fits ? null : draft.thumbnail ? { data: draft.thumbnail, from: 'zip' } : u.prior ? { data: u.prior, from: 'kept' } : null;
@@ -147,10 +160,13 @@ async function checkDraft(u) {
   render();
 }
 
+/** 내가 올린 게임 (내린 게임도). 없으면 null */
+const myGame = (id) => mine?.games.find((g) => g.id === id) ?? null;
+
 /** 이 게임이 사이트에서 어떤 것인지: 'new' 새 게임, 'update' 내 게임의 새 버전, 'same' 이미 등록한 버전, 'taken' 남의 id */
 function kindOf(u) {
   const id = u.info?.id;
-  const my = mine?.games.find((g) => g.id === id);
+  const my = myGame(id);
   if (my) return my.version === u.draft.version ? 'same' : 'update';
   return games.some((g) => g.id === id) ? 'taken' : 'new';
 }
@@ -248,8 +264,106 @@ function fillList(ul, items) {
 
 /** 1단계를 마쳤는지 */
 function fileReady() {
-  if (mode === 'dev') return !!current;
+  if (mode === 'dev' || current?.edit) return !!current;
   return upload?.state === 'done' && !!current && !siteProblems(upload).length;
+}
+
+// ---- 1단계 (사이트): 내가 올린 게임 ----
+
+function renderMine() {
+  const list = mine?.games ?? [];
+  $('#mine').hidden = !list.length;
+  $('#mine-list').replaceChildren(...list.map((g) => {
+    const li = document.createElement('li');
+    li.classList.toggle('off', !!g.hidden);
+    if (current?.edit && current.id === g.id) li.setAttribute('aria-current', 'true');
+
+    const info = document.createElement('div');
+    info.className = 'mine-info';
+    const name = document.createElement('span');
+    name.className = 'mine-name';
+    name.textContent = localize(g.listing?.name, lang).text || g.id;
+    const tag = (key) => {
+      const s = document.createElement('small');
+      s.className = 'mine-tag';
+      s.textContent = t(key);
+      name.append(s);
+    };
+    if (g.hidden) tag('register.mine.hidden');
+    if (current?.edit && current.id === g.id) tag('register.mine.editing');
+    const meta = document.createElement('small');
+    meta.className = 'mine-meta';
+    meta.textContent = t('register.mine.meta', { id: g.id, version: g.version.slice(0, 8), date: new Date(g.published).toLocaleDateString(lang) });
+    info.append(name, meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'mine-actions';
+    const button = (key, onClick) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn ghost';
+      b.textContent = t(key);
+      b.disabled = mineBusy !== null;
+      b.addEventListener('click', onClick);
+      actions.append(b);
+    };
+    button('register.mine.edit', () => startEdit(g.id));
+    button(g.hidden ? 'register.mine.show' : 'register.mine.hide', () => setHidden(g.id, !g.hidden));
+    if (!g.hidden) {
+      const a = document.createElement('a');
+      a.className = 'btn ghost';
+      a.href = `/web/?game=${encodeURIComponent(g.id)}`;
+      a.textContent = t('register.toLobby');
+      actions.append(a);
+    }
+    li.append(info, actions);
+    return li;
+  }));
+  $('#mine-status').textContent = mineError;
+}
+
+/** 내 게임의 등록 정보만 고칩니다. 코드는 그대로라 직접 깨기 없이 3단계로 갑니다 */
+function startEdit(id) {
+  const g = myGame(id);
+  if (!g || (dirty && !confirm(t('register.discard')))) return;
+  upload = null;
+  $('#zip').value = '';
+  closePlay();
+  current = { ...g, edit: true };
+  fill(g.listing);
+  checkTurn(current);
+  goStep(STEP.langs);
+}
+
+/** 로비에서 내리거나(hidden = true) 다시 올립니다 */
+async function setHidden(id, hidden) {
+  const g = myGame(id);
+  const name = localize(g?.listing?.name, lang).text || id;
+  if (!g || mineBusy !== null || (hidden && !confirm(t('register.mine.hideConfirm', { name })))) return;
+  mineBusy = id;
+  mineError = '';
+  render();
+  try {
+    const res = await fetch(`/api/uploads/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hidden }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) mineError = t('register.mine.failed', { msg: editError(res.status, body) });
+    else if (current?.edit && current.id === id) current.hidden = body.game?.hidden ?? hidden;
+  } catch (err) {
+    mineError = t('register.mine.failed', { msg: err.message });
+  }
+  mineBusy = null;
+  await refreshLists();
+}
+
+/** PATCH /api/uploads/<id>의 실패 이유 */
+function editError(status, body) {
+  if (status === 429) return t('register.mine.tooMany');
+  if (status === 404) return t('register.mine.gone');
+  return body.error ?? String(status);
 }
 
 // ---- 2단계 (사이트): 직접 깨기와 썸네일 ----
@@ -261,7 +375,7 @@ const canPlay = () => !!play?.runner && !play.busy && !play.ended && !play.error
 const flipped = () => play.runner.info.board.flipForPlayer === play.seat;
 
 /** 같은 버전을 이미 깨서 등록했는지 (등록 정보만 고치려고 같은 코드를 다시 올린 경우). 서버가 전에 깬 판을 그대로 씁니다 */
-const priorClear = () => upload?.state === 'done' && !!current && kindOf(upload) === 'same' && !!games.find((g) => g.id === current.id)?.clear;
+const priorClear = () => upload?.state === 'done' && !!current && kindOf(upload) === 'same' && !!myGame(current.id)?.clear;
 
 /** 2단계를 마쳤는지 */
 const clearReady = () => !!cleared || priorClear();
@@ -551,6 +665,8 @@ async function checkTurn(entry) {
     found = runner.info.turn;
   } catch {
     // 코드가 깨졌으면 npx boardmadang check가 알려 줍니다. 여기서는 타이머만 막습니다.
+    // 사이트에 등록된 게임은 검사를 통과한 코드라, 실행기를 못 띄운 것뿐이면 모르는 채로(null) 두어 타이머를 지우지 않습니다
+    if (entry.edit) found = null;
   } finally {
     runner?.close();
   }
@@ -711,8 +827,8 @@ const isLangsProblem = (p) => ['languages.', 'difficulty.', 'timer.'].some((s) =
 const isClearProblem = (p) => p.code.startsWith('clear.') || p.code.startsWith('thumbnail.');
 /** 문제가 있으면 가장 앞의 단계로 돌아갑니다 */
 const stepOf = (list) => (list.some(isClearProblem) ? STEP.clear : list.some(isLangsProblem) ? STEP.langs : STEP.texts);
-/** 보이는 단계. 개발 서버에서는 직접 깨기가 없습니다 */
-const stepsOf = () => (mode === 'dev' ? [STEP.file, STEP.langs, STEP.texts] : [STEP.file, STEP.clear, STEP.langs, STEP.texts]);
+/** 보이는 단계. 개발 서버와, 사이트에서 내 게임의 등록 정보만 고칠 때는 직접 깨기가 없습니다 */
+const stepsOf = () => (mode === 'dev' || current?.edit ? [STEP.file, STEP.langs, STEP.texts] : [STEP.file, STEP.clear, STEP.langs, STEP.texts]);
 
 // ---- 화면 ----
 
@@ -752,17 +868,19 @@ function renderStep() {
     if (n === step) li.setAttribute('aria-current', 'step');
     else li.removeAttribute('aria-current');
   }
+  $('.steps li[data-step="1"] span').textContent = t(current?.edit ? 'register.stepEdit' : 'register.step0');
   $('#next-1').disabled = !fileReady();
   $('#next-2').disabled = !clearReady();
 }
 
 function renderStatus() {
-  const site = mode === 'site';
+  // 사이트에서 zip을 올려 등록하는 중인지. 내 게임의 등록 정보만 고칠 때는 개발 서버처럼 저장입니다
+  const site = mode === 'site' && !current?.edit;
   const s = $('#save-status');
   s.replaceChildren();
   s.className = 'status-line';
-  $('#save').textContent = t(site ? 'register.publish' : 'register.save');
-  // 사이트에서는 등록하면 초안이 없어집니다. 다시 고치려면 zip을 다시 올립니다
+  $('#save').textContent = t(site ? 'register.publish' : current?.edit ? 'register.saveEdit' : 'register.save');
+  // 사이트에서는 등록하면 초안이 없어집니다. 다시 고치려면 내 게임에서 고치거나 zip을 다시 올립니다
   $('#save').disabled = saveState?.kind === 'saving' || (site && saveState?.kind === 'saved');
   if (!saveState) return;
   if (saveState.kind === 'saving') {
@@ -772,10 +890,13 @@ function renderStatus() {
     s.classList.add('bad');
   } else {
     s.classList.add('good');
+    s.append(t(site ? 'register.published' : 'register.saved'));
+    // 내린 게임은 로비에 없습니다
+    if (current?.hidden) return;
     const a = document.createElement('a');
-    a.href = site ? `/web/?game=${encodeURIComponent(current.id)}` : '/web/';
+    a.href = mode === 'site' ? `/web/?game=${encodeURIComponent(current.id)}` : '/web/';
     a.textContent = t('register.toLobby');
-    s.append(`${t(site ? 'register.published' : 'register.saved')} `, a);
+    s.append(' ', a);
   }
 }
 
@@ -787,8 +908,13 @@ function render() {
   $('#member-only').hidden = !isMember(me);
   $('#upload').hidden = mode !== 'site';
   $('#pick').hidden = mode !== 'dev';
-  if (mode === 'site') renderUpload();
-  else $('#check').hidden = true;
+  if (mode === 'site') {
+    renderUpload();
+    renderMine();
+  } else {
+    $('#check').hidden = true;
+    $('#mine').hidden = true;
+  }
   if (mode === 'dev') renderGame();
   if (mode === 'site' && step === STEP.clear) renderPlay();
   renderTimer();
@@ -842,18 +968,7 @@ async function save(e) {
   saveState = { kind: 'saving' };
   render();
   try {
-    const res = mode === 'site'
-      ? await fetch(`/api/drafts/${encodeURIComponent(current.draft.id)}/publish`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // 클리어가 null이면 서버가 같은 버전에서 전에 깬 판을 씁니다 (priorClear)
-        body: JSON.stringify({ id: current.id, listing, thumbnail: thumb?.data ?? null, clear: cleared && { ...cleared, turns: undefined } }),
-      })
-      : await fetch(`/api/games/${encodeURIComponent(current.id)}/listing`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(listing),
-      });
+    const res = await saveRequest(listing);
     const body = await res.json().catch(() => ({}));
     if (res.status === 422) {
       problems = body.problems ?? [];
@@ -874,8 +989,21 @@ async function save(e) {
   render();
 }
 
+/** 내 게임 고치기(사이트), zip 등록(사이트), games/에 저장(개발 서버) 가운데 하나 */
+function saveRequest(listing) {
+  const json = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (current.edit) return fetch(`/api/uploads/${encodeURIComponent(current.id)}`, json('PATCH', { listing }));
+  if (mode === 'site') {
+    // 클리어가 null이면 서버가 같은 버전에서 전에 깬 판을 씁니다 (priorClear)
+    const clear = cleared && { ...cleared, turns: undefined };
+    return fetch(`/api/drafts/${encodeURIComponent(current.draft.id)}/publish`, json('POST', { id: current.id, listing, thumbnail: thumb?.data ?? null, clear }));
+  }
+  return fetch(`/api/games/${encodeURIComponent(current.id)}/listing`, json('PUT', listing));
+}
+
 function saveError(status, body) {
   if (status === 403 && body.error === 'member only') return t('register.memberOnly');
+  if (current?.edit) return editError(status, body);
   if (mode !== 'site') return body.error ?? status;
   if (status === 409) return t('register.check.taken', { id: current.id });
   if (status === 429) return t('register.publish.tooMany');
@@ -884,16 +1012,16 @@ function saveError(status, body) {
   return body.error ?? status;
 }
 
-/** 등록한 뒤 목록을 다시 받습니다. 같은 게임을 다시 올리면 '새 버전'으로 보이게 */
+/** 등록하거나 고친 뒤 목록을 다시 받습니다. 같은 게임을 다시 올리면 '새 버전'으로 보이게 */
 async function refreshLists() {
   try {
     const [g, m] = await Promise.all([fetch('/api/games'), fetch('/api/uploads')]);
     if (g.ok) games = await g.json();
     if (m.ok) mine = await m.json();
-    render();
   } catch {
     // 다음에 새로 열면 됩니다
   }
+  render();
 }
 
 function setupPlay() {

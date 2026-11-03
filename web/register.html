@@ -80,6 +80,14 @@
           </div>
         </section>
 
+        <!-- 사이트: 내가 올린 게임. 코드를 다시 올리지 않고 등록 정보만 고치거나, 로비에서 내리거나 다시 올립니다 -->
+        <section class="block" id="mine" hidden>
+          <h2 class="block-title" data-i18n="register.mine">내가 올린 게임</h2>
+          <p class="hint" data-i18n="register.mine.lead"></p>
+          <ul id="mine-list" class="mine-list"></ul>
+          <p id="mine-status" class="status-line bad" role="status"></p>
+        </section>
+
         <section class="block" id="pick" hidden>
           <label class="block-title" for="game" data-i18n="register.game">게임</label>
           <select id="game"></select>

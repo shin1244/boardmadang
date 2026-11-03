@@ -4,7 +4,8 @@
 // 등록할 때 제작자가 혼자 양쪽을 둬서 이긴 판이라 두 자리 모두 "제작자"입니다 (server/internal/upload/clear.go).
 //
 // 제작자가 게임 코드를 고쳤으면 예전 기보가 다르게 재생될 수 있습니다.
-// 기보에 남은 코드 버전이 지금 코드(/api/games의 version)와 다르면 알려 줍니다. 옛 코드는 아직 보관하지 않습니다.
+// 올린 게임은 옛 버전 코드도 남아 있어서(/uploads/<게임>/<버전>/) 기보를 둔 버전의 코드로 재생합니다. 내린 게임도 마찬가지입니다.
+// 레포 게임처럼 옛 코드가 없으면 지금 코드로 재생하고, 기보의 버전이 지금 코드(/api/games의 version)와 다르면 알려 줍니다.
 //
 // 게임 코드는 이 페이지가 아니라 게임 실행기(engine.js)의 샌드박스 Worker에서 돌립니다.
 // 모든 수의 상태는 Worker에 남기고, 이 페이지는 보고 있는 수의 판만 받아 와 그립니다.
@@ -252,6 +253,14 @@ function fit() {
   board?.resize(Math.min(480, $('.match').clientWidth));
 }
 
+/** 기보를 둔 버전의 올린 게임 코드 주소. 지금 버전이거나 옛 코드가 없으면(레포 게임, 버전을 모르던 때의 기보) null */
+async function oldModule() {
+  if (!rec.version || rec.version === entry?.version) return null;
+  const module = `/uploads/${encodeURIComponent(rec.game)}/${encodeURIComponent(rec.version)}/index.js`;
+  const res = await fetch(module, { method: 'HEAD' }).catch(() => null);
+  return res?.ok ? module : null;
+}
+
 function fail(msg) {
   problem = msg;
   render();
@@ -277,6 +286,8 @@ async function main() {
   viewAs = rec.you[0] ?? 0;
 
   entry = (await (await fetch('/api/games')).json()).find((g) => g.id === rec.game) ?? null;
+  const old = await oldModule();
+  if (old) entry = { ...(entry ?? { id: rec.game, listing: null }), module: old, version: rec.version };
   if (!entry) return fail(t('replay.noGame', { id: rec.game }));
   runner = await loadGame(entry);
   board = new BoardView($('#board'), runner.info.board, runner.info.pieces);

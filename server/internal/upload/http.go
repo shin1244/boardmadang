@@ -16,7 +16,8 @@ import (
 
 // Handler는 게임 올리기 API와 올린 게임의 파일입니다.
 //
-//	GET  /api/uploads                         내가 올린 게임과 오늘 남은 등록 횟수 {"games":[...],"left":N}
+//	GET   /api/uploads                        내가 올린 게임과 오늘 남은 등록 횟수 {"games":[MyGame...],"left":N}
+//	PATCH /api/uploads/{game}                 EditRequest {"listing"?, "hidden"?} → 200 {"game":MyGame}. 등록 정보만 고치기, 내리기
 //	POST /api/drafts                          zip 본문(Content-Type: application/zip) → 201 Draft
 //	POST /api/drafts/{draft}/publish          PublishRequest {"id","listing","thumbnail","clear"} → 200 {"game":{...}}
 //	GET  /drafts/{draft}/{path...}            초안의 파일 (실행기가 불러옴)
@@ -86,6 +87,29 @@ func (h Handler) ServePublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	g, err := h.Store.Publish(u, r.PathValue("draft"), body)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"game": g})
+}
+
+// ServeEdit은 내 게임의 등록 정보만 고치거나 게임을 내리거나 다시 올립니다. 내 게임이 아니면 404입니다.
+func (h Handler) ServeEdit(w http.ResponseWriter, r *http.Request) {
+	u, ok := h.member(w, r)
+	if !ok {
+		return
+	}
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		writeJSON(w, http.StatusUnsupportedMediaType, map[string]string{"error": "JSON only"})
+		return
+	}
+	var body EditRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, MaxListingFile+8<<10)).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad JSON"})
+		return
+	}
+	g, err := h.Store.Edit(u, r.PathValue("game"), body)
 	if err != nil {
 		h.fail(w, err)
 		return
@@ -169,7 +193,7 @@ func (h Handler) fail(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": "problems", "problems": problems})
 	case errors.Is(err, ErrNotFound):
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
-	case errors.Is(err, ErrBadID):
+	case errors.Is(err, ErrBadID), errors.Is(err, ErrNoChange):
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 	case errors.Is(err, ErrTaken):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})

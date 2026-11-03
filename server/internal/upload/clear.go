@@ -79,12 +79,12 @@ func validAction(a protocol.Action) bool {
 	return a.Row == 0 && a.Col == 0
 }
 
-// ClearOf는 게임의 지금 버전 클리어 기보입니다. 없으면 ErrNotFound (클리어 체크 전에 올린 게임).
+// ClearOf는 게임의 지금 버전 클리어 기보입니다. 없으면 ErrNotFound (클리어 체크 전에 올린 게임, 내린 게임).
 func (s *Store) ClearOf(id string) (ClearRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g := s.games[id]
-	if g == nil || !g.cleared() || (s.Reserved != nil && s.Reserved(id)) {
+	if g == nil || g.Hidden || !g.cleared() || (s.Reserved != nil && s.Reserved(id)) {
 		return ClearRecord{}, ErrNotFound
 	}
 	return ClearRecord{Game: id, Clear: *g.Clear}, nil

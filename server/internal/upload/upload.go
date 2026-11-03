@@ -10,8 +10,10 @@
 //
 //	drafts/<초안>/draft.json     주인, 올린 때, 버전
 //	drafts/<초안>/files/...      zip에서 푼 코드, listing.json, thumbnail.json
-//	uploads/<게임>/game.json      주인, 지금 버전, 등록 정보, 썸네일, 클리어 기보, 등록한 때
+//	uploads/<게임>/game.json      주인, 지금 버전, 등록 정보, 썸네일, 클리어 기보, 등록한 때, 내렸는지
 //	uploads/<게임>/<버전>/...      코드만. 옛 버전은 다시보기를 위해 지우지 않습니다
+//
+// 등록한 뒤에는 주인이 등록 정보만 고치거나 게임을 내릴 수 있습니다 (Edit). 내린 게임도 코드는 지우지 않습니다.
 //
 // 서버는 게임 코드를 돌리지 않습니다. 자동 검사는 올린 사람의 브라우저에서 돌기 때문에 서버는 그 결과를 믿지 않습니다.
 // 남의 게임 코드가 보는 사람을 해칠 수 없는 건 실행기의 샌드박스 덕분이고, 서버는 파일 모양과 크기, 횟수만 지킵니다.
@@ -53,7 +55,8 @@ const (
 	MaxDrafts       = 3 // 계정마다 남겨 두는 초안. 넘으면 오래된 것부터 지웁니다
 	DraftTTL        = 24 * time.Hour
 	DraftsPerHour   = 30
-	PublishesPerDay = 5 // 계정마다. 등록 정보만 바꿔 다시 등록해도 셉니다
+	PublishesPerDay = 5  // 계정마다. 같은 zip을 다시 올려 등록해도 셉니다
+	EditsPerHour    = 30 // 계정마다. 등록 정보만 고치기, 내리기, 다시 올리기 (Edit)
 )
 
 var (
@@ -61,6 +64,7 @@ var (
 	ErrBadID    = errors.New("bad id")
 	ErrTaken    = errors.New("id taken") // 레포 게임이거나 다른 계정이 올린 게임
 	ErrTooMany  = errors.New("too many")
+	ErrNoChange = errors.New("nothing to change") // Edit에 바꿀 것이 없음
 )
 
 var (
@@ -82,6 +86,7 @@ type Store struct {
 	games  map[string]*gameMeta
 	drafts map[string]*draftMeta
 	recent map[string][]time.Time // 계정 → 최근 한 시간 안에 올린 초안 (메모리에만)
+	edits  map[string][]time.Time // 계정 → 최근 한 시간 안에 고친 때 (메모리에만)
 }
 
 type draftMeta struct {
@@ -101,6 +106,8 @@ type gameMeta struct {
 	Created   time.Time       `json:"created"`
 	// 등록할 때마다 하나씩 (같은 버전을 다시 등록해도). 하루 횟수를 세고, 어느 버전이 언제 나왔는지 남깁니다.
 	Published []published `json:"published"`
+	// 주인이 내린 게임. 로비(/api/games)와 클리어 기보에서 빠집니다. 코드는 기보를 다시보려고 그대로 내보냅니다
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 type published struct {
@@ -134,6 +141,7 @@ func Open(dataDir string) (*Store, error) {
 		games:  map[string]*gameMeta{},
 		drafts: map[string]*draftMeta{},
 		recent: map[string][]time.Time{},
+		edits:  map[string][]time.Time{},
 	}
 	for _, d := range []string{"drafts", "uploads"} {
 		if err := os.MkdirAll(filepath.Join(dataDir, d), 0o755); err != nil {
@@ -187,12 +195,9 @@ func (s *Store) NewDraft(u identity.User, data []byte) (Draft, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
-	recent := slices.DeleteFunc(s.recent[u.ID], func(t time.Time) bool { return now.Sub(t) >= time.Hour })
-	s.recent[u.ID] = recent
-	if len(recent) >= DraftsPerHour {
+	if !s.hit(s.recent, u.ID, DraftsPerHour) { // 규칙에 맞지 않은 zip도 셉니다
 		return Draft{}, ErrTooMany
 	}
-	s.recent[u.ID] = append(recent, now) // 규칙에 맞지 않은 zip도 셉니다
 	files, problems := readZip(data)
 	if len(problems) > 0 {
 		return Draft{}, problems
@@ -231,6 +236,18 @@ func (s *Store) NewDraft(u identity.User, data []byte) (Draft, error) {
 		out.Thumbnail, out.ThumbnailProblems = CheckThumbnail(body)
 	}
 	return out, nil
+}
+
+// hit은 계정의 최근 한 시간 기록 m[owner]에 지금을 더합니다. 이미 limit번이면 더하지 않고 false입니다. s.mu를 잡고 부릅니다.
+func (s *Store) hit(m map[string][]time.Time, owner string, limit int) bool {
+	now := s.now()
+	recent := slices.DeleteFunc(m[owner], func(t time.Time) bool { return now.Sub(t) >= time.Hour })
+	m[owner] = recent
+	if len(recent) >= limit {
+		return false
+	}
+	m[owner] = append(recent, now)
+	return true
 }
 
 // sweep은 기한이 지난 초안과, owner의 초안 가운데 MaxDrafts개를 넘는 오래된 것을 지웁니다. s.mu를 잡고 부릅니다.
@@ -279,6 +296,7 @@ type PublishRequest struct {
 }
 
 // Publish는 초안을 id로 등록합니다. 처음이면 새 게임이고, 내가 올린 게임이면 새 버전입니다 (같은 버전이면 등록 정보만 바뀝니다).
+// 내린 게임을 다시 등록하면 다시 로비에 나옵니다.
 func (s *Store) Publish(u identity.User, draftID string, req PublishRequest) (site.Game, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -336,6 +354,7 @@ func (s *Store) Publish(u identity.User, draftID string, req PublishRequest) (si
 	next.Listing = clean
 	next.Thumbnail = thumbnail
 	next.Clear = clear
+	next.Hidden = false
 	next.Published = append(next.Published, published{Version: d.Version, At: now})
 	if err := writeJSONFile(filepath.Join(s.dir, "uploads", id, "game.json"), &next); err != nil {
 		return site.Game{}, err
@@ -399,13 +418,13 @@ func (s *Store) publishedToday(owner string) int {
 
 // ---- 목록 ----
 
-// Games는 올린 게임을 /api/games 모양으로 돌려줍니다. 처음 등록한 순서입니다. 레포에 같은 id가 생긴 게임은 뺍니다.
+// Games는 올린 게임을 /api/games 모양으로 돌려줍니다. 처음 등록한 순서입니다. 내린 게임과 레포에 같은 id가 생긴 게임은 뺍니다.
 func (s *Store) Games() []site.Game {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	list := make([]*gameMeta, 0, len(s.games))
 	for _, g := range s.games {
-		if s.Reserved == nil || !s.Reserved(g.ID) {
+		if !g.Hidden && (s.Reserved == nil || !s.Reserved(g.ID)) {
 			list = append(list, g)
 		}
 	}
@@ -440,10 +459,16 @@ type Mine struct {
 	Left  int      `json:"left"` // 오늘 더 등록할 수 있는 횟수
 }
 
+// MyGame은 내가 올린 게임 하나입니다. 로비 항목(site.Game)에 마지막으로 등록한 때와 내렸는지를 더합니다.
+// 등록창이 내린 게임의 등록 정보도 고칠 수 있게 로비 항목을 통째로 줍니다.
 type MyGame struct {
-	ID        string    `json:"id"`
-	Version   string    `json:"version"`
-	Published time.Time `json:"published"` // 마지막으로 등록한 때
+	site.Game
+	Published time.Time `json:"published"`        // 마지막으로 등록한 때
+	Hidden    bool      `json:"hidden,omitempty"` // 내린 게임
+}
+
+func (g *gameMeta) mine() MyGame {
+	return MyGame{Game: g.entry(), Published: g.Published[len(g.Published)-1].At, Hidden: g.Hidden}
 }
 
 // Mine은 owner가 올린 게임과 오늘 남은 등록 횟수입니다.
@@ -453,11 +478,55 @@ func (s *Store) Mine(owner string) Mine {
 	out := Mine{Games: []MyGame{}, Left: max(0, PublishesPerDay-s.publishedToday(owner))}
 	for _, g := range s.games {
 		if g.Owner == owner {
-			out.Games = append(out.Games, MyGame{ID: g.ID, Version: g.Version, Published: g.Published[len(g.Published)-1].At})
+			out.Games = append(out.Games, g.mine())
 		}
 	}
 	slices.SortFunc(out.Games, func(a, b MyGame) int { return b.Published.Compare(a.Published) })
 	return out
+}
+
+// ---- 고치기 ----
+
+// EditRequest는 PATCH /api/uploads/{game}의 본문입니다. 있는 것만 바꿉니다.
+type EditRequest struct {
+	Listing any   `json:"listing"` // 등록 정보. 코드, 썸네일, 클리어 기보는 그대로입니다
+	Hidden  *bool `json:"hidden"`  // true면 내리고 false면 다시 올립니다
+}
+
+// Edit은 내가 올린 게임의 등록 정보만 고치거나, 게임을 내리거나 다시 올립니다.
+// 코드를 새로 올리지 않으므로 하루 등록 횟수에 세지 않고, 한 시간에 EditsPerHour번까지 됩니다.
+//
+// 내린 게임은 로비(/api/games)와 클리어 기보에서 빠지지만 코드 파일은 그대로 내보냅니다.
+// 그 게임으로 둔 대국의 기보를 다시볼 수 있어야 하기 때문입니다. id도 그대로 주인의 것입니다.
+func (s *Store) Edit(u identity.User, id string, req EditRequest) (MyGame, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g := s.games[id]
+	if g == nil || g.Owner != u.ID || (s.Reserved != nil && s.Reserved(id)) {
+		return MyGame{}, ErrNotFound
+	}
+	if req.Listing == nil && req.Hidden == nil {
+		return MyGame{}, ErrNoChange
+	}
+	if !s.hit(s.edits, u.ID, EditsPerHour) {
+		return MyGame{}, ErrTooMany
+	}
+	next := *g
+	if req.Listing != nil {
+		clean, problems := CheckListing(req.Listing)
+		if len(problems) > 0 {
+			return MyGame{}, problems
+		}
+		next.Listing = clean
+	}
+	if req.Hidden != nil {
+		next.Hidden = *req.Hidden
+	}
+	if err := writeJSONFile(filepath.Join(s.dir, "uploads", id, "game.json"), &next); err != nil {
+		return MyGame{}, err
+	}
+	s.games[id] = &next
+	return next.mine(), nil
 }
 
 // ---- 파일 ----
