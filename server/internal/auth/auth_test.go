@@ -166,14 +166,14 @@ func TestLoginAdoptsGuest(t *testing.T) {
 	if code, info := s.signupInfo(t); code != http.StatusOK || info["suggested"] != "octo" || info["provider"] != "github" {
 		t.Fatalf("signup info: %d %v", code, info)
 	}
-	if code, out := s.signup(t, "운영자"); code != http.StatusBadRequest || out["error"] != "name reserved" {
+	if code, out := s.signup(t, "admin1"); code != http.StatusBadRequest || out["error"] != "name reserved" {
 		t.Fatalf("reserved name: %d %v", code, out)
 	}
-	if code, out := s.signup(t, "문어"); code != http.StatusOK || out["next"] != "/web/rooms.html?x=1" {
+	if code, out := s.signup(t, "octopus"); code != http.StatusOK || out["next"] != "/web/rooms.html?x=1" {
 		t.Fatalf("signup: %d %v", code, out)
 	}
 	member := s.me(t)
-	if member.Kind != identity.KindMember || member.Name != "문어" || !strings.HasPrefix(member.ID, "m_") {
+	if member.Kind != identity.KindMember || member.Name != "octopus" || !strings.HasPrefix(member.ID, "m_") {
 		t.Fatalf("after signup = %+v", member)
 	}
 	// 가입 정보는 한 번만 씁니다
@@ -181,7 +181,7 @@ func TestLoginAdoptsGuest(t *testing.T) {
 		t.Fatalf("second signup: %d", code)
 	}
 	list, _ := s.records.ListByUser(member.ID, 10)
-	if len(list) != 1 || list[0].Players[0].Name != "문어" {
+	if len(list) != 1 || list[0].Players[0].Name != "octopus" {
 		t.Fatalf("guest match not adopted: %+v", list)
 	}
 
@@ -271,10 +271,10 @@ func TestDevLogin(t *testing.T) {
 	if res.StatusCode != http.StatusFound || res.Header.Get("Location") != SignupPage {
 		t.Fatalf("dev login: %d → %q", res.StatusCode, res.Header.Get("Location"))
 	}
-	if code, out := s.signup(t, "dev"); code != http.StatusOK || out["next"] != "/web/rooms.html" {
+	if code, out := s.signup(t, "devuser"); code != http.StatusOK || out["next"] != "/web/rooms.html" {
 		t.Fatalf("signup: %d %v", code, out)
 	}
-	if u := s.me(t); u.Kind != identity.KindMember || u.Name != "dev" {
+	if u := s.me(t); u.Kind != identity.KindMember || u.Name != "devuser" {
 		t.Fatalf("after dev login = %+v", u)
 	}
 }

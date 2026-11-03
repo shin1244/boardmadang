@@ -19,6 +19,9 @@ export function loadMe() {
 
 export const isMember = (me) => me?.kind === 'member';
 
+/** 계정 이름에 쓸 수 있는 글자: 영문과 숫자만 (서버의 account.ValidName과 같은 규칙. 글자 수는 서버가 알려 줍니다) */
+export const NAME_CHARS = /^[A-Za-z0-9]*$/;
+
 /**
  * 화면에 보일 이름. 게스트 이름은 화면 언어로 만듭니다 ("게스트 4821" / "Guest 4821").
  * 기보와 의견에는 탈퇴한 계정(kind: 'gone', 이름과 태그 없음)도 옵니다.

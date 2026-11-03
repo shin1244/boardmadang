@@ -74,12 +74,12 @@ func TestHTTP(t *testing.T) {
 	if rec := do("PATCH", "application/json", `{"name":"shin"}`, cookie); rec.Code != 400 || errorOf(rec) != "name same" {
 		t.Fatalf("same name: %d %s", rec.Code, rec.Body)
 	}
-	rec = do("PATCH", "application/json", `{"name":"준규"}`, cookie)
-	if json.Unmarshal(rec.Body.Bytes(), &info); rec.Code != 200 || info.Name != "준규" || !info.RenameAfter.Equal(now.Add(RenameEvery)) {
+	rec = do("PATCH", "application/json", `{"name":"junkyu"}`, cookie)
+	if json.Unmarshal(rec.Body.Bytes(), &info); rec.Code != 200 || info.Name != "junkyu" || !info.RenameAfter.Equal(now.Add(RenameEvery)) {
 		t.Fatalf("rename = %d %s", rec.Code, rec.Body)
 	}
 	// 토큰은 그대로인데 이름은 새 이름입니다
-	if u, ok := ids.Verify(cookie.Value); !ok || u.Name != "준규" {
+	if u, ok := ids.Verify(cookie.Value); !ok || u.Name != "junkyu" {
 		t.Fatalf("Verify after rename = %+v, %v", u, ok)
 	}
 	*now = now.Add(time.Hour)
@@ -92,13 +92,13 @@ func TestHTTP(t *testing.T) {
 	if rec := do("DELETE", "application/json", `{"confirm":"shin"}`, cookie); rec.Code != 400 || errorOf(rec) != "confirm" {
 		t.Fatalf("old name as confirm: %d %s", rec.Code, rec.Body)
 	}
-	if rec := do("DELETE", "", `{"confirm":"준규"}`, cookie); rec.Code != http.StatusUnsupportedMediaType {
+	if rec := do("DELETE", "", `{"confirm":"junkyu"}`, cookie); rec.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("delete without JSON: %d", rec.Code)
 	}
 	if len(forgot) != 0 {
 		t.Fatalf("forgot before delete: %v", forgot)
 	}
-	rec = do("DELETE", "application/json", `{"confirm":" 준규 "}`, cookie)
+	rec = do("DELETE", "application/json", `{"confirm":" junkyu "}`, cookie)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("delete: %d %s", rec.Code, rec.Body)
 	}

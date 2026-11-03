@@ -31,16 +31,14 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/shin1244/boardmadang/server/internal/identity"
 )
 
-// 계정 이름의 글자 수
+// 계정 이름의 글자 수. 영문과 숫자만 되므로 바이트 수와 같습니다
 const (
-	MinName = 2
-	MaxName = 12
+	MinName = 4
+	MaxName = 8
 )
 
 // RenameEvery는 이름을 다시 바꿀 수 있을 때까지의 시간입니다. 남을 흉내 내려고 이름을 자주 바꾸지 못하게 합니다.
@@ -294,16 +292,18 @@ func newID() string {
 }
 
 // ValidName은 사람이 정한 이름을 확인하고 앞뒤 공백을 뗀 이름을 돌려줍니다.
-// MinName~MaxName 글자의 글자(한글, 영문 등), 숫자, _ - . 만 됩니다. 띄어쓰기는 안 됩니다.
+// MinName~MaxName 글자의 영문(대소문자)과 숫자만 됩니다. 한글, 기호, 띄어쓰기는 안 됩니다.
+// 글자를 먼저 봅니다 ("신준규"는 글자 수보다 한글이 안 된다고 알려 주는 게 맞으므로).
+// 이 규칙 전에 정한 이름(한글 등)은 그대로 쓰고, 바꿀 때만 이 규칙을 따릅니다.
 func ValidName(name string) (string, error) {
 	name = strings.TrimSpace(name)
-	if n := utf8.RuneCountInString(name); n < MinName || n > MaxName {
-		return "", ErrNameLength
-	}
 	for _, r := range name {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '-' && r != '.' {
+		if !nameChar(r) {
 			return "", ErrNameChars
 		}
+	}
+	if n := len(name); n < MinName || n > MaxName {
+		return "", ErrNameLength
 	}
 	lower := strings.ToLower(name)
 	for _, w := range reserved {
@@ -314,20 +314,21 @@ func ValidName(name string) (string, error) {
 	return name, nil
 }
 
+// nameChar는 이름에 쓸 수 있는 글자입니다 (영문과 숫자).
+func nameChar(r rune) bool {
+	return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || '0' <= r && r <= '9'
+}
+
 // Suggest는 로그인한 곳에서 받은 이름을 이름 칸의 기본값으로 다듬습니다. 쓸 수 없는 글자는 빼고 MaxName 글자로 자릅니다.
-// 결과가 ValidName을 통과하지 못하면 빈 문자열입니다 (빈 칸으로 보여줍니다).
+// 결과가 ValidName을 통과하지 못하면 빈 문자열입니다 (빈 칸으로 보여줍니다. 한글 이름이면 대개 빈 칸).
 func Suggest(name string) string {
 	var b strings.Builder
 	for _, r := range name {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' || r == '.' {
+		if nameChar(r) && b.Len() < MaxName {
 			b.WriteRune(r)
 		}
 	}
-	runes := []rune(b.String())
-	if len(runes) > MaxName {
-		runes = runes[:MaxName]
-	}
-	out, err := ValidName(string(runes))
+	out, err := ValidName(b.String())
 	if err != nil {
 		return ""
 	}

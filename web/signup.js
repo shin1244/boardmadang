@@ -1,9 +1,9 @@
 // 이름 정하기: 처음 로그인한 사람이 보드마당에서 쓸 이름을 정합니다 (docs/identity.md).
 // 서버가 가입 정보를 쿠키에 넣고 이리로 보냅니다. GET /auth/signup으로 기본 이름을 받고, POST /auth/signup으로 계정을 만듭니다.
-// 이름 규칙은 서버(internal/account)가 확인합니다. 여기서는 글자 수만 미리 봅니다.
+// 이름 규칙은 서버(internal/account)가 확인합니다. 여기서는 쓸 수 있는 글자(영문과 숫자)와 글자 수만 미리 봅니다.
 
 import { applyStatic, detectLang, setLang, setupLangButtons, t } from './i18n.js';
-import { loadMe, renderMe } from './me.js';
+import { NAME_CHARS, loadMe, renderMe } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -32,7 +32,11 @@ function render() {
 async function submit(e) {
   e.preventDefault();
   const name = $('#name').value.trim();
-  if ([...name].length < info.min || [...name].length > info.max) {
+  if (!NAME_CHARS.test(name)) {
+    error = 'name chars';
+    return render();
+  }
+  if (name.length < info.min || name.length > info.max) {
     error = 'name length';
     return render();
   }
