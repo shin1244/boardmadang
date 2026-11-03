@@ -84,7 +84,7 @@ func (s *Store) ClearOf(id string) (ClearRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g := s.games[id]
-	if g == nil || g.Hidden || !g.cleared() || (s.Reserved != nil && s.Reserved(id)) {
+	if g == nil || !g.listed() || !g.cleared() || (s.Reserved != nil && s.Reserved(id)) {
 		return ClearRecord{}, ErrNotFound
 	}
 	return ClearRecord{Game: id, Clear: *g.Clear}, nil

@@ -210,3 +210,72 @@ func TestDelete(t *testing.T) {
 		t.Fatalf("recreate = %+v, %v", c, created)
 	}
 }
+
+func TestSuspend(t *testing.T) {
+	dir := t.TempDir()
+	s, now := open(t, dir)
+	a, _, _ := s.Create("google", "1", "short")
+	b, _, _ := s.Create("google", "2", "forever")
+	c, _, _ := s.Create("google", "3", "free")
+
+	if err := s.Suspend("m_nobody", time.Time{}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown id: %v", err)
+	}
+	until := now.Add(24 * time.Hour)
+	if err := s.Suspend(a.ID, until); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Suspend(b.ID, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := s.Suspension(a.ID); !ok || !got.Equal(until) {
+		t.Fatalf("Suspension(a) = %v, %v", got, ok)
+	}
+	if got, ok := s.Suspension(b.ID); !ok || !got.IsZero() {
+		t.Fatalf("Suspension(b) = %v, %v", got, ok)
+	}
+	if _, ok := s.Suspension(c.ID); ok {
+		t.Fatal("c is not suspended")
+	}
+	// 기한이 있는 정지가 먼저, 영구 정지는 맨 뒤
+	if list := s.Suspended(); len(list) != 2 || list[0].ID != a.ID || list[1].ID != b.ID {
+		t.Fatalf("Suspended = %+v", list)
+	}
+	// 정지된 동안에는 이름을 바꿀 수 없습니다
+	if _, err := s.Rename(a.ID, "renamed"); !errors.Is(err, ErrSuspended) {
+		t.Fatalf("rename while suspended: %v", err)
+	}
+
+	// 탈퇴로 파일을 새로 써도, 다시 켜도 정지는 남습니다
+	if err := s.Delete(c.ID); err != nil {
+		t.Fatal(err)
+	}
+	s2, now2 := open(t, dir)
+	if got, ok := s2.Suspension(a.ID); !ok || !got.Equal(until) {
+		t.Fatalf("after reopen Suspension(a) = %v, %v", got, ok)
+	}
+	if _, ok := s2.Suspension(b.ID); !ok {
+		t.Fatal("after reopen b is not suspended")
+	}
+
+	// 기한이 지나면 저절로 풀립니다
+	*now2 = until
+	if _, ok := s2.Suspension(a.ID); ok {
+		t.Fatal("suspension did not expire")
+	}
+	if list := s2.Suspended(); len(list) != 1 || list[0].ID != b.ID {
+		t.Fatalf("Suspended after expiry = %+v", list)
+	}
+	if _, err := s2.Rename(a.ID, "renamed"); err != nil {
+		t.Fatalf("rename after expiry: %v", err)
+	}
+	// 손으로 풀 수도 있습니다
+	if err := s2.Unsuspend(b.ID); err != nil {
+		t.Fatal(err)
+	}
+	s3, now3 := open(t, dir)
+	*now3 = until
+	if list := s3.Suspended(); len(list) != 0 {
+		t.Fatalf("Suspended after unsuspend = %+v", list)
+	}
+}

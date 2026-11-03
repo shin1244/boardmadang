@@ -31,3 +31,10 @@ func TestLoadOrigins(t *testing.T) {
 		t.Errorf("AllowedOrigins = %v, want %v", got, want)
 	}
 }
+
+func TestLoadAdmins(t *testing.T) {
+	t.Setenv("ADMIN_IDS", "m_one, m_two,")
+	if got := Load().AdminIDs; !reflect.DeepEqual(got, []string{"m_one", "m_two"}) {
+		t.Errorf("AdminIDs = %v", got)
+	}
+}

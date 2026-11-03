@@ -15,7 +15,7 @@ import (
 //
 //	GET    /api/account   내 계정 Info
 //	PATCH  /api/account   이름 바꾸기 {"name":"..."} → 200 Info. 400 {"error":"name length|name chars|name reserved|name same"},
-//	                      RenameEvery가 안 지났으면 429 {"error":"rename too soon","renameAfter":"..."}
+//	                      RenameEvery가 안 지났으면 429 {"error":"rename too soon","renameAfter":"..."}, 정지된 계정이면 403 {"error":"suspended"}
 //	DELETE /api/account   탈퇴 {"confirm":"<지금 이름>"} → 204. 이름이 다르면 400 {"error":"confirm"}. 세션 쿠키를 지웁니다
 //
 // PATCH와 DELETE는 JSON 본문만 받습니다. 다른 사이트의 폼은 이런 요청을 보낼 수 없고, fetch는 미리 확인(preflight)에서 막힙니다.
@@ -66,6 +66,8 @@ func (h Handler) ServeRename(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, ErrNameLength), errors.Is(err, ErrNameChars), errors.Is(err, ErrNameReserved), errors.Is(err, ErrNameSame):
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	case errors.Is(err, ErrSuspended):
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 	case errors.Is(err, ErrRenameSoon):
 		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": err.Error(), "renameAfter": a.RenameAfter(h.Store.now())})
 	case errors.Is(err, ErrNotFound):

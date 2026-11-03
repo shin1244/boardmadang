@@ -14,7 +14,7 @@
 //	uploads/<게임>/<버전>/...      코드만. 옛 버전은 다시보기를 위해 지우지 않습니다
 //
 // 등록한 뒤에는 주인이 등록 정보만 고치거나 게임을 내릴 수 있습니다 (Edit). 내린 게임도 코드는 지우지 않습니다.
-// 주인이 탈퇴하면 그 사람의 게임을 모두 내립니다 (Forget).
+// 주인이 탈퇴하면 그 사람의 게임을 모두 내립니다 (Forget). 운영자도 게임을 내릴 수 있고, 그러면 주인이 다시 올릴 수 없습니다 (Block).
 //
 // 서버는 게임 코드를 돌리지 않습니다. 자동 검사는 올린 사람의 브라우저에서 돌기 때문에 서버는 그 결과를 믿지 않습니다.
 // 남의 게임 코드가 보는 사람을 해칠 수 없는 건 실행기의 샌드박스 덕분이고, 서버는 파일 모양과 크기, 횟수만 지킵니다.
@@ -109,7 +109,12 @@ type gameMeta struct {
 	Published []published `json:"published"`
 	// 주인이 내린 게임. 로비(/api/games)와 클리어 기보에서 빠집니다. 코드는 기보를 다시보려고 그대로 내보냅니다
 	Hidden bool `json:"hidden,omitempty"`
+	// 운영자가 내린 게임 (Block). Hidden처럼 로비에서 빠지고, 주인이 다시 올릴 수 없습니다. 운영자만 되살립니다
+	Blocked bool `json:"blocked,omitempty"`
 }
+
+// listed는 로비(/api/games)와 클리어 기보에 나오는 게임인지입니다.
+func (g *gameMeta) listed() bool { return !g.Hidden && !g.Blocked }
 
 type published struct {
 	Version string    `json:"version"`
@@ -425,7 +430,7 @@ func (s *Store) Games() []site.Game {
 	defer s.mu.Unlock()
 	list := make([]*gameMeta, 0, len(s.games))
 	for _, g := range s.games {
-		if !g.Hidden && (s.Reserved == nil || !s.Reserved(g.ID)) {
+		if g.listed() && (s.Reserved == nil || !s.Reserved(g.ID)) {
 			list = append(list, g)
 		}
 	}
@@ -465,12 +470,13 @@ type Mine struct {
 // 등록창이 내린 게임의 등록 정보도 고칠 수 있게 로비 항목을 통째로 줍니다.
 type MyGame struct {
 	site.Game
-	Published time.Time `json:"published"`        // 마지막으로 등록한 때
-	Hidden    bool      `json:"hidden,omitempty"` // 내린 게임
+	Published time.Time `json:"published"`         // 마지막으로 등록한 때
+	Hidden    bool      `json:"hidden,omitempty"`  // 내린 게임
+	Blocked   bool      `json:"blocked,omitempty"` // 운영자가 내린 게임
 }
 
 func (g *gameMeta) mine() MyGame {
-	return MyGame{Game: g.entry(), Published: g.Published[len(g.Published)-1].At, Hidden: g.Hidden}
+	return MyGame{Game: g.entry(), Published: g.Published[len(g.Published)-1].At, Hidden: g.Hidden, Blocked: g.Blocked}
 }
 
 // Mine은 owner가 올린 게임과 오늘 남은 등록 횟수입니다.
@@ -529,6 +535,43 @@ func (s *Store) Edit(u identity.User, id string, req EditRequest) (MyGame, error
 	}
 	s.games[id] = &next
 	return next.mine(), nil
+}
+
+// ---- 운영자 (internal/admin) ----
+
+// Block은 운영자가 게임을 내리거나(blocked = true) 되살립니다. 내린 게임은 주인이 다시 올려도 로비에 나오지 않고,
+// 주인의 내리기(Hidden)는 그대로 둡니다. 코드는 기보를 다시보려고 그대로 내보냅니다. 레포 게임은 ErrNotFound입니다.
+func (s *Store) Block(id string, blocked bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g := s.games[id]
+	if g == nil || (s.Reserved != nil && s.Reserved(id)) {
+		return ErrNotFound
+	}
+	next := *g
+	next.Blocked = blocked
+	if err := writeJSONFile(filepath.Join(s.dir, "uploads", id, "game.json"), &next); err != nil {
+		return err
+	}
+	s.games[id] = &next
+	return nil
+}
+
+// AdminGame은 운영자 화면에 보이는 올린 게임입니다. 주인의 계정 id까지 있습니다.
+type AdminGame struct {
+	MyGame
+	Owner string `json:"owner"`
+}
+
+// Admin은 올린 게임 하나를 운영자에게 보여줄 모양으로 돌려줍니다. 레포 게임이거나 없으면 false.
+func (s *Store) Admin(id string) (AdminGame, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g := s.games[id]
+	if g == nil || (s.Reserved != nil && s.Reserved(id)) {
+		return AdminGame{}, false
+	}
+	return AdminGame{MyGame: g.mine(), Owner: g.Owner}, true
 }
 
 // Forget은 탈퇴한 계정 owner가 올린 게임을 모두 내리고 초안을 지웁니다.

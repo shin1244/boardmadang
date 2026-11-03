@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/shin1244/boardmadang/server/internal/account"
+	"github.com/shin1244/boardmadang/server/internal/admin"
 	"github.com/shin1244/boardmadang/server/internal/auth"
 	"github.com/shin1244/boardmadang/server/internal/comment"
 	"github.com/shin1244/boardmadang/server/internal/config"
@@ -43,10 +44,22 @@ func main() {
 		log.Fatalf("계정 기록을 읽지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
 	}
 	ids.Members = accounts
+	ids.Admins = make(map[string]bool)
+	for _, id := range cfg.AdminIDs {
+		ids.Admins[id] = true
+	}
+	if len(cfg.AdminIDs) > 0 {
+		log.Printf("운영자 계정 %d개 (ADMIN_IDS)", len(cfg.AdminIDs))
+	}
 	comments.Names = accounts
 	login := &auth.Handler{Providers: providers(cfg), IDs: ids, Accounts: accounts, Records: records, PublicURL: cfg.PublicURL}
 	// 탈퇴하면 계정을 지운 뒤 기보의 자리, 의견, 올린 게임에서 그 계정을 지웁니다
 	mine := account.Handler{Store: accounts, IDs: ids, Forget: []func(string) error{records.Forget, comments.Forget, uploads.Forget}}
+	ops, err := admin.Open(cfg.DataDir)
+	if err != nil {
+		log.Fatalf("운영 기록을 읽지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
+	}
+	ops.IDs, ops.Comments, ops.Uploads, ops.Accounts = ids, comments, uploads, accounts
 	h := hub.New(cfg, ids, records)
 	pages, err := site.Open(cfg.SiteDir)
 	if err != nil {
@@ -60,7 +73,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           routes(h, ids, records, comments, uploads, login, mine, pages),
+		Handler:           routes(h, ids, records, comments, uploads, login, mine, ops, pages),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -123,8 +136,8 @@ func providers(cfg config.Config) []*auth.Provider {
 	return list
 }
 
-// pages가 nil이면 화면과 게임 목록 없이 API만 엽니다.
-func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *comment.Store, uploads *upload.Store, login *auth.Handler, mine account.Handler, pages *site.Site) http.Handler {
+// pages가 nil이면 화면과 게임 목록 없이 API만 엽니다. ops가 nil이면 운영자 API를 열지 않습니다.
+func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *comment.Store, uploads *upload.Store, login *auth.Handler, mine account.Handler, ops *admin.Handler, pages *site.Site) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
 	mux.HandleFunc("GET /api/locale", site.ServeLocale)
@@ -165,6 +178,10 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 	mux.HandleFunc("GET /drafts/{draft}/{path...}", up.ServeDraftFile)
 	mux.HandleFunc("GET /uploads/{game}/{version}/{path...}", up.ServeFile)
 	mux.HandleFunc("GET /api/games/{game}/clear", up.ServeClear)
+	if ops != nil {
+		mux.HandleFunc("GET /api/admin", ops.ServeState)
+		mux.HandleFunc("POST /api/admin/actions", ops.ServeAction)
+	}
 	return mux
 }
 

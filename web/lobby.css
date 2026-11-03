@@ -434,6 +434,9 @@ fieldset label:has(input:disabled) { opacity: 0.5; cursor: default; }
 .comment-form-row .btn { flex: none; padding: 8px 20px; }
 .comment-error { margin: 10px 0 0; color: var(--bad); font-size: 13px; }
 .comment-error[hidden], .comments-note[hidden], .gd-desc[hidden] { display: none; }
+/* 정지된 계정의 안내 (의견, 방 만들기, 내 프로필) */
+.suspended-note { margin: 0; padding: 10px 12px; border: 1px solid var(--warn); border-radius: 8px; color: var(--warn); font-size: 14px; line-height: 1.6; }
+.suspended-note[hidden] { display: none; }
 .comments-note { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--good) 12%, transparent); font-size: 14px; }
 
 .comments { margin: 0; padding: 0; list-style: none; }

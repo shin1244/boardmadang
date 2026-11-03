@@ -20,9 +20,14 @@ import (
 var testSecret = []byte("test-secret-test-secret-test-secret")
 
 // anyMember는 모든 계정이 있다고 답하는 계정 저장소입니다. 이름은 id에서 m_를 뗀 것입니다.
+// m_suspended로 시작하는 계정은 영구 정지입니다.
 type anyMember struct{}
 
 func (anyMember) Name(id string) (string, bool) { return strings.TrimPrefix(id, "m_"), true }
+
+func (anyMember) Suspension(id string) (time.Time, bool) {
+	return time.Time{}, strings.HasPrefix(id, "m_suspended")
+}
 
 func newServer(t *testing.T) *httptest.Server {
 	t.Helper()

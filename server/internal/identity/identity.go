@@ -42,6 +42,13 @@ type User struct {
 	Kind string `json:"kind"`
 	Name string `json:"name,omitempty"` // 계정만. 게스트 이름은 브라우저가 화면 언어로 만듭니다.
 	Tag  string `json:"tag"`            // id에서 계산한 네 자리 숫자 ("게스트 4821")
+
+	// 아래는 토큰을 확인할 때 채웁니다 (Verify). 토큰에는 넣지 않습니다.
+	Admin bool `json:"admin,omitempty"` // 운영자 (Issuer.Admins)
+	// 운영자가 정지한 계정. 정지된 동안은 쓰기(의견, 신고, 방 만들기, 게임 올리기, 이름 바꾸기)를 막고
+	// 대전, 관전, 내 기록 보기, 탈퇴는 됩니다 (docs/moderation.md). SuspendedUntil이 0이면 영구 정지입니다.
+	Suspended      bool      `json:"suspended,omitempty"`
+	SuspendedUntil time.Time `json:"suspendedUntil,omitzero"`
 }
 
 func (u User) IsMember() bool { return u.Kind == KindMember }
@@ -58,6 +65,12 @@ type Members interface {
 	Name(id string) (string, bool)
 }
 
+// Suspensions는 정지 기록도 가진 계정 저장소입니다 (internal/account). Members가 이것도 하면 토큰을 확인할 때
+// User.Suspended를 채웁니다. 정지되지 않았거나 기간이 지났으면 false, 영구 정지면 until이 0입니다.
+type Suspensions interface {
+	Suspension(id string) (until time.Time, ok bool)
+}
+
 // Issuer는 세션 토큰을 발급하고 확인합니다.
 type Issuer struct {
 	secret []byte
@@ -65,6 +78,8 @@ type Issuer struct {
 
 	// Members가 없으면 계정 토큰은 모두 거절합니다 (로그인을 켜지 않은 서버).
 	Members Members
+	// Admins는 운영자 계정 id입니다 (config.AdminIDs). 이 계정의 User.Admin이 true가 됩니다.
+	Admins map[string]bool
 }
 
 func NewIssuer(secret []byte) *Issuer {
@@ -127,19 +142,33 @@ func (is *Issuer) Verify(token string) (User, bool) {
 	u := User{ID: p.ID, Kind: p.Kind, Tag: tagOf(p.ID)}
 	switch {
 	case p.Kind == KindGuest && strings.HasPrefix(p.ID, "g_"):
+		return u, true
 	case p.Kind == KindMember && strings.HasPrefix(p.ID, "m_"):
-		// 이름은 토큰에 넣지 않고 저장소에서 읽습니다. 저장소에 없는 계정(탈퇴한 계정)은 거절합니다.
 		// TODO: 강제 만료 (계정마다 "이 시각 이전 토큰은 거절"을 두기)
-		if is.Members == nil {
-			return User{}, false
-		}
-		name, ok := is.Members.Name(p.ID)
-		if !ok {
-			return User{}, false
-		}
-		u.Name = name
-	default:
+		return is.Refresh(u)
+	}
+	return User{}, false
+}
+
+// Refresh는 계정 u의 이름, 운영자인지, 정지 상태를 저장소에서 다시 읽습니다. 게스트는 그대로입니다.
+// 저장소에 없는 계정(탈퇴한 계정)이면 false입니다. 이름은 토큰에 넣지 않으므로 Verify도 이것으로 채웁니다.
+// 웹소켓처럼 오래 붙어 있는 연결은 붙을 때의 신원을 들고 있으므로, 쓰기 전에 다시 읽어 그사이의 정지를 반영합니다.
+func (is *Issuer) Refresh(u User) (User, bool) {
+	if !u.IsMember() {
+		return u, true
+	}
+	if is.Members == nil {
 		return User{}, false
+	}
+	name, ok := is.Members.Name(u.ID)
+	if !ok {
+		return User{}, false
+	}
+	u.Name = name
+	u.Admin = is.Admins[u.ID]
+	u.Suspended, u.SuspendedUntil = false, time.Time{}
+	if s, ok := is.Members.(Suspensions); ok {
+		u.SuspendedUntil, u.Suspended = s.Suspension(u.ID)
 	}
 	return u, true
 }
@@ -243,6 +272,19 @@ func (is *Issuer) HandleMe(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(u)
+}
+
+// WriteDenied는 u가 쓰기(의견, 신고, 게임 올리기 같은 것)를 할 수 없으면 그 이유와 HTTP 상태입니다. 할 수 있으면 0.
+//   - 게스트면 403 member only
+//   - 정지된 계정이면 403 suspended
+func WriteDenied(u User) (status int, reason string) {
+	switch {
+	case !u.IsMember():
+		return http.StatusForbidden, "member only"
+	case u.Suspended:
+		return http.StatusForbidden, "suspended"
+	}
+	return 0, ""
 }
 
 // RequireMember는 계정만 통과시킵니다. 업로드처럼 게스트가 하면 안 되는 요청에 씌웁니다.

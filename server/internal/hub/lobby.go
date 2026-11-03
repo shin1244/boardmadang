@@ -6,12 +6,13 @@ import (
 	"sort"
 	"time"
 
+	"github.com/shin1244/boardmadang/server/internal/identity"
 	"github.com/shin1244/boardmadang/server/internal/protocol"
 )
 
 // 방 목록: 빠른 매칭 대신 방을 만들어 두면 목록에 올라가고, 누가 골라 들어오면 대국이 시작됩니다.
 // 방장은 타이머를 정할 수 있고(게임이 허용하면), BumpEvery마다 한 번 방을 목록 맨 위로 다시 올릴 수 있습니다.
-// 방장의 연결이 끊기면 방은 바로 사라집니다. 방은 계정만 만들 수 있고, 들어가는 것은 게스트도 됩니다.
+// 방장의 연결이 끊기면 방은 바로 사라집니다. 방은 계정만 만들 수 있고(정지된 계정은 안 됨), 들어가는 것은 게스트도 됩니다.
 
 // 방 목록에 한 번에 보여줄 최대 수
 const maxListed = 200
@@ -25,10 +26,15 @@ type openRoom struct {
 	bumped  time.Time // 만든 때 또는 마지막으로 올린 때. 목록은 이 순서로 최신이 위입니다
 }
 
-// create는 방을 만들어 방 목록에 올립니다.
+// create는 방을 만들어 방 목록에 올립니다. 붙은 뒤에 정지됐을 수 있어 신원을 다시 읽습니다.
 func (h *Hub) create(c *Client, game string, minutes *int, version string) {
-	if !c.user.IsMember() {
-		c.sendError("member only")
+	u, ok := h.ids.Refresh(c.user)
+	if !ok {
+		c.sendError("no session")
+		return
+	}
+	if _, reason := identity.WriteDenied(u); reason != "" {
+		c.sendError(reason)
 		return
 	}
 	if !gameIDPattern.MatchString(game) {

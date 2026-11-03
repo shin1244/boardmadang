@@ -47,6 +47,7 @@
 /* 내 프로필: 이름, 내가 올린 게임, 내 대국 */
 .profile-name { margin: 0 0 20px; font-size: 24px; overflow-wrap: anywhere; }
 .profile-block + .profile-block { margin-top: 36px; }
+.profile-note { margin: -8px 0 24px; }
 .profile-block .list-head h2 { margin: 0; font-size: 20px; }
 .room.mine { flex-wrap: wrap; }
 .room.mine .room-game { white-space: normal; overflow-wrap: anywhere; }
