@@ -27,6 +27,9 @@ type Config struct {
 	GitHubClientID, GitHubClientSecret string
 	// 개발용 로그인 (DEV_LOGIN=1). OAuth 앱 없이 "dev" 계정으로 로그인합니다. 운영에서는 절대 켜지 않습니다.
 	DevLogin bool
+	// 운영자 계정 id 목록 (ADMIN_IDS=m_…,m_…). 운영자 화면(/web/admin.html)과 운영 API(internal/admin)를 씁니다.
+	// 계정 id는 로그인한 뒤 /api/me의 id입니다.
+	AdminIDs []string
 }
 
 func Load() Config {
@@ -53,10 +56,18 @@ func Load() Config {
 		cfg.SiteDir = ".."
 	}
 
-	for _, origin := range strings.Split(os.Getenv("ALLOWED_ORIGINS"), ",") {
-		if origin = strings.TrimSpace(origin); origin != "" {
-			cfg.AllowedOrigins = append(cfg.AllowedOrigins, origin)
+	cfg.AllowedOrigins = list(os.Getenv("ALLOWED_ORIGINS"))
+	cfg.AdminIDs = list(os.Getenv("ADMIN_IDS"))
+	return cfg
+}
+
+// list는 쉼표로 나눈 값의 빈칸을 떼고 빈 것은 뺍니다.
+func list(s string) []string {
+	var out []string
+	for _, v := range strings.Split(s, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
 		}
 	}
-	return cfg
+	return out
 }

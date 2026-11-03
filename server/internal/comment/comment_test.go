@@ -163,6 +163,61 @@ func TestReportGame(t *testing.T) {
 	}
 }
 
+func TestModerate(t *testing.T) {
+	dir := t.TempDir()
+	s, now := open(t, dir)
+	s.Names = names{"m_author": "지금 이름"}
+	spam, _ := s.Post("tictactoe", identity.Member("m_author", "옛 이름"), "광고 글")
+	*now = now.Add(time.Minute)
+	rude, _ := s.Post("tictactoe", guest("g_rude"), "막말")
+
+	if err := s.Moderate("tictactoe", "AAAAAAAA", ModHidden, "m_admin"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("없는 의견: %v", err)
+	}
+	for _, by := range []string{"g_1", "g_2", "g_3"} {
+		s.Report(guest(by), Report{Game: "tictactoe", Comment: spam.ID, Reason: "spam"})
+	}
+	// 운영자가 보이게 하면 신고가 쌓여도 보입니다
+	if err := s.Moderate("tictactoe", spam.ID, ModShown, "m_admin"); err != nil {
+		t.Fatal(err)
+	}
+	s.Report(guest("g_4"), Report{Game: "tictactoe", Comment: spam.ID, Reason: "spam"})
+	// 신고가 없어도 운영자가 가릴 수 있습니다
+	if err := s.Moderate("tictactoe", rude.ID, ModHidden, "m_admin"); err != nil {
+		t.Fatal(err)
+	}
+
+	again, _ := open(t, dir)
+	again.Names = s.Names
+	list, _, _ := again.List("tictactoe", "")
+	if len(list) != 2 || !list[0].Hidden || list[0].Text != "" || list[1].Hidden || list[1].Text != "광고 글" {
+		t.Fatalf("다시 연 뒤: %+v", list)
+	}
+	info, err := again.Info("tictactoe", spam.ID)
+	if err != nil || info.Author.ID != "m_author" || info.Author.Name != "지금 이름" || info.Text != "광고 글" ||
+		info.Hidden || info.Mod != ModShown || info.Reporters != 4 {
+		t.Fatalf("Info = %+v, %v", info, err)
+	}
+	// 신고 수로 정하게 되돌리면 다시 가려집니다
+	again.Moderate("tictactoe", spam.ID, "", "m_admin")
+	if info, _ := again.Info("tictactoe", spam.ID); !info.Hidden || info.Mod != "" {
+		t.Fatalf("되돌린 뒤 Info = %+v", info)
+	}
+	if _, err := again.Info("tictactoe", "AAAAAAAA"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("없는 의견 Info: %v", err)
+	}
+
+	reports, err := again.Reports()
+	if err != nil || len(reports) != 4 || reports[0].By != "g_1" || reports[3].By != "g_4" || reports[0].Comment != spam.ID {
+		t.Fatalf("Reports = %+v, %v", reports, err)
+	}
+}
+
+// suspendedNames는 정지도 알려 주는 테스트용 계정 저장소입니다. 모든 계정이 영구 정지입니다.
+type suspendedNames struct{ names }
+
+func (suspendedNames) Suspension(string) (time.Time, bool) { return time.Time{}, true }
+
 // names는 테스트용 계정 저장소입니다.
 type names map[string]string
 
@@ -231,6 +286,18 @@ func TestHTTP(t *testing.T) {
 	}
 	if rec := do("DELETE", "/api/games/tictactoe/comments/AAAAAAAA", "", "", true); rec.Code != http.StatusNotFound {
 		t.Fatalf("없는 의견 지우기: %d", rec.Code)
+	}
+
+	// 정지된 계정은 남기기와 신고가 안 됩니다. 지우기는 됩니다
+	ids.Members = suspendedNames{names{"m_web": "web"}}
+	if rec := do("POST", "/api/games/tictactoe/comments", "application/json", `{"text":"hi"}`, true); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), `"suspended"`) {
+		t.Fatalf("정지된 계정 남기기: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do("POST", "/api/reports", "application/json", `{"game":"other","reason":"copyright"}`, true); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), `"suspended"`) {
+		t.Fatalf("정지된 계정 신고: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do("DELETE", "/api/games/tictactoe/comments/AAAAAAAA", "", "", true); rec.Code != http.StatusNotFound {
+		t.Fatalf("정지된 계정 지우기: %d", rec.Code)
 	}
 }
 

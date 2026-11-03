@@ -24,7 +24,8 @@ import (
 //	GET  /uploads/{game}/{version}/{path...}  올린 게임의 코드
 //	GET  /api/games/{game}/clear              제작자 클리어 기보 ClearRecord (누구나)
 //
-// API는 계정만 됩니다 (쿠키가 없으면 401, 게스트면 403 {"error":"member only"}).
+// API는 계정만 됩니다 (쿠키가 없으면 401, 게스트면 403 {"error":"member only"}). 정지된 계정은 목록만 보고
+// 올리기, 등록, 고치기는 못 합니다 (403 {"error":"suspended"}).
 // 규칙에 맞지 않으면 422 {"error":"problems","problems":[{code, file?, field?, lang?, max?}]}입니다.
 // POST는 zip이나 JSON 본문만 받습니다. 다른 사이트의 폼은 이런 본문을 보낼 수 없고, fetch는 미리 확인(preflight)에서 막힙니다.
 //
@@ -47,7 +48,7 @@ func (h Handler) ServeMine(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h Handler) ServeNewDraft(w http.ResponseWriter, r *http.Request) {
-	u, ok := h.member(w, r)
+	u, ok := h.writer(w, r)
 	if !ok {
 		return
 	}
@@ -73,7 +74,7 @@ func (h Handler) ServeNewDraft(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h Handler) ServePublish(w http.ResponseWriter, r *http.Request) {
-	u, ok := h.member(w, r)
+	u, ok := h.writer(w, r)
 	if !ok {
 		return
 	}
@@ -96,7 +97,7 @@ func (h Handler) ServePublish(w http.ResponseWriter, r *http.Request) {
 
 // ServeEdit은 내 게임의 등록 정보만 고치거나 게임을 내리거나 다시 올립니다. 내 게임이 아니면 404입니다.
 func (h Handler) ServeEdit(w http.ResponseWriter, r *http.Request) {
-	u, ok := h.member(w, r)
+	u, ok := h.writer(w, r)
 	if !ok {
 		return
 	}
@@ -170,6 +171,16 @@ func serveFile(w http.ResponseWriter, r *http.Request, data []byte, err error, c
 	// 실행기의 Worker는 출처가 없어서 모듈을 CORS로만 불러올 수 있습니다 (site.ServeFile과 같은 이유)
 	hd.Set("Access-Control-Allow-Origin", "*")
 	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
+}
+
+// writer는 쓸 수 있는 계정만 통과시킵니다. member에 더해 정지된 계정이면 403 {"error":"suspended"}.
+func (h Handler) writer(w http.ResponseWriter, r *http.Request) (identity.User, bool) {
+	u, ok := h.member(w, r)
+	if ok && u.Suspended {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "suspended"})
+		return identity.User{}, false
+	}
+	return u, ok
 }
 
 // member는 계정만 통과시킵니다. 쿠키가 없으면 401, 게스트면 403 {"error":"member only"}.

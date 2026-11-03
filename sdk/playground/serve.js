@@ -15,7 +15,7 @@
 // /api/me 는 Go 서버가 켜져 있으면 Go 서버의 신원을 그대로 넘깁니다. 의견, 방 만들기는 Go 서버가 계정인지 확인하므로
 // 화면만 계정으로 꾸미지 않습니다. 계정으로 시험하려면 Go 서버를 DEV_LOGIN=1로 켜고 상단의 "개발용 로그인"을 누릅니다.
 // Go 서버가 꺼져 있으면 가짜 신원(DEV_ME)만 돌려줍니다 (로비와 등록창은 됩니다).
-// 소셜 로그인(/auth/..., /api/auth/providers)과 내 계정(/api/account, 이름 바꾸기와 탈퇴)도 Go 서버로 넘깁니다. Host를 그대로 넘기므로
+// 소셜 로그인(/auth/..., /api/auth/providers), 내 계정(/api/account, 이름 바꾸기와 탈퇴), 운영자 화면(/api/admin)도 Go 서버로 넘깁니다. Host를 그대로 넘기므로
 // 돌아올 주소는 http://localhost:5173/auth/<google|github>/callback 입니다 (docs/identity.md).
 //   DEV_AS=guest node sdk/playground/serve.js    → Go 서버가 꺼져 있을 때 게스트로 보이게 (등록창이 막히는지 확인)
 
@@ -118,13 +118,13 @@ function proxyGo(req, res, url) {
 /**
  * 소셜 로그인과 내 계정은 응답을 고치지 않고 그대로 넘깁니다 (리다이렉트, 쿠키, 탈퇴의 빈 204 응답).
  * Host를 그대로 보내서 Go 서버가 이 주소(localhost:5173)로 돌아올 주소를 만들게 합니다.
- * Go 서버가 꺼져 있으면 로그인 방법은 빈 목록(버튼이 "준비 중"), 내 계정은 404(가짜 신원이라 계정이 없음.
+ * Go 서버가 꺼져 있으면 로그인 방법은 빈 목록(버튼이 "준비 중"), 내 계정과 운영자 화면은 404(가짜 신원이라 계정이 없음.
  * 프로필 화면은 계정 칸을 빼고 그립니다), 나머지는 503입니다.
  */
 function proxyRaw(req, res, url) {
   const fail = () => {
     if (url.pathname === '/api/auth/providers') return json(res, 200, { providers: [] });
-    if (url.pathname === '/api/account') return json(res, 404, { error: 'no game server' });
+    if (url.pathname === '/api/account' || url.pathname.startsWith('/api/admin')) return json(res, 404, { error: 'no game server' });
     json(res, 503, { error: 'no game server' });
   };
   const headers = { host: req.headers.host ?? '', cookie: req.headers.cookie ?? '' };
@@ -242,6 +242,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/locale') return json(res, 200, detectLocale(req));
   if (url.pathname === '/api/me') return proxyMe(req, res);
   if (url.pathname === '/api/auth/providers' || url.pathname.startsWith('/auth/') || url.pathname === '/api/account') return proxyRaw(req, res, url);
+  if (url.pathname === '/api/admin' || url.pathname === '/api/admin/actions') return proxyRaw(req, res, url);
   if (url.pathname === '/api/rooms' || url.pathname === '/api/live' || /^\/api\/matches(\/[A-Z0-9]+)?$/.test(url.pathname)) return proxyGo(req, res, url);
   if (/^\/api\/games\/[a-z0-9-]+\/comments(\/[A-Z0-9]+)?$/.test(url.pathname) || url.pathname === '/api/reports') return proxyGo(req, res, url);
   const m = url.pathname.match(/^\/api\/games\/([a-z0-9-]+)\/listing$/);
