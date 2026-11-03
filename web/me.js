@@ -19,9 +19,13 @@ export function loadMe() {
 
 export const isMember = (me) => me?.kind === 'member';
 
-/** 화면에 보일 이름. 게스트 이름은 화면 언어로 만듭니다 ("게스트 4821" / "Guest 4821"). */
+/**
+ * 화면에 보일 이름. 게스트 이름은 화면 언어로 만듭니다 ("게스트 4821" / "Guest 4821").
+ * 기보와 의견에는 탈퇴한 계정(kind: 'gone', 이름과 태그 없음)도 옵니다.
+ */
 export function displayName(me) {
   if (!me) return '';
+  if (me.kind === 'gone') return t('gone.name');
   return isMember(me) ? me.name : t('guest.name', { tag: me.tag });
 }
 

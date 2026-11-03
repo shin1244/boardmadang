@@ -233,3 +233,72 @@ func TestHTTP(t *testing.T) {
 		t.Fatalf("없는 의견 지우기: %d", rec.Code)
 	}
 }
+
+func TestForget(t *testing.T) {
+	dir := t.TempDir()
+	s, now := open(t, dir)
+	left, stay := identity.Member("m_left", "left"), identity.Member("m_stay", "stay")
+	gone1, _ := s.Post("tictactoe", left, "탈퇴할 사람의 글")
+	*now = now.Add(time.Minute)
+	kept, _ := s.Post("tictactoe", stay, "남는 사람의 글")
+	*now = now.Add(time.Minute)
+	gone2, _ := s.Post("dots", left, "다른 게임의 글")
+	// 지운 의견과 남의 신고를 받은 의견도 같이 사라집니다
+	s.Delete("dots", gone2.ID, left)
+	*now = now.Add(time.Minute)
+	s.Post("dots", left, "또 쓴 글")
+	s.Report(stay, Report{Game: "tictactoe", Comment: gone1.ID, Reason: "spam"})
+	// 탈퇴할 사람이 남의 의견에 한 신고는 남습니다 (가린 수)
+	s.Report(left, Report{Game: "tictactoe", Comment: kept.ID, Reason: "spam"})
+	s.Post("othello", stay, "탈퇴할 사람의 글이 없는 게임")
+	before, _ := os.ReadFile(filepath.Join(dir, "comments", "othello.jsonl"))
+
+	if err := s.Forget("m_left"); err != nil {
+		t.Fatal(err)
+	}
+	check := func(s *Store) {
+		t.Helper()
+		list, count, _ := s.List("tictactoe", "m_stay")
+		if count != 1 || list[0].ID != kept.ID {
+			t.Fatalf("tictactoe = %+v", list)
+		}
+		if _, count, _ := s.List("dots", ""); count != 0 {
+			t.Fatalf("dots count = %d", count)
+		}
+		if list[0].Hidden {
+			t.Fatal("한 사람의 신고로는 가려지지 않습니다")
+		}
+		if _, err := s.Report(left, Report{Game: "tictactoe", Comment: kept.ID, Reason: "spam"}); err != nil {
+			t.Fatal(err) // 이미 신고한 것으로 칩니다 (신고 줄이 남음)
+		}
+	}
+	check(s)
+	again, _ := open(t, dir)
+	check(again)
+
+	for _, game := range []string{"tictactoe", "dots"} {
+		data, _ := os.ReadFile(filepath.Join(dir, "comments", game+".jsonl"))
+		for _, gone := range []string{"탈퇴할 사람의 글", "다른 게임의 글", "또 쓴 글", `"name":"left"`, gone1.ID, gone2.ID} {
+			if strings.Contains(string(data), gone) {
+				t.Errorf("%s still has %s:\n%s", game, gone, data)
+			}
+		}
+	}
+	if after, _ := os.ReadFile(filepath.Join(dir, "comments", "othello.jsonl")); string(after) != string(before) {
+		t.Error("탈퇴할 사람의 글이 없는 파일은 그대로 둡니다")
+	}
+}
+
+// 남길 때의 이름 대신 지금 계정 이름을 보내고, 없는 계정(탈퇴)은 이름 없이 보냅니다.
+func TestAuthorNames(t *testing.T) {
+	s, _ := open(t, t.TempDir())
+	s.Post("tictactoe", identity.Member("m_a", "old"), "hi")
+	s.Names = names{"m_a": "new"}
+	if list, _, _ := s.List("tictactoe", ""); list[0].Author.Name != "new" || list[0].Author.Kind != identity.KindMember {
+		t.Fatalf("renamed = %+v", list[0].Author)
+	}
+	s.Names = names{}
+	if list, _, _ := s.List("tictactoe", ""); list[0].Author.Kind != identity.KindGone || list[0].Author.Name != "" || list[0].Author.Tag != "" {
+		t.Fatalf("deleted = %+v", list[0].Author)
+	}
+}

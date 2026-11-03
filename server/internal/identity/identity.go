@@ -17,11 +17,15 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/shin1244/boardmadang/server/internal/protocol"
 )
 
 const (
 	KindGuest  = "guest"
 	KindMember = "member"
+	// KindGone은 탈퇴한 계정입니다. 기보와 화면에만 씁니다 (이 신원으로 로그인하거나 토큰을 받을 수 없습니다).
+	KindGone = "gone"
 
 	CookieName = "bm_session"
 	// MaxAge가 지나면 토큰을 받지 않습니다. /api/me를 부를 때마다 다시 발급하므로 자주 오는 게스트는 만료되지 않습니다.
@@ -124,8 +128,8 @@ func (is *Issuer) Verify(token string) (User, bool) {
 	switch {
 	case p.Kind == KindGuest && strings.HasPrefix(p.ID, "g_"):
 	case p.Kind == KindMember && strings.HasPrefix(p.ID, "m_"):
-		// 이름은 토큰에 넣지 않고 저장소에서 읽습니다. 저장소에 없는 계정(지워진 계정)은 거절합니다.
-		// TODO: 탈퇴·강제 만료 (계정마다 "이 시각 이전 토큰은 거절"을 두기)
+		// 이름은 토큰에 넣지 않고 저장소에서 읽습니다. 저장소에 없는 계정(탈퇴한 계정)은 거절합니다.
+		// TODO: 강제 만료 (계정마다 "이 시각 이전 토큰은 거절"을 두기)
 		if is.Members == nil {
 			return User{}, false
 		}
@@ -143,6 +147,23 @@ func (is *Issuer) Verify(token string) (User, bool) {
 // Member는 계정 id와 이름으로 User를 만듭니다. 로그인한 직후 쿠키를 발급할 때 씁니다.
 func Member(id, name string) User {
 	return User{ID: id, Kind: KindMember, Name: name, Tag: tagOf(id)}
+}
+
+// Public은 기보나 의견에 남은 사람 u를 화면에 보낼 모양으로 바꿉니다 (내부 id는 뺍니다).
+// 저장된 이름은 남긴 때의 이름이라, names가 있으면 계정은 지금 이름으로 바꿔 보냅니다.
+// names에 없는 계정은 탈퇴한 계정이라 이름 없이 KindGone으로 보냅니다 (기록에서 아직 다 못 지웠어도).
+func Public(u User, names Members) protocol.PlayerInfo {
+	if u.Kind == KindMember && names != nil {
+		name, ok := names.Name(u.ID)
+		if !ok {
+			return protocol.PlayerInfo{Kind: KindGone}
+		}
+		u.Name = name
+	}
+	if u.Kind == KindGone {
+		return protocol.PlayerInfo{Kind: KindGone}
+	}
+	return protocol.PlayerInfo{Kind: u.Kind, Tag: u.Tag, Name: u.Name}
 }
 
 // SignData는 세션 토큰이 아닌 짧은 값(로그인 중의 가입 정보 같은 것)에 서명합니다: <purpose>.<내용>.<서명>

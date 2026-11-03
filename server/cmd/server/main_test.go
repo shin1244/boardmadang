@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/shin1244/boardmadang/server/internal/account"
 	"github.com/shin1244/boardmadang/server/internal/auth"
 	"github.com/shin1244/boardmadang/server/internal/config"
 	"github.com/shin1244/boardmadang/server/internal/hub"
@@ -20,7 +21,7 @@ func newTestServer() *httptest.Server {
 func newTestServerWith(pages *site.Site) *httptest.Server {
 	ids := identity.NewIssuer([]byte("test-secret-test-secret-test-secret"))
 	login := &auth.Handler{IDs: ids}
-	return httptest.NewServer(routes(hub.New(config.Config{Port: "0"}, ids, nil), ids, nil, nil, nil, login, pages))
+	return httptest.NewServer(routes(hub.New(config.Config{Port: "0"}, ids, nil), ids, nil, nil, nil, login, account.Handler{}, pages))
 }
 
 // 레포의 화면과 게임으로 운영과 같은 길을 확인합니다. 리다이렉트는 따라가지 않고 그대로 봅니다.

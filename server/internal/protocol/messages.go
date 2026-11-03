@@ -197,7 +197,7 @@ type Matched struct {
 
 // PlayerInfo는 상대에게 보여줄 신원입니다. id는 넣지 않습니다 (docs/identity.md).
 type PlayerInfo struct {
-	Kind string `json:"kind"`           // "guest" 또는 "member"
+	Kind string `json:"kind"`           // "guest", "member", 기보와 의견에서는 탈퇴한 계정 "gone"도 (태그와 이름 없음)
 	Tag  string `json:"tag"`            // 네 자리 숫자 ("게스트 4821")
 	Name string `json:"name,omitempty"` // 계정만
 }

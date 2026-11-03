@@ -224,3 +224,100 @@ func TestAdoptGuest(t *testing.T) {
 		t.Errorf("second Adopt = %d, %v", n, err)
 	}
 }
+
+func TestForget(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := Open(dir)
+	leaving := Player{ID: "m_left", Kind: "member", Tag: "0001", Name: "left"}
+	vs := sample("", "g_other")
+	vs.Players[0] = leaving
+	solo := sample("", "")
+	solo.Players = [2]Player{leaving, leaving}
+	both := sample("", "m_also")
+	both.Players[0] = leaving
+	for _, m := range []*Match{vs, solo, both} {
+		s.Save(m)
+	}
+	s.Close()
+	plays := s.Plays("tictactoe")
+
+	if err := s.Forget("m_left"); err != nil {
+		t.Fatal(err)
+	}
+	gone := Player{ID: "gone-0", Kind: "gone"}
+	if m, _ := s.Get(vs.ID); m.Players[0] != gone || m.Players[1].ID != "g_other" {
+		t.Errorf("vs = %+v", m.Players)
+	}
+	if m, _ := s.Get(solo.ID); m.Players[0] != (Player{ID: "gone", Kind: "gone"}) || m.Players[1] != m.Players[0] {
+		t.Errorf("혼자 둔 대국은 두 자리가 같아야 합니다 (counts): %+v", m.Players)
+	}
+	// 상대도 나중에 탈퇴하면 자리마다 다른 id라 혼자 둔 대국이 되지 않습니다
+	if err := s.Forget("m_also"); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := s.Get(both.ID); m.Players[0] != gone || m.Players[1] != (Player{ID: "gone-1", Kind: "gone"}) || !counts(m) {
+		t.Errorf("both = %+v", m.Players)
+	}
+	// 파일에 이름이 남지 않습니다
+	for _, m := range []*Match{vs, solo, both} {
+		data, _ := os.ReadFile(filepath.Join(dir, "matches", m.ID[:2], m.ID+".json"))
+		if strings.Contains(string(data), "left") || strings.Contains(string(data), "m_") {
+			t.Errorf("%s still names the account: %s", m.ID, data)
+		}
+	}
+	if list, _ := s.ListByUser("m_left", 10); len(list) != 0 {
+		t.Errorf("forgotten account still has %d matches", len(list))
+	}
+	if list, _ := s.ListByUser("g_other", 10); len(list) != 1 {
+		t.Errorf("상대의 기록은 남아야 합니다: %d", len(list))
+	}
+
+	// 탈퇴할 때 진행 중이던 대국이 나중에 끝나도 지운 자리로 씁니다
+	late := sample("", "g_other")
+	late.Players[0] = leaving
+	s.Save(late)
+	s.Close()
+	if m, _ := s.Get(late.ID); m.Players[0] != gone {
+		t.Errorf("late = %+v", m.Players)
+	}
+	if late.Players[0] != leaving {
+		t.Error("Save에 넘긴 대국을 고치면 안 됩니다 (Get이 쓰는 중에 그대로 내줍니다)")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "users", "m_left.log")); !os.IsNotExist(err) {
+		t.Errorf("목록 파일이 다시 생기면 안 됩니다: %v", err)
+	}
+	if got := s.Plays("tictactoe"); got != plays+1 {
+		t.Errorf("Plays = %d, want %d", got, plays+1)
+	}
+	// 기록이 없는 계정도 괜찮습니다
+	if err := s.Forget("m_nothing"); err != nil {
+		t.Error(err)
+	}
+}
+
+// names는 테스트용 계정 저장소입니다.
+type names map[string]string
+
+func (n names) Name(id string) (string, bool) {
+	name, ok := n[id]
+	return name, ok
+}
+
+// 기보에 남은 이름 대신 지금 계정 이름을 보내고, 없는 계정(탈퇴)은 이름 없이 보냅니다.
+func TestViewNames(t *testing.T) {
+	m := sample("g_guest", "")
+	m.Players[1] = Player{ID: "m_renamed", Kind: "member", Tag: "0002", Name: "old"}
+	h := Handler{Names: names{"m_renamed": "new"}}
+	v := h.viewOf(m, "", false)
+	if v.Players[0] != (protocol.PlayerInfo{Kind: "guest", Tag: "1111"}) || v.Players[1] != (protocol.PlayerInfo{Kind: "member", Tag: "0002", Name: "new"}) {
+		t.Fatalf("players = %+v", v.Players)
+	}
+	h.Names = names{}
+	if v := h.viewOf(m, "", false); v.Players[1] != (protocol.PlayerInfo{Kind: "gone"}) {
+		t.Fatalf("deleted = %+v", v.Players[1])
+	}
+	// 이름 저장소가 없으면(로그인을 켜지 않은 서버) 남은 이름 그대로
+	if v := (Handler{}).viewOf(m, "", false); v.Players[1].Name != "old" {
+		t.Fatalf("no names = %+v", v.Players[1])
+	}
+}

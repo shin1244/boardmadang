@@ -32,7 +32,7 @@
     </div>
   </header>
 
-  <!-- 내 프로필: 내가 올린 게임(계정만)과 내 대국. 방 목록과 같은 줄 모양을 씁니다 (rooms.css) -->
+  <!-- 내 프로필: 내가 올린 게임(계정만), 내 대국, 계정(계정만). 방 목록과 같은 줄 모양을 씁니다 (rooms.css) -->
   <main class="rooms">
     <h1 id="who" class="profile-name"></h1>
 
@@ -48,13 +48,58 @@
       <p id="mine-status" class="mine-status" role="status"></p>
     </section>
 
-    <section class="profile-block">
+    <section id="matches" class="profile-block">
       <div class="list-head">
         <h2><span data-i18n="history.title">내 대국</span> <span id="count" class="count"></span></h2>
       </div>
       <p class="rooms-lead" data-i18n="history.lead"></p>
       <ul id="list" class="room-list"></ul>
       <p id="empty" class="empty" hidden></p>
+    </section>
+
+    <!-- 계정(계정만, GET /api/account): 이름 바꾸기와 탈퇴. 개발 서버에는 /api/account가 없어서 빠집니다 -->
+    <section id="account" class="profile-block" hidden>
+      <div class="list-head"><h2 data-i18n="account.title">계정</h2></div>
+      <p id="account-info" class="rooms-lead"></p>
+
+      <form id="rename" class="account-card">
+        <label class="account-field">
+          <span data-i18n="account.rename">이름 바꾸기</span>
+          <span class="account-row">
+            <input id="rename-name" type="text" autocomplete="nickname" autocapitalize="off" spellcheck="false" maxlength="12" required>
+            <button id="rename-submit" class="btn" type="submit" data-i18n="account.rename.submit">바꾸기</button>
+          </span>
+        </label>
+        <p id="rename-hint" class="account-hint"></p>
+        <p id="rename-status" class="account-status" role="status"></p>
+      </form>
+
+      <details id="leave" class="account-card account-leave">
+        <summary data-i18n="account.leave">탈퇴하기</summary>
+        <p data-i18n="account.leave.lead"></p>
+        <ul class="account-list">
+          <li data-i18n="account.leave.matches"></li>
+          <li data-i18n="account.leave.comments"></li>
+          <li data-i18n="account.leave.games"></li>
+          <li data-i18n="account.leave.again"></li>
+        </ul>
+        <form id="leave-form">
+          <label class="account-field">
+            <span id="leave-label"></span>
+            <span class="account-row">
+              <input id="leave-name" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+              <button id="leave-submit" class="btn danger" type="submit" data-i18n="account.leave.submit">탈퇴</button>
+            </span>
+          </label>
+          <p id="leave-status" class="account-status" role="alert"></p>
+        </form>
+      </details>
+    </section>
+
+    <!-- 탈퇴한 뒤에는 이것만 보입니다 -->
+    <section id="left" class="profile-block" hidden>
+      <p data-i18n="account.left"></p>
+      <a class="btn" href="/web/" data-i18n="signup.toLobby">게임 목록으로</a>
     </section>
   </main>
 
