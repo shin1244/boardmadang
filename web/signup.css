@@ -26,4 +26,6 @@
 .signup-rules { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
 .signup-error { margin: 8px 0 0; color: var(--bad); font-size: 14px; }
 .signup-error[hidden] { display: none; }
+.signup-agree { margin: 16px 0 0; color: var(--muted); font-size: 13px; }
+.signup-agree a { color: var(--accent); }
 .signup-card .btn { display: inline-block; margin-top: 20px; padding: 10px 24px; text-decoration: none; }

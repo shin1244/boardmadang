@@ -1,0 +1,25 @@
+/* 약관과 개인정보: 가운데에 읽기 좋은 폭으로 */
+.legal { max-width: 720px; margin: 0 auto; padding: 32px 16px 8px; }
+.legal [hidden] { display: none; }
+.legal h1 { margin: 0 0 4px; font-size: 24px; }
+.legal-meta { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
+.legal section {
+  margin-top: 16px;
+  padding: 20px 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  scroll-margin-top: 16px;
+}
+.legal h2 { margin: 0 0 10px; font-size: 19px; }
+.legal h3 { margin: 18px 0 6px; font-size: 15px; }
+.legal p { margin: 0; }
+.legal ol, .legal ul { margin: 0; padding-left: 1.3em; }
+.legal li + li { margin-top: 6px; }
+.legal a { color: var(--accent); }
+.legal code { font-size: 0.92em; }
+
+@media (max-width: 760px) {
+  .legal { padding-top: 20px; }
+  .legal section { padding: 16px; }
+}

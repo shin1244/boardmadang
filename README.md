@@ -93,6 +93,7 @@ GO_SERVER=http://localhost:8081 node sdk/playground/serve.js
 - 플레이그라운드: http://localhost:5173/sdk/playground/?game=tictactoe
 - 게임 등록: http://localhost:5173/web/register.html (이름, 룰북, 난이도, 지원 언어, 타이머를 `games/<id>/listing.json`에 저장)
 - 방 목록: http://localhost:5173/web/rooms.html (아래에 진행 중인 대국이 있고, 관전할 수 있습니다)
+- 약관과 개인정보: http://localhost:5173/web/legal.html (주요 화면 아래의 바닥글에서 엽니다)
 - 로그인: 상단의 로그인 버튼 (Google, GitHub). 켜는 법은 [docs/identity.md](docs/identity.md#소셜-로그인-켜기)에 있습니다.
   의견 남기기와 방 만들기는 계정만 됩니다. OAuth 앱 없이 시험하려면 Go 서버를 `DEV_LOGIN=1`로 켜고 "개발용 로그인"을 누릅니다.
 - 내 프로필 (상단의 내 이름을 누름): http://localhost:5173/web/history.html. 내가 올린 게임(Go 서버만)과 내 대국이 있습니다.
