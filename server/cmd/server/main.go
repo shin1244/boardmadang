@@ -52,6 +52,7 @@ func main() {
 		log.Printf("운영자 계정 %d개 (ADMIN_IDS)", len(cfg.AdminIDs))
 	}
 	comments.Names = accounts
+	uploads.Names = accounts
 	login := &auth.Handler{Providers: providers(cfg), IDs: ids, Accounts: accounts, Records: records, PublicURL: cfg.PublicURL}
 	// 탈퇴하면 계정을 지운 뒤 기보의 자리, 의견, 올린 게임에서 그 계정을 지웁니다
 	mine := account.Handler{Store: accounts, IDs: ids, Forget: []func(string) error{records.Forget, comments.Forget, uploads.Forget}}
