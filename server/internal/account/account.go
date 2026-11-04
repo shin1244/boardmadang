@@ -329,6 +329,17 @@ func (s *Store) Suspended() []Account {
 	return out
 }
 
+// Joined는 지금 있는 계정마다 가입한 때입니다. 탈퇴한 계정은 빠집니다. 운영자 화면의 통계에 씁니다.
+func (s *Store) Joined() []time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]time.Time, 0, len(s.byID))
+	for _, a := range s.byID {
+		out = append(out, a.Created)
+	}
+	return out
+}
+
 // rewrite는 accounts.jsonl을 list의 계정만으로 새로 씁니다. 계정마다 add 한 줄(지금 이름), 이름을 바꿨으면 rename 한 줄,
 // 지금 정지돼 있으면 suspend 한 줄입니다.
 // 반쯤 쓴 파일이 보이지 않게 임시 파일에 쓰고 이름을 바꿉니다. s.mu를 잡고 부릅니다.

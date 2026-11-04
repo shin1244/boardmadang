@@ -574,6 +574,29 @@ func (s *Store) Admin(id string) (AdminGame, bool) {
 	return AdminGame{MyGame: g.mine(), Owner: g.Owner}, true
 }
 
+// Release는 게임을 한 번 등록한 것입니다. 운영자 화면의 통계에 씁니다.
+type Release struct {
+	Game  string
+	At    time.Time
+	First bool // 그 게임을 처음 등록한 것 (아니면 새 버전이나 등록 정보를 다시 등록한 것)
+}
+
+// Releases는 지금까지 등록한 것을 모두 돌려줍니다. 내린 게임도 들어갑니다. 순서는 정하지 않습니다.
+func (s *Store) Releases() []Release {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Release
+	for _, g := range s.games {
+		if len(g.Published) == 0 { // 등록 기록을 남기기 전에 올린 게임
+			out = append(out, Release{Game: g.ID, At: g.Created, First: true})
+		}
+		for i, p := range g.Published {
+			out = append(out, Release{Game: g.ID, At: p.At, First: i == 0})
+		}
+	}
+	return out
+}
+
 // Forget은 탈퇴한 계정 owner가 올린 게임을 모두 내리고 초안을 지웁니다.
 // 내린 게임처럼 코드는 남겨 이미 둔 대국의 기보를 다시볼 수 있게 하고, 게임 id는 다른 사람이 쓰지 못하게 그대로 둡니다
 // (주인 id만 남고, 그 계정으로는 다시 로그인할 수 없습니다).

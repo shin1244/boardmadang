@@ -2,6 +2,7 @@
 //
 //	GET  /api/admin           신고를 대상(게임이나 의견)별로 묶은 목록, 정지된 계정, 최근 운영 기록 (State)
 //	POST /api/admin/actions   운영 조치 하나 (Action) → 200 {"ok":true}
+//	GET  /api/admin/stats     방문, 대국, 등록, 가입의 날마다 수와 지금 접속 (Stats, stats.go)
 //
 // 운영자(ADMIN_IDS, identity.User.Admin)만 됩니다. 아니면 쿠키가 없을 때 401, 있으면 403 {"error":"admin only"}.
 // POST는 JSON 본문만 받습니다 (다른 사이트의 폼은 이런 본문을 보낼 수 없고, fetch는 미리 확인에서 막힙니다).
@@ -32,6 +33,8 @@ import (
 	"github.com/shin1244/boardmadang/server/internal/account"
 	"github.com/shin1244/boardmadang/server/internal/comment"
 	"github.com/shin1244/boardmadang/server/internal/identity"
+	"github.com/shin1244/boardmadang/server/internal/record"
+	"github.com/shin1244/boardmadang/server/internal/stats"
 	"github.com/shin1244/boardmadang/server/internal/upload"
 )
 
@@ -84,6 +87,10 @@ type Handler struct {
 	Comments *comment.Store
 	Uploads  *upload.Store
 	Accounts *account.Store
+	// 통계(stats.go)에만 씁니다. 없으면 그 칸은 0입니다
+	Records *record.Store
+	Visits  *stats.Tracker
+	Live    func() (online, playing int) // hub.Hub.Live
 
 	file string
 	now  func() time.Time // 테스트에서 시간을 바꾸려고 둡니다

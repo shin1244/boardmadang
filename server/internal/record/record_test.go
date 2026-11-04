@@ -321,3 +321,61 @@ func TestViewNames(t *testing.T) {
 		t.Fatalf("no names = %+v", v.Players[1])
 	}
 }
+
+func TestDaily(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := Open(dir)
+	at := func(game, when string) *Match {
+		m := sample("g_a", "g_b")
+		m.Game = game
+		m.Ended, _ = time.Parse(time.RFC3339, when)
+		return m
+	}
+	solo := at("tictactoe", "2026-11-03T03:00:00Z")
+	solo.Players[1] = solo.Players[0]
+	for _, m := range []*Match{
+		at("tictactoe", "2026-11-03T14:59:00Z"), // 한국 11월 3일 23:59
+		at("tictactoe", "2026-11-03T15:00:00Z"), // 한국 11월 4일 0:00
+		at("dots", "2026-11-04T01:00:00Z"),
+		solo, // 판 수에 세지 않는 대국은 날마다 수에도 빠집니다
+	} {
+		s.Save(m)
+	}
+	want := map[string]map[string]int{
+		"2026-11-03": {"tictactoe": 1},
+		"2026-11-04": {"tictactoe": 1, "dots": 1},
+	}
+	check := func(label string, s *Store) {
+		t.Helper()
+		got := s.Daily("2026-11-01")
+		if len(got) != len(want) || got["2026-11-03"]["tictactoe"] != 1 || got["2026-11-04"]["tictactoe"] != 1 || got["2026-11-04"]["dots"] != 1 {
+			t.Fatalf("%s: %v", label, got)
+		}
+		if late := s.Daily("2026-11-04"); len(late) != 1 || late["2026-11-04"] == nil {
+			t.Fatalf("%s from 11-04: %v", label, late)
+		}
+	}
+	check("pending", s)
+	// 돌려받은 것을 고쳐도 저장소는 그대로입니다
+	s.Daily("2026-11-01")["2026-11-03"]["tictactoe"] = 99
+	check("after edit", s)
+	s.Close()
+
+	s2, _ := Open(dir)
+	check("reopen", s2)
+
+	// days.json만 없으면(날마다 수를 세기 전의 데이터) 기보를 훑어 그것만 다시 셉니다. plays.json은 그대로 둡니다
+	os.WriteFile(filepath.Join(dir, "plays.json"), []byte(`{"tictactoe":5}`), 0o644)
+	os.Remove(filepath.Join(dir, "days.json"))
+	s3, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check("rebuilt", s3)
+	if s3.Plays("tictactoe") != 5 {
+		t.Fatalf("plays.json was replaced: %d", s3.Plays("tictactoe"))
+	}
+	if _, err := os.Stat(filepath.Join(dir, "days.json")); err != nil {
+		t.Fatalf("days.json not written: %v", err)
+	}
+}

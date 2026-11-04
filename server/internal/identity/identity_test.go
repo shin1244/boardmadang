@@ -274,3 +274,20 @@ func TestSignData(t *testing.T) {
 		t.Error("session token accepted as data")
 	}
 }
+
+func TestHandleMeCallsOnMe(t *testing.T) {
+	is := NewIssuer(secret)
+	var seen []User
+	is.OnMe = func(r *http.Request, u User) { seen = append(seen, u) }
+	rec := httptest.NewRecorder()
+	is.HandleMe(rec, httptest.NewRequest("GET", "/api/me", nil))
+	var first User
+	json.NewDecoder(rec.Body).Decode(&first)
+
+	req := httptest.NewRequest("GET", "/api/me", nil)
+	req.AddCookie(rec.Result().Cookies()[0])
+	is.HandleMe(httptest.NewRecorder(), req)
+	if len(seen) != 2 || seen[0] != first || seen[1] != first {
+		t.Fatalf("OnMe saw %+v, want %+v twice", seen, first)
+	}
+}
