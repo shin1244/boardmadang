@@ -75,6 +75,7 @@ gcloud secrets versions add admin-ids --project boardmadang --data-file=-
 | `comments/<게임>.jsonl` | 운영자의 결정 `{"op":"mod","id","mod":"hidden"\|"shown","by"}` |
 | `uploads/<id>/game.json` | 내린 게임은 `"blocked": true` |
 | `reports.jsonl` | 받은 신고 (internal/comment가 씀) |
+| `stats/` | 통계의 방문 기록 (아래 [통계](#통계)) |
 
 ## API
 
@@ -84,6 +85,31 @@ gcloud secrets versions add admin-ids --project boardmadang --data-file=-
 |---|---|
 | `GET /api/admin` | 신고 목록(`targets`), 나오는 계정(`users`), 정지된 계정(`suspended`), 최근 운영 기록(`log`), 고를 수 있는 정지 기간(`days`) |
 | `POST /api/admin/actions` | 조치 하나. `{"action":"user.suspend","user":"m_…","days":7,"game":"…","comment":"…","note":"…"}` → `{"ok":true}` |
+| `GET /api/admin/stats?days=30` | 통계. 오늘까지 `days`일(1~365, 기본 30)의 날마다 수 (아래 [통계](#통계)). `days`가 틀리면 `400 {"error":"bad days"}` |
 
 조치가 안 되면 400(`bad action`, `cannot suspend an admin`, `too long`)이나 404(`not found`)입니다.
 POST는 JSON 본문만 받습니다. 다른 사이트의 폼은 이런 본문을 보낼 수 없고, fetch는 미리 확인(preflight)에서 막힙니다.
+
+## 통계
+
+운영자 화면 맨 위에 오늘의 수(방문, MAU, 대국, 게임 등록, 가입, 지금 접속)와 7·30·90일 그래프, 많이 둔 게임, 표가 있습니다.
+하루는 한국 시각(KST) 0시부터이고, 오늘 칸은 지금까지의 수입니다.
+
+| 수 | 어디서 세는지 |
+|---|---|
+| 방문(DAU) | `GET /api/me`를 부른 계정이나 게스트를 하루 한 번 (internal/stats). 화면마다 처음에 부르므로 사이트를 연 사람이 다 들어옵니다. User-Agent가 로봇이나 헤드리스 브라우저면 세지 않습니다. 게스트로 왔다가 그날 로그인하면 둘로 셉니다 |
+| MAU | 그날까지 30일 동안 온 사람 (같은 사람은 한 번) |
+| 대국 | 기보 저장소의 날마다 판 수 (`days.json`). 로비 인기순(`plays.json`)과 같은 기준이라 무효, 혼자 둔 판, 한 수도 안 둔 판은 빠집니다 |
+| 게임 등록 | 올린 게임의 등록 기록(`game.json`의 `published`). 처음 등록이 "새 게임", 그 뒤가 "다시 등록". 내린 게임도 셉니다 |
+| 가입 | 계정의 가입 시각. 그 뒤 탈퇴한 계정은 빠집니다 |
+| 지금 접속 | 웹소켓이 열린 사람 (탭이 여럿이어도 한 명)과 진행 중인 대국 |
+
+방문은 새로 남기는 기록이라 켠 날부터 셉니다. 대국, 등록, 가입은 원래 있던 기록이라 지난 날도 보입니다
+(`days.json`이 없으면 서버가 켜질 때 기보를 한 번 훑어 만듭니다).
+누가 왔는지는 남기지 않으려고 계정이나 게스트 번호 대신 서버만 아는 키로 만든 해시를 남기고, 30일이 지나면 그날 파일을 지웁니다.
+
+| 파일 (`DATA_DIR/stats/`) | 내용 |
+|---|---|
+| `key` | 해시 키. 처음 켤 때 만듭니다 |
+| `visits/<날짜>.log` | 그날 온 사람마다 한 줄 `m <해시>`(계정) 또는 `g <해시>`(게스트). 30일 동안만 |
+| `days.jsonl` | 끝난 날의 수 `{"day","visitors","members","mau","mauMembers"}`. 날짜가 바뀌면 덧붙이고 지우지 않습니다 |

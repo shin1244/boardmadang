@@ -73,6 +73,7 @@ func setup(t *testing.T) *fixture {
 	f.mux = http.NewServeMux()
 	f.mux.HandleFunc("GET /api/admin", f.h.ServeState)
 	f.mux.HandleFunc("POST /api/admin/actions", f.h.ServeAction)
+	f.mux.HandleFunc("GET /api/admin/stats", f.h.ServeStats)
 
 	// 신고는 시간을 정하려고 reports.jsonl에 바로 씁니다
 	f.report(comment.Report{At: base, Game: "tictactoe", Comment: f.comment, By: f.r1.ID, Reason: "spam"})

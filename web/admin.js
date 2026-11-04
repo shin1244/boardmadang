@@ -1,6 +1,7 @@
 // 운영자 화면: 신고를 대상(의견이나 게임)별로 묶어 보고 조치합니다. 설계는 docs/moderation.md에 있습니다.
 // GET /api/admin으로 신고, 정지된 계정, 운영 기록을 한 번에 받고, 조치는 POST /api/admin/actions로 하나씩 보냅니다.
 // 조치하고 나면 다시 불러옵니다. 운영자(서버의 ADMIN_IDS)가 아니면 서버가 403을 주고 안내만 보입니다.
+// 맨 위의 통계(GET /api/admin/stats)는 admin-stats.js가 불러오고 그립니다. 새로고침하면 같이 다시 불러옵니다.
 // "AI 요청" 칸은 제작자가 내 프로필에서 누른 AI 만들기 요청입니다 (GET /api/admin/ai/requests). "코드 받기"로 그 버전의 코드를
 // zip으로 받으면(POST /api/admin/ai/<게임>/code) 요청이 학습 중이 되고, 학습할 수 없으면 이유를 적어 반려합니다(.../decline).
 // "AI 모델" 칸에서는 운영자가 학습한 모델(trainer/train.py --export-onnx의 model.onnx, model.json)을 올리고 지웁니다
@@ -10,6 +11,7 @@
 import { localize } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { displayName, loadMe, renderMe } from './me.js';
+import { loadStats, renderStats, setupStats } from './admin-stats.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -95,6 +97,7 @@ async function load({ fresh = false } = {}) {
       fetch('/api/admin', { cache: 'no-store' }),
       games.size && !fresh ? null : fetch('/api/games', { cache: 'no-store' }).catch(() => null),
       fetch('/api/admin/ai/requests', { cache: 'no-store' }).catch(() => null),
+      loadStats(),
     ]);
     if (gamesRes?.ok) games = new Map((await gamesRes.json()).map((g) => [g.id, g]));
     asks = asksRes?.ok ? await asksRes.json() : null;
@@ -605,6 +608,7 @@ function render() {
   }[denied] ?? denied;
   $('#body').hidden = !!denied || !state;
   if ($('#body').hidden) return;
+  renderStats((id) => gameName(id));
 
   const open = state.targets.filter((x) => x.open);
   const shown = showClosed ? state.targets : open;
@@ -634,6 +638,7 @@ function render() {
 async function main() {
   setupLangButtons(render);
   setLang(await detectLang());
+  setupStats(render);
   $('#show-closed').addEventListener('change', (e) => {
     showClosed = e.target.checked;
     render();

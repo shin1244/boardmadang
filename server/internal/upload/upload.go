@@ -82,6 +82,8 @@ type Store struct {
 	now func() time.Time
 	// Reserved는 레포에 있는 게임 id인지입니다 (site.Site.Has). 그 id로는 올릴 수 없습니다.
 	Reserved func(id string) bool
+	// Names가 있으면 로비 목록(Games)에 제작자의 지금 계정 이름을 넣습니다 (internal/account). 이름을 바꾸면 바로 반영됩니다
+	Names identity.Members
 
 	mu     sync.Mutex
 	games  map[string]*gameMeta
@@ -425,6 +427,7 @@ func (s *Store) publishedToday(owner string) int {
 // ---- 목록 ----
 
 // Games는 올린 게임을 /api/games 모양으로 돌려줍니다. 처음 등록한 순서입니다. 내린 게임과 레포에 같은 id가 생긴 게임은 뺍니다.
+// Names가 있으면 제작자의 지금 이름(Author)도 넣습니다. 계정 id는 내보내지 않습니다.
 func (s *Store) Games() []site.Game {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -443,6 +446,10 @@ func (s *Store) Games() []site.Game {
 	out := make([]site.Game, len(list))
 	for i, g := range list {
 		out[i] = g.entry()
+		// 탈퇴한 계정의 게임은 Forget이 내리므로 이름이 없는 일은 드뭅니다. 그때는 이름 없이 둡니다
+		if s.Names != nil {
+			out[i].Author, _ = s.Names.Name(g.Owner)
+		}
 	}
 	return out
 }
@@ -572,6 +579,29 @@ func (s *Store) Admin(id string) (AdminGame, bool) {
 		return AdminGame{}, false
 	}
 	return AdminGame{MyGame: g.mine(), Owner: g.Owner}, true
+}
+
+// Release는 게임을 한 번 등록한 것입니다. 운영자 화면의 통계에 씁니다.
+type Release struct {
+	Game  string
+	At    time.Time
+	First bool // 그 게임을 처음 등록한 것 (아니면 새 버전이나 등록 정보를 다시 등록한 것)
+}
+
+// Releases는 지금까지 등록한 것을 모두 돌려줍니다. 내린 게임도 들어갑니다. 순서는 정하지 않습니다.
+func (s *Store) Releases() []Release {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Release
+	for _, g := range s.games {
+		if len(g.Published) == 0 { // 등록 기록을 남기기 전에 올린 게임
+			out = append(out, Release{Game: g.ID, At: g.Created, First: true})
+		}
+		for i, p := range g.Published {
+			out = append(out, Release{Game: g.ID, At: p.At, First: i == 0})
+		}
+	}
+	return out
 }
 
 // Forget은 탈퇴한 계정 owner가 올린 게임을 모두 내리고 초안을 지웁니다.

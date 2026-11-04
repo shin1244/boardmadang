@@ -22,6 +22,7 @@ import (
 	"github.com/shin1244/boardmadang/server/internal/identity"
 	"github.com/shin1244/boardmadang/server/internal/record"
 	"github.com/shin1244/boardmadang/server/internal/site"
+	"github.com/shin1244/boardmadang/server/internal/stats"
 	"github.com/shin1244/boardmadang/server/internal/upload"
 )
 
@@ -53,6 +54,7 @@ func main() {
 		log.Printf("운영자 계정 %d개 (ADMIN_IDS)", len(cfg.AdminIDs))
 	}
 	comments.Names = accounts
+	uploads.Names = accounts
 	login := &auth.Handler{Providers: providers(cfg), IDs: ids, Accounts: accounts, Records: records, PublicURL: cfg.PublicURL}
 	// 탈퇴하면 계정을 지운 뒤 기보의 자리, 의견, 올린 게임에서 그 계정을 지웁니다
 	mine := account.Handler{Store: accounts, IDs: ids, Forget: []func(string) error{records.Forget, comments.Forget, uploads.Forget}}
@@ -61,6 +63,11 @@ func main() {
 		log.Fatalf("운영 기록을 읽지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
 	}
 	ops.IDs, ops.Comments, ops.Uploads, ops.Accounts = ids, comments, uploads, accounts
+	visits, err := stats.Open(cfg.DataDir)
+	if err != nil {
+		log.Fatalf("방문 기록을 읽지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
+	}
+	ids.OnMe = visits.Visit
 	var pages *site.Site // 아래에서 엽니다
 	models, err := ai.Open(cfg.DataDir)
 	if err != nil {
@@ -72,6 +79,7 @@ func main() {
 		return ok || (pages != nil && pages.Has(id))
 	}}
 	h := hub.New(cfg, ids, records)
+	ops.Records, ops.Visits, ops.Live = records, visits, h.Live
 	pages, err = site.Open(cfg.SiteDir)
 	if err != nil {
 		// 개발 서버(serve.js)를 앞에 두고 API만 쓸 때는 화면이 없어도 됩니다
@@ -194,6 +202,7 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 	if ops != nil {
 		mux.HandleFunc("GET /api/admin", ops.ServeState)
 		mux.HandleFunc("POST /api/admin/actions", ops.ServeAction)
+		mux.HandleFunc("GET /api/admin/stats", ops.ServeStats)
 	}
 	if bots != nil {
 		mux.HandleFunc("GET /ai/{game}/{file}", bots.ServeFile)

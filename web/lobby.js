@@ -337,7 +337,11 @@ function fillAbout(entry) {
   $('#gd-timer').textContent = timer.custom
     ? `${timerText(timer.minutes)} · ${t('detail.timer.custom')}`
     : timerText(timer.minutes);
-  $('#gd-clear-row').hidden = !entry.clear;
+  // 제작자: 올린 게임만 이름(서버가 지금 계정 이름으로 줌)과 직접 이긴 판이 있습니다. 레포 게임은 둘 다 없어서 줄을 숨깁니다
+  $('#gd-author-row').hidden = !entry.author && !entry.clear;
+  $('#gd-author').hidden = !entry.author;
+  $('#gd-author').textContent = entry.author ?? '';
+  $('#gd-clear').hidden = !entry.clear;
   $('#gd-clear').href = `/web/replay.html?clear=${encodeURIComponent(entry.id)}`;
   $('#gd-langs-row').hidden = !listing;
   if (listing) {

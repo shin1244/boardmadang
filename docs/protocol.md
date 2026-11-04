@@ -5,7 +5,7 @@
 | 요청 | 응답 |
 |---|---|
 | `GET /healthz` | `ok` |
-| `GET /api/games` | 게임 목록 `[{"id":"tictactoe","module":"/games/tictactoe/index.js","version":"3f1c9a0b2e7d4c56","private":false,"listing":{...},"thumbnail":{...},"plays":12,"released":"…"}]`. `plays`는 둔 판 수로 로비의 인기순에 씁니다 (무효가 된 대국, 행동이 없는 대국, 한 사람이 두 자리에 앉은 대국은 빼고 셈. 0이면 없음). `released`는 올린 게임을 처음 등록한 때로 출시일순에 씁니다 (레포 게임은 없음). 운영자가 AI 모델을 올린 게임에는 `ai`(아래)가 붙습니다 |
+| `GET /api/games` | 게임 목록 `[{"id":"tictactoe","module":"/games/tictactoe/index.js","version":"3f1c9a0b2e7d4c56","private":false,"listing":{...},"thumbnail":{...},"plays":12,"released":"…"}]`. `plays`는 둔 판 수로 로비의 인기순에 씁니다 (무효가 된 대국, 행동이 없는 대국, 한 사람이 두 자리에 앉은 대국은 빼고 셈. 0이면 없음). `released`는 올린 게임을 처음 등록한 때로 출시일순에 씁니다 (레포 게임은 없음). `author`는 올린 게임의 제작자 이름으로, 계정의 지금 이름입니다 (레포 게임과 이름을 모르는 게임은 없음, `/api/uploads`에도 없음). 운영자가 AI 모델을 올린 게임에는 `ai`(아래)가 붙습니다 |
 | `GET /api/locale` | 접속 나라와 화면 언어 `{"country":"KR","lang":"ko"}` |
 | `GET /api/me` | 지금 신원 `{"id":"g_…","kind":"guest","tag":"4821"}`. 쿠키가 없으면 게스트를 새로 발급합니다. 계정이면 운영자(`"admin":true`)와 정지(`"suspended":true,"suspendedUntil":"…"`, 영구면 `suspendedUntil` 없음)도 옵니다 |
 | `GET /api/account` | 내 계정 `{"name":"shin","provider":"google","created":"…","renameAfter":"…","min":4,"max":8}`. `renameAfter`는 이름을 다시 바꿀 수 있는 때 (지금 바꿀 수 있으면 없음). 계정만 |
@@ -31,6 +31,7 @@
 | `POST /api/admin/actions` | 운영 조치 하나 `{"action":"comment.hide","game":"…","comment":"…","note":"…"}` → `{"ok":true}`. 운영자만 |
 | `PUT /api/admin/ai/{game}` | AI 모델 올리기 `{"meta":{…},"model":"<model.onnx의 base64>"}` → `{"ai":{…}}` (`/api/games`의 `ai`). `meta`는 `trainer/train.py --export-onnx`가 쓴 `model.json` 그대로. 모델은 16 MB까지 (`413`), 모양이 틀리면 `422 {"error":"…"}`, 없는 게임이면 `404`. 같은 게임의 모델은 바뀝니다. 운영자만 |
 | `DELETE /api/admin/ai/{game}` | AI 모델 지우기 → `{"ok":true}`. 요청과 학습 기록은 남습니다. 운영자만 |
+| `GET /api/admin/stats?days=30` | 운영자 화면의 통계. 날마다 방문, MAU, 대국, 등록, 가입과 지금 접속. 운영자만 ([moderation.md](moderation.md#통계)) |
 | `GET /api/ai/mine` | 내가 올린 게임마다 AI 상태 `{"games":{"<id>":{"request":{…},"training":{…},"ai":{…}}}}`. 없는 칸은 빠집니다. 계정만 |
 | `POST /api/ai/{game}/request` | AI 만들기 요청 (본문 `{}`, JSON만) → `{"request":{"game":"…","version":"…","by":"…","at":"…","status":"waiting","updated":"…"}}`. 내가 올린 게임의 지금 버전으로. 남의 게임이나 레포 게임이면 `404`, 내린 게임이면 `409 {"error":"hidden"}`, 이미 요청이 있으면 `409 {"error":"request open"}`, 이 버전으로 학습한 모델이 있으면 `409 {"error":"already trained"}`, 다른 게임의 요청이 안 끝났으면 `429 {"error":"another request"}`, 정지된 계정이면 `403` |
 | `DELETE /api/ai/{game}/request` | 기다리는 중인 내 요청 거두기 → `{"ok":true}`. 운영자가 받아 갔거나 끝난 요청이면 `409 {"error":"no request"}` |

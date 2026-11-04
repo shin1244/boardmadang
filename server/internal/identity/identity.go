@@ -80,6 +80,8 @@ type Issuer struct {
 	Members Members
 	// Admins는 운영자 계정 id입니다 (config.AdminIDs). 이 계정의 User.Admin이 true가 됩니다.
 	Admins map[string]bool
+	// OnMe는 GET /api/me에 답할 때마다 그 신원으로 부릅니다 (방문자 수, internal/stats). 없어도 됩니다.
+	OnMe func(r *http.Request, u User)
 }
 
 func NewIssuer(secret []byte) *Issuer {
@@ -269,6 +271,9 @@ func (is *Issuer) HandleMe(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	is.SetCookie(w, r, u)
+	if is.OnMe != nil {
+		is.OnMe(r, u)
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(u)

@@ -80,6 +80,8 @@ type Hub struct {
 	rooms map[string]*Room     // 방 코드 → 진행 중인 대국
 	open  map[string]*openRoom // 방 코드 → 방 목록에서 상대를 기다리는 방 (lobby.go)
 	away  map[string]*Room     // 연결이 끊겨 돌아오기를 기다리는 user.ID → 그 방 (끝난 방일 수도 있습니다)
+	// 웹소켓이 열려 있는 user.ID → 연결 수 (탭마다 하나). 운영자 화면의 "지금 접속"에 씁니다
+	online map[string]int
 }
 
 // New는 허브를 만듭니다. records가 nil이면 기보를 저장하지 않습니다.
@@ -92,6 +94,7 @@ func New(cfg config.Config, ids *identity.Issuer, records *record.Store) *Hub {
 		rooms:   make(map[string]*Room),
 		open:    make(map[string]*openRoom),
 		away:    make(map[string]*Room),
+		online:  make(map[string]int),
 	}
 	h.upgrader = websocket.Upgrader{CheckOrigin: h.checkOrigin}
 	return h
@@ -126,9 +129,37 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := newClient(h, conn, user)
+	h.mu.Lock()
+	h.online[user.ID]++
+	h.mu.Unlock()
 	go c.writePump()
 	c.readPump()
 	h.leave(c)
+	h.mu.Lock()
+	if h.online[user.ID]--; h.online[user.ID] <= 0 {
+		delete(h.online, user.ID)
+	}
+	h.mu.Unlock()
+}
+
+// Live는 지금 웹소켓이 열려 있는 사람 수와 진행 중인 대국 수입니다. 운영자 화면의 통계에 씁니다.
+func (h *Hub) Live() (online, playing int) {
+	h.mu.Lock()
+	online = len(h.online)
+	rooms := make([]*Room, 0, len(h.rooms))
+	for _, r := range h.rooms {
+		rooms = append(rooms, r)
+	}
+	h.mu.Unlock()
+	// r.mu는 h.mu를 놓은 뒤에 잡습니다 (락 순서)
+	for _, r := range rooms {
+		r.mu.Lock()
+		if !r.ended {
+			playing++
+		}
+		r.mu.Unlock()
+	}
+	return online, playing
 }
 
 // seat는 c가 앉아 있는 방과 자리 번호입니다. 방에 없으면 nil.

@@ -370,6 +370,40 @@ func TestPublish(t *testing.T) {
 	}
 }
 
+// 로비 목록에는 제작자의 지금 이름을 넣고, 계정 id는 넣지 않습니다
+func TestAuthor(t *testing.T) {
+	s, _ := open(t, t.TempDir())
+	a := member("m_a")
+	d, _ := s.NewDraft(a, makeZip(t, "index.js", gameCode))
+	if _, err := s.Publish(a, d.ID, publishing("dots", d)); err != nil {
+		t.Fatal(err)
+	}
+	if games := s.Games(); len(games) != 1 || games[0].Author != "" {
+		t.Fatalf("계정 저장소가 없으면 이름 없이: %+v", games)
+	}
+	accounts := names{"m_a": "maker"}
+	s.Names = accounts
+	if games := s.Games(); games[0].Author != "maker" {
+		t.Fatalf("제작자 이름: %+v", games[0])
+	}
+	accounts["m_a"] = "renamed"
+	if games := s.Games(); games[0].Author != "renamed" {
+		t.Fatalf("이름을 바꾸면 바로: %+v", games[0])
+	}
+	delete(accounts, "m_a")
+	if games := s.Games(); games[0].Author != "" {
+		t.Fatalf("모르는 계정이면 이름 없이: %+v", games[0])
+	}
+	accounts["m_a"] = "maker"
+	data, _ := json.Marshal(s.Games())
+	if !strings.Contains(string(data), `"author":"maker"`) || strings.Contains(string(data), "m_a") {
+		t.Fatalf("/api/games 모양: %s", data)
+	}
+	if mine := s.Mine("m_a"); mine.Games[0].Author != "" {
+		t.Fatalf("내 게임 목록에는 넣지 않습니다: %+v", mine.Games[0])
+	}
+}
+
 func TestEdit(t *testing.T) {
 	dir := t.TempDir()
 	s, now := open(t, dir)
