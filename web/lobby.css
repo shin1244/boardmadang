@@ -453,6 +453,8 @@ fieldset label:has(input:disabled) { opacity: 0.5; cursor: default; }
 .gd-desc { margin: 0; line-height: 1.6; }
 .gd-desc.muted { color: var(--muted); font-size: 14px; }
 .btn.gd-register { display: inline-block; margin-top: 12px; padding: 8px 18px; text-decoration: none; }
+/* 위의 display가 hidden 속성을 덮어쓰지 않게. 등록 정보가 있는 게임에는 "등록하기"가 없습니다 (lobby.js) */
+.btn.gd-register[hidden] { display: none; }
 
 /* 룰북 언어 고르기 (룰북을 여러 언어로 쓴 게임만) */
 .rulebook-lang { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 10px; color: var(--muted); font-size: 13px; }
