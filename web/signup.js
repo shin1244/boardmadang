@@ -24,6 +24,10 @@ function render() {
   $('#lead').textContent = t('signup.lead', { provider: PROVIDER_NAMES[info.provider] ?? info.provider });
   $('#rules').textContent = t('signup.rules', { min: info.min, max: info.max });
   $('#name').maxLength = info.max;
+  // 시작하기를 누르면 약관에 동의하는 것입니다. {link} 자리에 약관 링크를 넣습니다 (이름 정하는 중이라 새 탭으로)
+  const link = Object.assign(document.createElement('a'), { href: '/web/legal.html', target: '_blank', textContent: t('signup.agree.link') });
+  const [before, after = ''] = t('signup.agree', { link: '\0' }).split('\0');
+  $('#agree').replaceChildren(before, link, after);
   const msg = error && (ERRORS[error] ? t(ERRORS[error]) : t('signup.error.server', { msg: error }));
   $('#error').hidden = !msg;
   $('#error').textContent = msg ?? '';

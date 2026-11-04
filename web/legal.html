@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>약관과 개인정보 · 보드마당</title>
+  <link rel="stylesheet" href="lobby.css">
+  <link rel="stylesheet" href="legal.css">
+</head>
+<body class="page">
+  <!-- 이용약관과 개인정보 처리방침. 본문은 한국어와 영어를 함께 두고 화면 언어에 맞는 쪽만 보여 줍니다 (legal.js).
+       저장하는 것과 탈퇴할 때 지우는 것은 docs/identity.md, 운영 조치는 docs/moderation.md와 맞춥니다. 고치면 시행일도 바꿉니다. -->
+  <header class="topbar">
+    <a class="logo" href="/web/">
+      <span class="logo-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span data-i18n="site.name">보드마당</span>
+    </a>
+    <nav class="menu" data-i18n-attr="aria-label:menu.label" aria-label="메뉴">
+      <a href="/web/" data-i18n="menu.games">게임</a>
+      <a href="/web/rooms.html" data-i18n="menu.rooms">방 목록</a>
+      <span class="soon" data-i18n="menu.ranking" data-i18n-attr="title:soon" title="준비 중">랭킹</span>
+      <a href="/web/register.html" data-i18n="menu.register">게임 등록</a>
+    </nav>
+    <div class="langs" role="group" data-i18n-attr="aria-label:lang.label" aria-label="화면 언어">
+      <button type="button" data-lang="ko" lang="ko">KR</button>
+      <button type="button" data-lang="en" lang="en">EN</button>
+    </div>
+    <a class="me" href="/web/history.html" hidden></a>
+    <button class="logout" type="button" data-i18n="logout" hidden>로그아웃</button>
+    <div class="login-box">
+      <button class="login" type="button" aria-haspopup="menu" aria-expanded="false" disabled data-i18n="login">로그인</button>
+      <div class="login-menu" role="menu" hidden></div>
+    </div>
+  </header>
+
+  <main class="legal">
+    <div lang="ko">
+      <h1>이용약관과 개인정보 처리방침</h1>
+      <p class="legal-meta">시행일 2026년 11월 4일 · 문의 <a href="mailto:shincl1244@gmail.com">shincl1244@gmail.com</a></p>
+    </div>
+    <div lang="en" hidden>
+      <h1>Terms and privacy</h1>
+      <p class="legal-meta">Effective November 4, 2026 · Contact <a href="mailto:shincl1244@gmail.com">shincl1244@gmail.com</a></p>
+      <p class="legal-meta">If the Korean and English versions differ, the Korean version applies.</p>
+    </div>
+
+    <section id="terms">
+      <div lang="ko">
+        <h2>이용약관</h2>
+        <ol>
+          <li>보드마당(boardmadang.com)은 개인이 운영하는 무료 사이트입니다. 사람들이 만든 1대1 보드게임을 올리고, 대전하고, 기보를 다시볼 수 있습니다.</li>
+          <li>계정은 만 14세 이상만 만들 수 있습니다. 로그인하지 않고 게스트로 대전하는 것은 누구나 할 수 있습니다.</li>
+          <li>남을 괴롭히거나 혐오를 드러내는 이름과 의견, 남을 사칭하기, 허락받지 않은 남의 게임이나 저작물 올리기,
+            사이트나 다른 사람의 기기를 해치려는 코드, 자동으로 요청을 쏟아붓는 것처럼 서비스를 방해하는 행동은 안 됩니다.</li>
+          <li>이를 어기면 운영자가 의견을 가리거나, 올린 게임을 내리거나, 계정의 쓰기(의견, 신고, 방 만들기, 게임 올리기, 이름 바꾸기)를
+            1일, 7일, 30일 또는 영구히 막을 수 있습니다. 대전과 관전, 기보 보기, 탈퇴는 그대로 됩니다. 이의가 있으면 메일로 알려 주세요.</li>
+          <li>올린 게임의 저작권은 만든 사람에게 남습니다. 게임을 올리면 보드마당이 서비스(대전, 관전, 기보 다시보기, 게임 목록과 썸네일,
+            앞으로 붙일 AI 상대)에 필요한 범위에서 그 게임을 무료로 쓰는 것을 허락하는 것입니다. 이 허락은 독점적이지 않습니다.
+            올리는 사람은 그 게임을 올릴 권리가 있어야 합니다.</li>
+          <li>게임은 하는 사람의 브라우저에서 돌기 때문에 누구나 코드를 볼 수 있습니다. 게임을 내리면 새 대전에는 나오지 않지만,
+            이미 둔 대국을 다시볼 수 있게 코드는 남깁니다.</li>
+          <li>보드마당은 있는 그대로 제공합니다. 서버를 다시 켜면 진행 중인 대국이 끊길 수 있고, 기능이 바뀌거나 서비스가 멈출 수 있습니다.
+            운영자의 고의나 중대한 과실이 아니면 이로 인한 손해는 책임지지 않습니다.</li>
+          <li>약관을 바꾸면 이 페이지에 새 시행일과 함께 알립니다.</li>
+        </ol>
+      </div>
+      <div lang="en" hidden>
+        <h2>Terms of use</h2>
+        <ol>
+          <li>Boardmadang (boardmadang.com) is a free site run by an individual. You can upload 1-vs-1 board games that people make, play them, and replay past matches.</li>
+          <li>You must be 14 or older to create an account. Anyone can play as a guest without logging in.</li>
+          <li>Don't use names or comments that harass people or express hate, pretend to be someone else, upload other people's games or works without permission,
+            upload code meant to harm the site or other people's devices, or disrupt the service (for example by flooding it with automated requests).</li>
+          <li>If you do, a moderator may hide your comments, take down your games, or block your account from writing (comments, reports, creating rooms,
+            uploading games, changing your name) for 1, 7, or 30 days or permanently. You can still play, watch, view replays, and delete your account.
+            If you disagree with a decision, email us.</li>
+          <li>You keep the copyright to the games you upload. By uploading a game, you let Boardmadang use it for free, as far as the service needs
+            (matches, watching, replays, the game list and thumbnails, and AI opponents in the future). This permission is not exclusive.
+            You must have the right to upload the game.</li>
+          <li>Games run in the player's browser, so anyone can read their code. If you take a game down, it stops appearing for new matches,
+            but its code is kept so past matches can still be replayed.</li>
+          <li>Boardmadang is provided as is. Restarting the server can end matches in progress, and features may change or the service may stop.
+            Unless the operator acted on purpose or with gross negligence, the operator is not liable for resulting damages.</li>
+          <li>When these terms change, this page shows the new effective date.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section id="privacy">
+      <div lang="ko">
+        <h2>개인정보 처리방침</h2>
+        <h3>모으는 것</h3>
+        <ul>
+          <li><b>계정</b>: 로그인한 곳(Google 또는 GitHub)과 그곳의 사용자 번호, 보드마당에서 정한 이름(바꾸기 전 이름 포함),
+            가입하고 이름을 바꾼 때, 정지 기록. 이메일과 프로필 사진은 저장하지 않습니다. 로그인한 곳의 이름은 이름 칸의 처음 값으로만 씁니다.</li>
+          <li><b>게스트</b>: 브라우저마다 만든 게스트 번호</li>
+          <li><b>기보</b>: 두 사람의 계정이나 게스트 번호와 이름, 둔 수, 결과, 시각. 대국 주소를 아는 사람은 누구나 다시볼 수 있습니다.</li>
+          <li><b>의견과 신고</b>: 쓴 글, 쓴 계정, 시각. 신고는 신고한 계정과 사유</li>
+          <li><b>올린 게임</b>: 코드, 등록 정보, 올린 계정, 클리어 기보</li>
+          <li><b>운영 기록</b>: 운영자가 한 조치와 메모</li>
+          <li>IP 주소는 따로 모으지 않습니다. 다만 서버의 오류 기록에 잠시 남을 수 있습니다.</li>
+        </ul>
+        <h3>쿠키와 브라우저 저장소</h3>
+        <p>로그인 상태를 기억하는 쿠키(<code>bm_session</code>, 최대 180일)와 로그인하는 동안에만 쓰는 쿠키가 있습니다.
+          브라우저에는 화면 언어와 이모티콘 소리 설정을 저장합니다. 광고나 방문 분석 도구는 쓰지 않습니다.</p>
+        <h3>쓰는 곳</h3>
+        <p>로그인, 대전과 기보, 의견과 신고 처리, 게임 올리기에만 씁니다. 광고에 쓰거나 다른 곳에 팔거나 넘기지 않습니다.
+          법에 따라 요청받으면 그 범위에서만 내줍니다.</p>
+        <h3>맡기는 곳</h3>
+        <p>서버와 데이터는 Google Cloud(서울 리전)에 있습니다. 로그인은 Google과 GitHub가 처리하며 각 회사의 처리방침을 따릅니다.</p>
+        <h3>보관 기간과 탈퇴</h3>
+        <ul>
+          <li>탈퇴할 때까지 보관합니다. 탈퇴는 내 프로필의 "계정" 칸에서 합니다.</li>
+          <li>탈퇴하면 계정, 의견, 내 대국 목록을 바로 지웁니다. 상대의 기보에는 이름 없는 "탈퇴한 사용자" 자리로 남습니다.</li>
+          <li>올린 게임은 모두 내리고, 이미 둔 대국을 다시볼 수 있게 코드는 남깁니다. 신고와 운영 기록은 악용을 막기 위해 남깁니다.</li>
+          <li>서버 디스크의 백업에는 지운 것이 최대 14일 더 남았다가 사라집니다.</li>
+          <li>게스트 기보는 서비스를 운영하는 동안 보관합니다.</li>
+        </ul>
+        <h3>내 권리</h3>
+        <p>내 프로필에서 이름을 바꾸거나 탈퇴할 수 있습니다. 그 밖에 내 정보를 보거나 고치거나 지워 달라는 요청은 메일로 보내 주세요.
+          만 14세 미만의 계정인 것을 알게 되면 지웁니다.</p>
+        <h3>책임자와 문의</h3>
+        <p>개인정보 보호책임자: 보드마당 운영자, <a href="mailto:shincl1244@gmail.com">shincl1244@gmail.com</a><br>
+          개인정보 침해는 개인정보침해신고센터(<a href="https://privacy.kisa.or.kr">privacy.kisa.or.kr</a>, 국번 없이 118)에도 신고할 수 있습니다.</p>
+      </div>
+      <div lang="en" hidden>
+        <h2>Privacy policy</h2>
+        <h3>What we keep</h3>
+        <ul>
+          <li><b>Account</b>: where you logged in (Google or GitHub) and your user number there, the name you chose on Boardmadang (including past names),
+            when you signed up and changed your name, and suspensions. We don't store your email or profile picture. Your name from the login provider
+            is only used to prefill the name field.</li>
+          <li><b>Guests</b>: a guest number made for each browser</li>
+          <li><b>Match records</b>: both players' account or guest numbers and names, the moves, the result, and the time. Anyone with a match's address can replay it.</li>
+          <li><b>Comments and reports</b>: what you wrote, your account, and the time. For reports, the reporting account and the reason</li>
+          <li><b>Uploaded games</b>: the code, the listing, the uploading account, and the clear replay</li>
+          <li><b>Moderation log</b>: what moderators did and their notes</li>
+          <li>We don't collect IP addresses, though they may briefly appear in the server's error logs.</li>
+        </ul>
+        <h3>Cookies and browser storage</h3>
+        <p>One cookie remembers your login (<code>bm_session</code>, up to 180 days), and others are used only while you log in.
+          Your browser stores your language and emote sound settings. We don't use ads or analytics tools.</p>
+        <h3>How we use it</h3>
+        <p>Only for logging in, matches and replays, handling comments and reports, and game uploads. We don't use it for ads, and we don't sell or share it.
+          If the law requires us to hand something over, we hand over only that.</p>
+        <h3>Who hosts it</h3>
+        <p>The server and data are on Google Cloud (Seoul region). Google and GitHub handle logins under their own privacy policies.</p>
+        <h3>How long we keep it, and deleting your account</h3>
+        <ul>
+          <li>We keep it until you delete your account, in the "Account" section of your profile.</li>
+          <li>Deleting your account removes your account, comments, and match list right away. Your opponents' match records keep a nameless "deleted user" seat.</li>
+          <li>Your uploaded games are taken down, but their code is kept so past matches can be replayed. Reports and the moderation log are kept to prevent abuse.</li>
+          <li>Server disk backups keep deleted data for up to 14 more days.</li>
+          <li>Guest match records are kept while the service runs.</li>
+        </ul>
+        <h3>Your rights</h3>
+        <p>You can change your name or delete your account in your profile. To see, correct, or delete anything else, email us.
+          If we learn that an account belongs to someone under 14, we delete it.</p>
+        <h3>Contact</h3>
+        <p>Privacy officer: Boardmadang operator, <a href="mailto:shincl1244@gmail.com">shincl1244@gmail.com</a></p>
+      </div>
+    </section>
+
+    <section id="source">
+      <div lang="ko">
+        <h2>소스 코드와 라이선스</h2>
+        <p>보드마당의 서버와 화면 코드는 AGPL-3.0, 게임 규격(<code>sdk/</code>)과 예제 게임은 MIT 라이선스로
+          <a href="https://github.com/shin1244/boardmadang">GitHub</a>에 공개되어 있습니다.
+          올린 게임의 라이선스는 만든 사람이 정합니다 (<a href="https://github.com/shin1244/boardmadang/blob/main/LICENSING.md">라이선스 안내</a>).</p>
+      </div>
+      <div lang="en" hidden>
+        <h2>Source code and licenses</h2>
+        <p>Boardmadang's server and site code are under AGPL-3.0, and the game API (<code>sdk/</code>) and example games are under the MIT license,
+          on <a href="https://github.com/shin1244/boardmadang">GitHub</a>.
+          Creators choose the license of the games they upload (<a href="https://github.com/shin1244/boardmadang/blob/main/LICENSING.md">licensing notes</a>, in Korean).</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <a href="/web/legal.html" data-i18n="footer.legal">약관과 개인정보</a>
+    <a href="https://github.com/shin1244/boardmadang" data-i18n="footer.source">소스 코드</a>
+    <a href="mailto:shincl1244@gmail.com" data-i18n="footer.contact">문의</a>
+  </footer>
+
+  <script type="module" src="legal.js"></script>
+</body>
+</html>

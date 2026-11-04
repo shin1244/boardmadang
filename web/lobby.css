@@ -616,6 +616,11 @@ fieldset label:has(input:disabled) { opacity: 0.5; cursor: default; }
 
 .empty { color: var(--muted); }
 
+/* 바닥글: 약관, 소스 코드, 문의 */
+.site-footer { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; padding: 24px 16px 32px; font-size: 13px; }
+.site-footer a { color: var(--muted); text-decoration: none; }
+.site-footer a:hover, .site-footer a:focus-visible { color: var(--accent); text-decoration: underline; }
+
 /* ---- 좁은 화면: 한 장의 긴 페이지로 ---- */
 
 @media (max-width: 760px) {
