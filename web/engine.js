@@ -17,6 +17,9 @@
 //   const r = await g.play([{ player, action }], look);  // { steps: [{ hash, changed, turn }], look }
 //   const l = await g.look(look, at);      // { result, views: { 0: view, 1: view }, legal }
 //   const c = await g.check({ n, langs, thumbnail });  // 등록창의 자동 검사 { problems, warnings, stats, thumbnail }
+//   const shape = await g.ai(lang);        // AI 대국 준비. 관측과 행동의 모양 { rows, cols, channels, channelNames, specials, nActions }
+//   let r = await g.think(sims);           // AI의 탐색. 신경망이 필요하면 { need: { planes } }, 끝나면 { done: 행동 | null }
+//   r = await g.answer(logits, value);     // 신경망 결과를 넘기고 이어 갑니다 (web/ai.js)
 //   g.close();
 // look = { players: [0, 1], lang, legalFor: 0 | 1 | null }
 
@@ -166,6 +169,36 @@ function cleanLook(l, board) {
   };
 }
 
+/** AI 대국의 관측과 행동 모양 (web/runner/host.js의 ai) */
+function cleanShape(v) {
+  const names = (a, max) => Array.isArray(a) && a.length <= max && a.every((x) => isStr(x, 64) && x);
+  if (!v || !isInt(v.rows, 1, 32) || !isInt(v.cols, 1, 32) || !names(v.channelNames, 256) || !names(v.specials, 8)
+    || v.channels !== v.channelNames.length || v.nActions !== v.rows * v.cols + v.specials.length) {
+    throw new Error('bad AI shape');
+  }
+  return {
+    rows: v.rows, cols: v.cols, channels: v.channels, channelNames: [...v.channelNames], specials: [...v.specials], nActions: v.nActions,
+  };
+}
+
+/**
+ * AI 탐색의 답. 관측은 길이만 맞으면 신경망에 넣습니다 (게임 코드가 만든 값이라 이상해도 AI의 수만 이상해집니다).
+ * 고른 행동은 판 안의 클릭이나 이 게임의 특수 행동이어야 합니다.
+ */
+function cleanThink(v, shape) {
+  if (v?.need) {
+    const { planes } = v.need;
+    if (!(planes instanceof Float32Array) || planes.length !== shape.channels * shape.rows * shape.cols) throw new Error('bad AI observation');
+    return { need: { planes } };
+  }
+  if (!v || !('done' in v)) throw new Error('bad AI reply');
+  if (v.done === null) return { done: null };
+  const a = cleanAction(v.done?.action);
+  const ok = a && (a.kind === 'click' ? a.row < shape.rows && a.col < shape.cols : shape.specials.includes(a.kind));
+  if (!ok) throw new Error('bad AI move');
+  return { done: a };
+}
+
 const cleanTurn = (t) => (t === 0 || t === 1 ? t : null);
 const cleanHash = (h) => {
   if (typeof h !== 'string' || !/^[0-9a-f]{8}$/.test(h)) throw new Error('bad state hash');
@@ -247,6 +280,34 @@ class GameRunner {
   async check({ n = 100, langs = ['en'], thumbnail = null } = {}) {
     return cleanCheck(await this.call('check', { n, langs, thumbnail }, CHECK_MS));
   }
+
+  /** AI 대국 준비. lang은 학습할 때 쓴 언어입니다 (관측이 학습 때와 같도록) */
+  async ai(lang) {
+    this.shape = cleanShape(await this.call('ai', { lang }, LOAD_MS));
+    return this.shape;
+  }
+
+  /** 지금 판에서 AI가 sims번 탐색합니다. 신경망 계산이 필요할 때마다 { need }로 돌아옵니다 */
+  async think(sims) {
+    return cleanThink(await this.call('think', { sims }), this.shape);
+  }
+
+  /** need에 대한 신경망 결과 (행동 점수 nActions개, 둘 차례인 쪽 기준 가치) */
+  async answer(logits, value) {
+    return cleanThink(await this.call('answer', { logits, value }), this.shape);
+  }
+}
+
+/**
+ * 학습한 모델(/api/games의 ai)을 지금 게임 코드에 쓸 수 있는지. 관측 채널 이름, 판 크기, 특수 행동이 같아야 합니다.
+ * 코드 버전은 달라도 됩니다 (trainer/train.py의 SHAPE와 같은 칸).
+ * @param {object} model /api/games의 ai
+ * @param {object} shape GameRunner.ai()가 돌려준 모양
+ */
+export function modelFits(model, shape) {
+  const same = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i]);
+  return !!model && !!shape && model.rows === shape.rows && model.cols === shape.cols && model.nActions === shape.nActions
+    && same(model.channelNames, shape.channelNames) && same(model.specials, shape.specials);
 }
 
 /**

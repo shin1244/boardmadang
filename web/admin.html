@@ -66,6 +66,22 @@
         <p id="suspended-empty" class="empty" hidden></p>
       </section>
 
+      <!-- 브라우저 AI의 학습한 모델 (server/internal/ai). trainer/train.py --export-onnx가 만든 두 파일을 올립니다 -->
+      <section class="profile-block">
+        <div class="list-head">
+          <h2><span data-i18n="admin.ai">AI 모델</span> <span id="ai-count" class="count"></span></h2>
+        </div>
+        <p class="rooms-lead" data-i18n="admin.ai.lead"></p>
+        <form id="ai-form" class="admin-ai-form">
+          <label><span data-i18n="admin.ai.files">model.onnx와 model.json</span> <input id="ai-files" type="file" multiple accept=".onnx,.json"></label>
+          <label><span data-i18n="admin.ai.game">게임</span> <select id="ai-game"></select></label>
+          <button id="ai-upload" class="btn" type="submit" data-i18n="admin.ai.upload">올리기</button>
+        </form>
+        <p id="ai-status" class="admin-status" role="alert"></p>
+        <ul id="ai-list" class="room-list"></ul>
+        <p id="ai-empty" class="empty" hidden></p>
+      </section>
+
       <section class="profile-block">
         <div class="list-head"><h2 data-i18n="admin.log">운영 기록</h2></div>
         <p class="rooms-lead" data-i18n="admin.log.lead"></p>

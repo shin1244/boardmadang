@@ -4,7 +4,7 @@
 // "한 수마다 부호를 뒤집는" 대신 노드마다 둘 차례인 플레이어 쪽에서 봅니다.
 //
 // evaluate(pos, actions)는 { policy: actions 순서의 확률, value: 둘 차례인 쪽 기준 −1~1 }을 돌려주는 async 함수입니다.
-// 자기대국은 여러 판의 요청을 모아 신경망에 한 번에 넣고(selfplay.js), 나중에 브라우저 AI도 이 파일을 그대로 씁니다.
+// 자기대국은 여러 판의 요청을 모아 신경망에 한 번에 넣고(selfplay.js), 브라우저 AI(web/runner/host.js)도 이 파일을 그대로 씁니다.
 
 export class Node {
   constructor(pos, prior = 1, action = -1) {
@@ -26,6 +26,21 @@ export class Node {
 }
 
 const absolute = (winner) => (winner === null ? 0 : winner === 0 ? 1 : -1);
+
+/**
+ * 신경망의 행동 점수(logits, 길이 nActions) → actions 순서의 확률. 둘 수 있는 행동만 골라 softmax합니다.
+ * 자기대국(selfplay.js)과 브라우저 AI(web/runner/host.js)가 같이 씁니다.
+ * @param {ArrayLike<number>} logits
+ * @param {number[]} actions
+ * @param {number} [offset] logits 안에서 이 판의 점수가 시작하는 곳 (여러 판을 이어 붙였을 때)
+ */
+export function networkPolicy(logits, actions, offset = 0) {
+  const x = actions.map((a) => logits[offset + a]);
+  const top = Math.max(...x);
+  const e = x.map((v) => Math.exp(v - top));
+  const sum = e.reduce((s, v) => s + v, 0);
+  return e.map((v) => v / sum);
+}
 
 /** 노드를 펼치고 선공 기준 가치를 돌려줍니다. 끝난 판이면 결과, 아니면 신경망의 가치입니다 */
 async function expand(env, node, evaluate) {

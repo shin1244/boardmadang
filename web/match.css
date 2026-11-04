@@ -50,7 +50,7 @@
 
 .match-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 18px; }
 .match-actions .btn { flex: none; padding: 8px 20px; }
-.match-actions [hidden] { display: none; }
+.match-actions[hidden], .match-actions [hidden] { display: none; }
 .specials { display: contents; }
 
 .timer-info { margin: -6px 0 12px; color: var(--muted); font-size: 14px; }
