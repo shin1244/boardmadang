@@ -1,6 +1,20 @@
 // 사이트 화면 글자 (한국어 / 영어). 로비와 등록창이 같이 씁니다.
 // 화면 언어는 유저가 고른 언어(이 브라우저에 저장) → 서버가 접속 나라로 고른 언어(/api/locale) 순서로 정합니다.
 
+/**
+ * 언어 목록의 순서: 총 화자 수(모국어 + 제2 언어)가 많은 언어부터입니다 (Ethnologue 2025, 어림수).
+ * 상단의 화면 언어 메뉴와 게임 창의 룰북 언어 고르기가 이 순서를 씁니다. 여기 없는 언어는 맨 뒤에 붙습니다.
+ * 화면 언어를 새로 넣으면(아래 STRINGS에 언어 하나 더) 메뉴의 자리는 여기서 정해집니다.
+ * 여기 없는 언어를 넣을 때는 화자 수에 맞는 자리에 끼워 넣어 주세요.
+ */
+export const LANG_ORDER = ['en', 'zh', 'hi', 'es', 'ar', 'fr', 'bn', 'pt', 'ru', 'id', 'ur', 'de', 'ja', 'vi', 'tr', 'ko', 'it', 'th', 'pl', 'uk', 'nl'];
+
+/** 언어 코드들을 LANG_ORDER 순서로 늘어놓습니다. 모르는 언어는 뒤에, 받은 순서대로 둡니다. */
+export function byLangOrder(codes) {
+  const rank = (l) => (LANG_ORDER.includes(l) ? LANG_ORDER.indexOf(l) : LANG_ORDER.length);
+  return [...codes].sort((a, b) => rank(a) - rank(b));
+}
+
 const STRINGS = {
   ko: {
     'site.name': '보드마당',
@@ -50,6 +64,8 @@ const STRINGS = {
     'signup.agree': '시작하기를 누르면 {link}에 동의하는 것입니다. 계정은 만 14세 이상만 만들 수 있습니다.',
     'signup.agree.link': '이용약관과 개인정보 처리방침',
     'lang.label': '화면 언어',
+    'lang.name': '한국어', // 언어 메뉴에 보이는 이 언어의 이름. 그 언어로 씁니다
+    'lang.button': '화면 언어: {lang}',
     'guest.name': '게스트 {tag}',
     'gone.name': '탈퇴한 사용자',
     'guest.hint': '게스트는 대전과 관전만 할 수 있습니다. 의견, 신고, 방 만들기, 게임 올리기는 로그인이 필요합니다.',
@@ -116,6 +132,7 @@ const STRINGS = {
 
     'rulebook.fallback': '{ui} 룰북이 없어 {lang} 룰북을 보여줍니다.',
     'rulebook.ingame': '게임 안 글자는 {lang}로 나옵니다.',
+    'rulebook.lang': '룰북 언어',
     'dialog.close': '닫기',
     'detail.open': '{name} 자세히 보기',
     'detail.about': '소개',
@@ -761,6 +778,8 @@ const STRINGS = {
     'signup.agree': 'By pressing Start, you agree to the {link}. You must be 14 or older to create an account.',
     'signup.agree.link': 'terms and privacy policy',
     'lang.label': 'Language',
+    'lang.name': 'English',
+    'lang.button': 'Language: {lang}',
     'guest.name': 'Guest {tag}',
     'gone.name': 'Deleted user',
     'guest.hint': 'Guests can play and watch. Log in to comment, report, create rooms, or upload games.',
@@ -827,6 +846,7 @@ const STRINGS = {
 
     'rulebook.fallback': 'There is no {ui} rulebook, so this is the {lang} one.',
     'rulebook.ingame': 'In-game text appears in {lang}.',
+    'rulebook.lang': 'Rulebook language',
     'dialog.close': 'Close',
     'detail.open': 'Open {name}',
     'detail.about': 'About',
@@ -1477,16 +1497,126 @@ export function applyStatic(titleKey) {
       el.setAttribute(attr, t(key));
     }
   }
-  for (const b of document.querySelectorAll('.langs button')) b.setAttribute('aria-pressed', String(b.dataset.lang === lang));
+  renderLangMenu();
   document.title = titleKey ? `${t(titleKey)} · ${t('site.name')}` : t('site.name');
 }
 
-/** 상단 KR / EN 버튼. 누르면 저장하고 onChange로 화면을 다시 그리게 합니다. */
+// ---- 상단의 화면 언어 메뉴 ----
+// 버튼 하나(지금 언어)를 누르면 언어 목록이 펼쳐집니다. 모양과 닫히는 방식은 로그인 메뉴(me.js)를 따릅니다.
+// 열기: 누르기, Enter, Space, ↓(지금 언어로) ↑(마지막 언어로). 안에서: ↑ ↓ Home End로 옮기고 Enter로 고릅니다.
+// 닫기: Esc(버튼으로 돌아감), Tab(다음 칸으로), 바깥 누르기.
+// 메뉴는 스크립트가 .langs 안에 새로 만듭니다. HTML의 버튼은 스크립트가 돌기 전에 잠깐 보이는 자리입니다.
+
+/** 화면 언어 목록: 글자가 있는 언어를 LANG_ORDER 순서로 */
+const SITE_LANGS = byLangOrder(Object.keys(STRINGS));
+/** 각 언어의 이름은 그 언어로 (한국어, English) */
+const selfName = (l) => STRINGS[l]['lang.name'] ?? l;
+
+let onLangChange = () => {};
+let langMenu = null; // { box, button, menu, items }
+
+function buildLangMenu() {
+  if (langMenu?.box.isConnected) return langMenu;
+  const box = document.querySelector('.langs');
+  if (!box) return null;
+  // 예전 KR / EN 버튼 묶음이면 그 표시를 지웁니다
+  for (const attr of ['role', 'aria-label', 'data-i18n-attr']) box.removeAttribute(attr);
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'lang-button';
+  button.setAttribute('aria-haspopup', 'menu');
+  button.setAttribute('aria-expanded', 'false');
+  button.setAttribute('aria-controls', 'lang-menu');
+
+  const menu = document.createElement('div');
+  menu.className = 'lang-menu';
+  menu.id = 'lang-menu';
+  menu.setAttribute('role', 'menu');
+  menu.hidden = true;
+  const items = SITE_LANGS.map((l) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.setAttribute('role', 'menuitemradio');
+    item.tabIndex = -1; // 메뉴 안은 방향키로 옮깁니다. Tab은 메뉴 밖으로
+    item.dataset.lang = l;
+    item.lang = l;
+    item.textContent = selfName(l);
+    return item;
+  });
+  menu.append(...items);
+  box.replaceChildren(button, menu);
+  langMenu = { box, button, menu, items };
+
+  button.addEventListener('click', () => (menu.hidden ? openLangMenu(current()) : closeLangMenu()));
+  button.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    openLangMenu(e.key === 'ArrowUp' ? items.length - 1 : current());
+  });
+  menu.addEventListener('keydown', (e) => {
+    const at = items.indexOf(document.activeElement);
+    const go = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[e.key];
+    if (go !== undefined) {
+      e.preventDefault();
+      items[(go + items.length) % items.length].focus();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeLangMenu();
+      button.focus();
+    } else if (e.key === 'Tab') {
+      // 버튼으로 돌려 놓으면 Tab이 버튼 다음(또는 앞) 칸으로 갑니다
+      closeLangMenu();
+      button.focus();
+    }
+  });
+  menu.addEventListener('click', (e) => {
+    const item = e.target.closest('[role="menuitemradio"]');
+    if (!item) return;
+    closeLangMenu();
+    button.focus();
+    if (item.dataset.lang === lang) return;
+    setLang(item.dataset.lang, { save: true });
+    onLangChange();
+  });
+  document.addEventListener('click', (e) => {
+    if (!box.contains(e.target)) closeLangMenu();
+  });
+  document.addEventListener('focusin', (e) => {
+    if (!box.contains(e.target)) closeLangMenu();
+  });
+  return langMenu;
+}
+
+/** 지금 언어가 목록에서 몇 번째인지 */
+const current = () => Math.max(0, SITE_LANGS.indexOf(lang));
+
+function openLangMenu(focusAt) {
+  const { button, menu, items } = langMenu;
+  menu.hidden = false;
+  button.setAttribute('aria-expanded', 'true');
+  items[focusAt]?.focus();
+}
+
+function closeLangMenu() {
+  if (!langMenu || langMenu.menu.hidden) return;
+  langMenu.menu.hidden = true;
+  langMenu.button.setAttribute('aria-expanded', 'false');
+}
+
+/** 버튼에 지금 언어를, 목록에 고른 표시를 합니다. applyStatic이 부릅니다. */
+function renderLangMenu() {
+  const m = buildLangMenu();
+  if (!m) return;
+  m.button.textContent = lang.toUpperCase();
+  m.button.setAttribute('aria-label', t('lang.button', { lang: selfName(lang) }));
+  m.button.title = t('lang.label');
+  m.menu.setAttribute('aria-label', t('lang.label'));
+  for (const item of m.items) item.setAttribute('aria-checked', String(item.dataset.lang === lang));
+}
+
+/** 상단 언어 메뉴. 언어를 고르면 저장하고 onChange로 화면을 다시 그리게 합니다. */
 export function setupLangButtons(onChange) {
-  for (const b of document.querySelectorAll('.langs button')) {
-    b.addEventListener('click', () => {
-      setLang(b.dataset.lang, { save: true });
-      onChange();
-    });
-  }
+  onLangChange = onChange;
+  renderLangMenu();
 }
