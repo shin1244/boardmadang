@@ -13,6 +13,8 @@ import (
 
 	"github.com/shin1244/boardmadang/server/internal/account"
 	"github.com/shin1244/boardmadang/server/internal/identity"
+	"github.com/shin1244/boardmadang/server/internal/site"
+	"github.com/shin1244/boardmadang/server/internal/upload"
 )
 
 var at = time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
@@ -42,6 +44,8 @@ type fixture struct {
 	store        *Store
 	mux          *http.ServeMux
 	ids          *identity.Issuer
+	games        fakeGames
+	accounts     *account.Store
 	boss, member identity.User
 }
 
@@ -58,17 +62,59 @@ func setup(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f.accounts = accounts
 	f.boss, _, _ = accounts.Create("google", "1", "boss")
 	f.member, _, _ = accounts.Create("google", "2", "someone")
 	f.ids = identity.NewIssuer([]byte(strings.Repeat("k", 32)))
 	f.ids.Members = accounts
 	f.ids.Admins = map[string]bool{f.boss.ID: true}
-	h := Handler{Store: f.store, IDs: f.ids, Known: func(id string) bool { return id == "tictactoe" || id == "dots" }}
+	f.games = fakeGames{}
+	h := Handler{Store: f.store, IDs: f.ids, Games: f.games, Known: func(id string) bool {
+		_, ok := f.games[id]
+		return ok || id == "tictactoe"
+	}}
 	f.mux = http.NewServeMux()
 	f.mux.HandleFunc("GET /ai/{game}/{file}", h.ServeFile)
+	f.mux.HandleFunc("GET /api/ai/mine", h.ServeMine)
+	f.mux.HandleFunc("POST /api/ai/{game}/request", h.ServeAsk)
+	f.mux.HandleFunc("DELETE /api/ai/{game}/request", h.ServeCancel)
+	f.mux.HandleFunc("GET /api/ai/{game}/training", h.ServeTraining)
+	f.mux.HandleFunc("GET /api/admin/ai/requests", h.ServeRequests)
+	f.mux.HandleFunc("POST /api/admin/ai/{game}/code", h.ServeCode)
+	f.mux.HandleFunc("POST /api/admin/ai/{game}/decline", h.ServeDecline)
 	f.mux.HandleFunc("PUT /api/admin/ai/{game}", h.ServePut)
 	f.mux.HandleFunc("DELETE /api/admin/ai/{game}", h.ServeDelete)
+	f.mux.HandleFunc("PUT /api/admin/ai/{game}/training", h.ServePutTraining)
 	return f
+}
+
+// fakeGames는 올린 게임 쪽(upload.Store)을 흉내 냅니다. 게임 id → 주인과 지금 버전
+type fakeGames map[string]upload.AdminGame
+
+func (g fakeGames) add(id, owner, version string) {
+	g[id] = upload.AdminGame{MyGame: upload.MyGame{Game: site.Game{ID: id, Version: version}}, Owner: owner}
+}
+
+func (g fakeGames) Admin(id string) (upload.AdminGame, bool) {
+	x, ok := g[id]
+	return x, ok
+}
+
+func (g fakeGames) Mine(owner string) upload.Mine {
+	out := upload.Mine{Games: []upload.MyGame{}}
+	for _, x := range g {
+		if x.Owner == owner {
+			out.Games = append(out.Games, x.MyGame)
+		}
+	}
+	return out
+}
+
+func (g fakeGames) CodeZip(id, version string) ([]byte, error) {
+	if _, ok := g[id]; !ok || version == "ffffffffffffffff" {
+		return nil, upload.ErrNotFound
+	}
+	return []byte("zip of " + id + " " + version), nil
 }
 
 func (f *fixture) do(method, path, ctype, body string, u *identity.User) *httptest.ResponseRecorder {

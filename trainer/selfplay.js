@@ -17,6 +17,9 @@
 //            AI 대 상대. 절반은 AI가 선공. rollout은 학습 없는 롤아웃 탐색(oppSims번)입니다
 //   accuracy { sims, parallel }   완전 탐색한 판마다 AI가 가장 좋은 수를 고르는 비율
 //   solve    { limit }   완전 탐색. 판 수가 limit을 넘으면 { tooBig: true }
+//   showcase { games, sims, maxMoves, seed, tempMoves }
+//            학습 스냅샷에 남길 AI끼리 둔 판. 기보처럼 시드와 행동({ player, action })으로 돌려줍니다 (web/replay.html이 다시 둠).
+//            첫 판은 늘 가장 좋은 수만 두고, 다음 판부터는 처음 tempMoves수를 방문 수에 비례해 뽑아 다른 판을 봅니다
 //   quit
 
 import { codeVersion } from '../sdk/lib/games.js';
@@ -226,6 +229,37 @@ async function match({ opponent, oppSims = 200, games, parallel = 64, sims = 50,
 }
 
 /**
+ * AI끼리 둔 판 (학습 스냅샷). 탐색은 평가와 같은 sims, 잡음 없이 합니다.
+ * reason은 result(게임이 끝냄이나 아무도 둘 수 없음), maxActions(수 상한), cut(학습용 무승부 규칙: 같은 판 반복, maxMoves)입니다.
+ */
+async function showcase({ games = 2, sims = 50, maxMoves = 512, seed = 1, tempMoves = 2 }, evaluate) {
+  const out = [];
+  await lanes(games, games, async (i) => {
+    const random = makeRng(seed * 1000003 + i).next;
+    let root = new Node(env.start(seed));
+    const moves = [];
+    const cut = drawRule(maxMoves);
+    let reason = 'result';
+    for (;;) {
+      await search(env, root, evaluate, { sims, random });
+      if (root.outcome) break;
+      if (cut(root.pos)) {
+        reason = 'cut';
+        break;
+      }
+      const child = pick(env, root, i > 0 && root.pos.moves < tempMoves ? 1 : 0, random);
+      if (!child) break;
+      moves.push({ player: root.toPlay, action: env.actionOf(child.action) });
+      root = child;
+    }
+    // 게임의 result()가 끝내지 않았는데 수 상한에 이르렀으면 maxActions 무승부입니다 (env.outcome과 같은 순서)
+    if (reason === 'result' && root.pos.moves >= env.maxActions && !env.game.result(root.pos.state, env.lang)) reason = 'maxActions';
+    out[i] = { seed, moves, winner: root.outcome?.winner ?? null, reason };
+  });
+  return { games: out };
+}
+
+/**
  * 가장 좋은 수가 따로 있는 판(아무 수나 둬도 같은 판은 뺌)에서 AI가 그 수를 고르는 비율.
  * 틀린 수는 이길 판을 놓친 것(missedWins)과 지지 않을 판에서 지는 수를 둔 것(blunders)으로 나눕니다.
  */
@@ -281,6 +315,7 @@ for (;;) {
     if (cmd.cmd === 'selfplay') out = await selfplay(cmd, evaluate);
     else if (cmd.cmd === 'match') out = await match(cmd, evaluate);
     else if (cmd.cmd === 'accuracy') out = await accuracy(cmd, evaluate);
+    else if (cmd.cmd === 'showcase') out = await showcase(cmd, evaluate);
     else if (cmd.cmd === 'solve') {
       const r = getSolved(cmd.limit);
       out = r ? { value: r.value, positions: r.table.size } : { tooBig: true };

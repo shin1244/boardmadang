@@ -31,3 +31,7 @@
   font-size: 13px;
 }
 .version-note[hidden] { display: none; }
+
+/* 학습 기록의 판에서 학습 기록으로 돌아가는 링크 */
+.replay-back { display: inline-block; margin-bottom: 6px; color: var(--muted); font-size: 14px; }
+.replay-back[hidden] { display: none; }

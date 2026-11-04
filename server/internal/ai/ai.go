@@ -1,11 +1,26 @@
-// Package ai는 브라우저에서 AI와 둘 때 쓰는 학습한 신경망을 보관하고 내보냅니다 (trainer/README.md의 "브라우저에서 AI와 두기").
+// Package ai는 브라우저에서 AI와 둘 때 쓰는 학습한 신경망과 그 학습의 앞뒤를 맡습니다 (trainer/README.md의 "브라우저에서 AI와 두기").
 //
-// 운영자가 자기 컴퓨터에서 학습하고(python trainer/train.py <게임> --minutes 60) 내보낸 뒤(--export-onnx),
-// 운영자 화면에서 model.onnx와 model.json을 올립니다. 레포 게임과 올린 게임이 같은 곳을 씁니다.
+//  1. 제작자가 내 프로필에서 올린 게임의 "AI 만들기"를 누르면 요청이 대기열에 들어갑니다 (queue.go).
 //
-//	GET    /ai/{game}/{file}      신경망 (<해시>.onnx, 누구나). 내용의 해시가 이름이라 오래 캐시합니다
-//	PUT    /api/admin/ai/{game}   운영자만. JSON {"meta": model.json, "model": model.onnx의 base64} → 200 {"ai": site.AIModel}
-//	DELETE /api/admin/ai/{game}   운영자만 → 200 {"ok":true}
+//  2. 운영자가 운영자 화면에서 그 버전의 코드를 zip으로 받아(그때 요청이 학습 중이 됨) 자기 컴퓨터에서 학습하고
+//     (python trainer/train.py <게임> --minutes 60) 내보냅니다(--export-onnx).
+//
+//  3. 운영자가 model.onnx, model.json과 학습 기록 snapshots.json(training.go)을 올리면 요청이 끝납니다.
+//     레포 게임은 요청 없이 운영자가 바로 학습해 올립니다. 레포 게임과 올린 게임이 같은 곳을 씁니다.
+//
+// 주소는 이렇습니다.
+//
+//	GET    /ai/{game}/{file}                신경망 (<해시>.onnx, 누구나). 내용의 해시가 이름이라 오래 캐시합니다
+//	GET    /api/ai/mine                     내 게임마다 요청, 학습 기록, 모델 (계정만)
+//	POST   /api/ai/{game}/request           AI 만들기 요청 (내가 올린 게임만, 본문 {})
+//	DELETE /api/ai/{game}/request           기다리는 중인 요청 거두기
+//	GET    /api/ai/{game}/training          학습 기록 (게임 주인과 운영자만)
+//	GET    /api/admin/ai/requests           요청 목록 (운영자만, 아래 모두)
+//	POST   /api/admin/ai/{game}/code        올린 게임 코드 zip (본문 {}). 요청이 학습 중이 됩니다
+//	POST   /api/admin/ai/{game}/decline     요청 반려 {"note":"…"}
+//	PUT    /api/admin/ai/{game}             JSON {"meta": model.json, "model": model.onnx의 base64} → 200 {"ai": site.AIModel}
+//	DELETE /api/admin/ai/{game}             모델 지우기 → 200 {"ok":true}
+//	PUT    /api/admin/ai/{game}/training    snapshots.json 그대로 → 200 {"training": TrainingInfo}
 //
 // /api/games의 게임마다 ai(site.AIModel)로 붙여서, 화면은 그 모양(관측 채널 이름, 판 크기, 특수 행동)이 지금 게임 코드와
 // 같을 때만 "AI와 두기"를 보여 줍니다. 코드 버전이 달라도 모양이 같으면 씁니다 (규칙을 조금 고친 정도면 대개 쓸 만함).
@@ -15,6 +30,8 @@
 //
 //	ai/<게임 id>/model.json     올린 model.json을 검사해 정리한 것 + 신경망 파일 이름, 크기, 올린 때, 올린 운영자
 //	ai/<게임 id>/<해시>.onnx    신경망. 새로 올리면 model.json을 바꾼 뒤 옛 파일을 지웁니다
+//	ai/<게임 id>/request.json   마지막 AI 만들기 요청 (queue.go)
+//	ai/<게임 id>/training.json  학습 기록 (training.go)
 package ai
 
 import (
@@ -90,13 +107,21 @@ type Store struct {
 	dir string
 	now func() time.Time
 
-	mu     sync.Mutex
-	models map[string]Meta // 게임 id → model.json
+	mu        sync.Mutex
+	models    map[string]Meta         // 게임 id → model.json
+	requests  map[string]Request      // 게임 id → 마지막 AI 만들기 요청
+	trainings map[string]TrainingInfo // 게임 id → 학습 기록 요약
 }
 
-// Open은 dir/ai를 읽습니다. 깨진 model.json은 건너뜁니다 (로그만 남김).
+// Open은 dir/ai를 읽습니다. 깨진 파일은 건너뜁니다 (로그만 남김).
 func Open(dir string) (*Store, error) {
-	s := &Store{dir: filepath.Join(dir, "ai"), now: time.Now, models: map[string]Meta{}}
+	s := &Store{
+		dir:       filepath.Join(dir, "ai"),
+		now:       time.Now,
+		models:    map[string]Meta{},
+		requests:  map[string]Request{},
+		trainings: map[string]TrainingInfo{},
+	}
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return nil, err
 	}
@@ -105,30 +130,53 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 	for _, e := range entries {
-		if !e.IsDir() || !gamePattern.MatchString(e.Name()) {
-			continue
+		if e.IsDir() && gamePattern.MatchString(e.Name()) {
+			s.load(e.Name())
 		}
-		data, err := os.ReadFile(filepath.Join(s.dir, e.Name(), "model.json"))
+	}
+	return s, nil
+}
+
+// load는 게임 폴더 하나의 model.json, request.json, training.json을 읽습니다.
+func (s *Store) load(game string) {
+	read := func(name string, v any) bool {
+		data, err := os.ReadFile(filepath.Join(s.dir, game, name))
 		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		var m Meta
-		if err == nil {
-			err = json.Unmarshal(data, &m)
+			return false
 		}
 		if err == nil {
-			err = m.check(e.Name())
+			err = json.Unmarshal(data, v)
 		}
+		if err != nil {
+			log.Printf("AI %s를 건너뜁니다 (%s): %v", name, game, err)
+			return false
+		}
+		return true
+	}
+	var m Meta
+	if read("model.json", &m) {
+		err := m.check(game)
 		if err == nil && !filePattern.MatchString(m.File) {
 			err = errors.New("bad file name")
 		}
 		if err != nil {
-			log.Printf("AI 모델을 건너뜁니다 (%s): %v", e.Name(), err)
-			continue
+			log.Printf("AI 모델을 건너뜁니다 (%s): %v", game, err)
+		} else {
+			s.models[game] = m
 		}
-		s.models[e.Name()] = m
 	}
-	return s, nil
+	var r Request
+	if read("request.json", &r) {
+		if r.valid(game) {
+			s.requests[game] = r
+		} else {
+			log.Printf("AI 요청을 건너뜁니다 (%s)", game)
+		}
+	}
+	var t Training
+	if read("training.json", &t) {
+		s.trainings[game] = t.info()
+	}
 }
 
 // check는 올린 model.json의 칸을 검사합니다. game은 올리는 주소의 게임 id입니다.
@@ -231,19 +279,25 @@ func (s *Store) Put(by, game string, meta Meta, model []byte) (Meta, error) {
 		os.Remove(filepath.Join(dir, old.File))
 	}
 	s.models[game] = meta
+	// 이 게임의 AI 만들기 요청이 있으면 끝냅니다
+	if err := s.finish(game); err != nil {
+		log.Printf("AI 요청을 끝내지 못했습니다 (%s): %v", game, err)
+	}
 	return meta, nil
 }
 
-// Delete는 게임의 모델을 지웁니다.
+// Delete는 게임의 모델을 지웁니다. 요청과 학습 기록은 그대로 둡니다.
 func (s *Store) Delete(game string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.models[game]; !ok {
+	m, ok := s.models[game]
+	if !ok {
 		return ErrNoModel
 	}
-	if err := os.RemoveAll(filepath.Join(s.dir, game)); err != nil {
+	if err := os.Remove(filepath.Join(s.dir, game, "model.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	os.Remove(filepath.Join(s.dir, game, m.File))
 	delete(s.models, game)
 	return nil
 }

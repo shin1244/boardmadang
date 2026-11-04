@@ -16,7 +16,8 @@
 // 화면만 계정으로 꾸미지 않습니다. 계정으로 시험하려면 Go 서버를 DEV_LOGIN=1로 켜고 상단의 "개발용 로그인"을 누릅니다.
 // Go 서버가 꺼져 있으면 가짜 신원(DEV_ME)만 돌려줍니다 (로비와 등록창은 됩니다).
 // AI 모델(/api/games의 ai, /ai/<게임>/<해시>.onnx)은 Go 서버와 같은 DATA_DIR(기본 server/data)의 ai/<게임>/에서 읽습니다.
-// 모델을 올리고 지우는 것(/api/admin/ai/<게임>)은 Go 서버로 넘깁니다 (server/internal/ai).
+// 모델을 올리고 지우는 것(/api/admin/ai/<게임>), AI 요청과 학습 기록(/api/ai/..., /api/admin/ai/requests, /api/admin/ai/<게임>/...)은
+// Go 서버로 넘깁니다 (server/internal/ai).
 // 소셜 로그인(/auth/..., /api/auth/providers), 내 계정(/api/account, 이름 바꾸기와 탈퇴), 운영자 화면(/api/admin)도 Go 서버로 넘깁니다. Host를 그대로 넘기므로
 // 돌아올 주소는 http://localhost:5173/auth/<google|github>/callback 입니다 (docs/identity.md).
 //   DEV_AS=guest node sdk/playground/serve.js    → Go 서버가 꺼져 있을 때 게스트로 보이게 (등록창이 막히는지 확인)
@@ -155,7 +156,7 @@ function proxyGo(req, res, url) {
 function proxyRaw(req, res, url) {
   const fail = () => {
     if (url.pathname === '/api/auth/providers') return json(res, 200, { providers: [] });
-    if (url.pathname === '/api/account' || url.pathname.startsWith('/api/admin')) return json(res, 404, { error: 'no game server' });
+    if (url.pathname === '/api/account' || url.pathname.startsWith('/api/admin') || url.pathname.startsWith('/api/ai/')) return json(res, 404, { error: 'no game server' });
     json(res, 503, { error: 'no game server' });
   };
   const headers = { host: req.headers.host ?? '', cookie: req.headers.cookie ?? '' };
@@ -163,7 +164,7 @@ function proxyRaw(req, res, url) {
   for (const h of ['sec-fetch-site', 'content-type', 'content-length']) if (req.headers[h]) headers[h] = req.headers[h];
   const up = http.request(new URL(url.pathname + url.search, GO), { method: req.method, headers, timeout: 15000 }, (r) => {
     const out = {};
-    for (const h of ['content-type', 'location', 'set-cookie', 'cache-control']) if (r.headers[h]) out[h] = r.headers[h];
+    for (const h of ['content-type', 'content-disposition', 'location', 'set-cookie', 'cache-control']) if (r.headers[h]) out[h] = r.headers[h];
     res.writeHead(r.statusCode, out);
     r.pipe(res);
   });
@@ -273,7 +274,8 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/locale') return json(res, 200, detectLocale(req));
   if (url.pathname === '/api/me') return proxyMe(req, res);
   if (url.pathname === '/api/auth/providers' || url.pathname.startsWith('/auth/') || url.pathname === '/api/account') return proxyRaw(req, res, url);
-  if (url.pathname === '/api/admin' || url.pathname === '/api/admin/actions' || /^\/api\/admin\/ai\/[a-z0-9-]+$/.test(url.pathname)) return proxyRaw(req, res, url);
+  if (url.pathname === '/api/admin' || url.pathname === '/api/admin/actions' || /^\/api\/admin\/ai\/(requests|[a-z0-9-]+(\/(code|decline|training))?)$/.test(url.pathname)) return proxyRaw(req, res, url);
+  if (/^\/api\/ai\/(mine|[a-z0-9-]+\/(request|training))$/.test(url.pathname)) return proxyRaw(req, res, url);
   const model = url.pathname.match(/^\/ai\/([a-z0-9-]+)\/[0-9a-f]{16}\.onnx$/);
   if (model) {
     if (aiModel(model[1])?.model !== url.pathname) {
