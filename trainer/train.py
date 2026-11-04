@@ -9,6 +9,11 @@
 결과는 trainer/runs/<게임 id>/에 남습니다.
     model.pt    마지막 신경망과 설정
     log.jsonl   반복마다 자기대국 통계, 손실(학습 중, 새 판), 평가
+
+브라우저에서 AI와 두려면 학습한 신경망을 ONNX로 내보내 사이트에 올립니다 (trainer/README.md의 "브라우저에서 AI와 두기").
+    python trainer/train.py games/tictactoe --export-onnx
+    model.onnx  신경망 (입력 x [n, 채널, rows, cols] → logits [n, 행동 수], value [n])
+    model.json  관측 채널 이름, 행동 수, 학습한 코드 버전, 브라우저 AI의 탐색 횟수
 """
 
 import argparse
@@ -246,6 +251,57 @@ def fresh_loss(net, data, device, batch=4096):
     return {"policy": lp / len(zs), "value": lv / len(zs), "zero": float((zs**2).mean())}
 
 
+# 브라우저 AI가 같은 모델을 쓸 수 있는 게임 코드인지 볼 때 맞춰 보는 칸. 코드 버전이 달라도 이것이 같으면 씁니다.
+# 관측 채널(기물, 표시, observe() 채널 수)과 행동(판 크기, 특수 행동)이 같으면 신경망의 입력과 출력 모양이 같습니다.
+# web/ai.js의 SHAPE와 같아야 합니다
+SHAPE = ("rows", "cols", "channelNames", "specials", "nActions")
+MODEL_FORMAT = 1
+
+
+def same_shape(a, b):
+    return all(a.get(k) == b.get(k) for k in SHAPE)
+
+
+def export_onnx(saved, info, out, play_sims):
+    """model.pt → 브라우저 AI의 model.onnx, model.json.
+
+    saved는 torch.load한 model.pt, info는 지금 게임 코드의 정보(selfplay.js의 H)입니다.
+    학습한 뒤에 코드가 바뀌었어도 SHAPE가 같으면 내보냅니다. model.json의 version은 학습한 코드의 버전입니다
+    (이 기능 전에 학습한 model.pt에는 없어서 null)."""
+    trained = saved.get("info") or info
+    if not same_shape(trained, info):
+        diff = [k for k in SHAPE if trained.get(k) != info.get(k)]
+        raise SystemExit(f"the game code changed since training ({', '.join(diff)} differ), so this model cannot be used")
+    net = Net(**saved["config"]).eval()
+    net.load_state_dict(saved["state"])
+    x = torch.zeros(2, info["channels"], info["rows"], info["cols"])
+    out.mkdir(parents=True, exist_ok=True)
+    torch.onnx.export(
+        net,
+        (x,),
+        str(out / "model.onnx"),
+        dynamo=True,
+        verbose=False,
+        input_names=["x"],
+        output_names=["logits", "value"],
+        dynamic_shapes={"x": {0: torch.export.Dim("n")}},
+        external_data=False,
+    )
+    meta = {
+        "format": MODEL_FORMAT,
+        "game": trained["id"],
+        "version": trained.get("version"),
+        "lang": trained["lang"],
+        **{k: trained[k] for k in SHAPE},
+        "channels": trained["channels"],
+        "sims": play_sims,
+        "iteration": saved.get("iteration"),
+        "net": {"blocks": saved["config"]["blocks"], "filters": saved["config"]["filters"]},
+    }
+    (out / "model.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return meta
+
+
 def wdl(r):
     return "/".join(str(x) for x in r)
 
@@ -350,9 +406,31 @@ def main():
     ap.add_argument("--out", default=None, help="output folder (default trainer/runs/<game id>)")
     ap.add_argument("--resume", action="store_true", help="continue from model.pt in the output folder")
     ap.add_argument("--eval-only", action="store_true", help="only evaluate model.pt in the output folder")
+    ap.add_argument(
+        "--export-onnx",
+        action="store_true",
+        help="only write model.onnx and model.json for the browser AI from model.pt in the output folder",
+    )
+    ap.add_argument(
+        "--play-sims", type=int, default=200, help="with --export-onnx: MCTS simulations per move of the browser AI"
+    )
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
+
+    if args.export_onnx:
+        # 지금 게임 코드의 모양과 버전만 알면 되므로 워커는 하나만 띄웁니다
+        worker = Worker(args.game)
+        worker.close()
+        info = worker.info
+        out = Path(args.out) if args.out else HERE / "runs" / info["id"]
+        if not (out / "model.pt").exists():
+            raise SystemExit(f"no model to export: {out / 'model.pt'}")
+        saved = torch.load(out / "model.pt", map_location="cpu")
+        meta = export_onnx(saved, info, out, args.play_sims)
+        same = "same code version" if meta["version"] == info["version"] else "trained on another code version"
+        print(f"exported iteration {meta['iteration']} ({same}): {out / 'model.onnx'}, {out / 'model.json'}")
+        return
 
     t0 = time.monotonic()
     torch.manual_seed(args.seed)

@@ -1,4 +1,4 @@
-// Package site는 화면(web/), 게임 코드(games/), 화면이 import하는 SDK 모듈(sdk/playground/의 세 파일)을 내보내고,
+// Package site는 화면(web/), 게임 코드(games/), 화면과 실행기가 import하는 모듈(sdk/, trainer/의 몇 파일)을 내보내고,
 // 게임 목록(/api/games)과 화면 언어(/api/locale)를 알려 줍니다.
 //
 // 개발 서버(sdk/playground/serve.js)가 하던 일을 운영에서는 Go 서버가 맡습니다. 두 곳의 응답 모양은 같아야 합니다.
@@ -6,9 +6,10 @@
 //
 // SITE_DIR(레포 루트) 아래에서 이것만 내보냅니다.
 //
-//	web/              화면
-//	sdk/              화면과 실행기가 import하는 모듈만 (sdkModules). 플레이그라운드 화면과 개발 서버는
+//	web/              화면. node_modules는 vendorFiles만 (브라우저 AI의 onnxruntime-web)
+//	sdk/              화면과 실행기가 import하는 모듈만 (modules). 플레이그라운드 화면과 개발 서버는
 //	                  게임 제작자가 자기 컴퓨터에서 쓰는 도구라 사이트에서는 내보내지 않습니다
+//	trainer/          브라우저 AI가 실행기 안에서 쓰는 게임 어댑터와 탐색만 (modules)
 //	games/            게임 코드. games/private/가 있으면 같이 (운영 이미지에는 넣지 않습니다)
 //
 // 테스트 파일(*.test.js)과 점으로 시작하는 파일, types에 없는 종류는 내보내지 않습니다.
@@ -41,15 +42,28 @@ var types = map[string]string{
 	".css":  "text/css; charset=utf-8",
 	".json": "application/json; charset=utf-8",
 	".svg":  "image/svg+xml",
-	".png":  "image/png", // 링크 미리보기 그림(og.png)과 아이콘
+	".png":  "image/png",        // 링크 미리보기 그림(og.png)과 아이콘
+	".wasm": "application/wasm", // 브라우저 AI의 onnxruntime-web (vendorFiles)
 }
 
 // roots는 내보내는 폴더입니다 (SITE_DIR 기준).
 var roots = []string{"web/", "games/"}
 
-// sdkModules는 sdk/에서 내보내는 파일입니다. 화면(web/)이 import하는 것만 둡니다.
+// modules는 sdk/와 trainer/에서 내보내는 파일입니다. 화면(web/)과 실행기가 import하는 것만 둡니다.
 // check.js는 등록창이 올린 게임을 실행기 안에서 검사할 때 씁니다 (web/runner/host.js의 check).
-var sdkModules = []string{"sdk/check.js", "sdk/playground/board.js", "sdk/playground/listing.js", "sdk/playground/platform.js"}
+// trainer/의 두 파일은 브라우저 AI가 실행기 안에서 학습할 때와 같은 관측과 탐색을 쓰려고 불러옵니다 (web/runner/host.js의 ai).
+var modules = []string{
+	"sdk/check.js", "sdk/playground/board.js", "sdk/playground/listing.js", "sdk/playground/platform.js",
+	"trainer/env.js", "trainer/mcts.js",
+}
+
+// vendorFiles는 web/ 아래 node_modules에서 내보내는 파일입니다 (web/vendor/package.json으로 받는 onnxruntime-web의 WebAssembly판).
+// 브라우저 AI의 신경망을 사이트 쪽 Worker(web/ai-net.js)에서 돌립니다. 그 밖의 node_modules는 내보내지 않습니다.
+var vendorFiles = []string{
+	"web/vendor/node_modules/onnxruntime-web/dist/ort.wasm.min.mjs",
+	"web/vendor/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs",
+	"web/vendor/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm",
+}
 
 var gameIDPattern = regexp.MustCompile(`^[a-z0-9-]+$`)
 
@@ -59,6 +73,23 @@ type Site struct {
 	Uploaded interface{ Games() []Game }
 	// Played는 게임마다 둔 판 수입니다 (internal/record). 있으면 /api/games의 plays에 넣습니다.
 	Played interface{ Plays(game string) int }
+	// Models는 게임마다 AI 모델입니다 (internal/ai). 있으면 /api/games의 ai에 넣습니다.
+	Models interface{ Model(game string) *AIModel }
+}
+
+// AIModel은 브라우저에서 AI와 둘 때 쓰는 학습한 신경망입니다 (internal/ai, trainer/train.py --export-onnx).
+// 화면은 관측과 행동의 모양(Rows, Cols, ChannelNames, Specials)이 지금 게임 코드와 같을 때만 씁니다.
+type AIModel struct {
+	Model        string    `json:"model"`   // 신경망 파일 주소 /ai/<게임>/<해시>.onnx
+	Version      *string   `json:"version"` // 학습한 게임 코드 버전. 지금 버전과 달라도 모양이 같으면 씁니다. 모르면 null
+	Lang         string    `json:"lang"`    // 학습할 때 view()와 result()에 넘긴 언어. 관측을 같게 만들려고 그대로 씁니다
+	Rows         int       `json:"rows"`
+	Cols         int       `json:"cols"`
+	ChannelNames []string  `json:"channelNames"`
+	Specials     []string  `json:"specials"`
+	NActions     int       `json:"nActions"`
+	Sims         int       `json:"sims"` // 한 수마다 탐색 횟수
+	Updated      time.Time `json:"updated"`
 }
 
 // Open은 dir(레포 루트)을 엽니다. dir/web/index.html이 없으면 에러입니다.
@@ -75,7 +106,7 @@ func ServeHome(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/web/", http.StatusFound)
 }
 
-// ServeFile은 web/, games/ 아래의 파일과 sdkModules를 내보냅니다.
+// ServeFile은 web/, games/ 아래의 파일과 modules, vendorFiles를 내보냅니다.
 // 폴더면 그 안의 index.html입니다. 폴더 목록은 보여주지 않습니다.
 //
 // 브라우저가 매번 바뀌었는지 묻게 합니다 (no-cache + Last-Modified).
@@ -153,7 +184,7 @@ func runnerCSP(r *http.Request) string {
 
 // public은 내보내도 되는 경로인지 봅니다. name은 앞의 /를 뗀 URL 경로입니다.
 func public(name string) bool {
-	if slices.Contains(sdkModules, strings.TrimSuffix(name, "/")) {
+	if slices.Contains(modules, strings.TrimSuffix(name, "/")) || slices.Contains(vendorFiles, strings.TrimSuffix(name, "/")) {
 		return true
 	}
 	if !slices.ContainsFunc(roots, func(root string) bool { return strings.HasPrefix(name, root) }) {
@@ -161,7 +192,7 @@ func public(name string) bool {
 	}
 	name = strings.TrimSuffix(name, "/")
 	for _, part := range strings.Split(name, "/") {
-		if part == "" || strings.HasPrefix(part, ".") { // .., 숨김 파일, 빈 칸(//)
+		if part == "" || strings.HasPrefix(part, ".") || part == "node_modules" { // .., 숨김 파일, 빈 칸(//), 받아 둔 패키지
 			return false
 		}
 	}
@@ -193,6 +224,8 @@ type Game struct {
 	Clear bool `json:"clear,omitempty"`
 	// 둔 판 수 (/api/games에만). 로비의 인기순에 씁니다. 0이거나 개발 서버면 없습니다
 	Plays int `json:"plays,omitempty"`
+	// 브라우저에서 AI와 둘 때 쓰는 학습한 신경망 (/api/games에만, internal/ai). 없으면 안 나옵니다
+	AI *AIModel `json:"ai,omitempty"`
 	// 처음 등록한 때 (올린 게임만). 로비의 출시일순에 씁니다. 레포 게임은 없어서 출시일순에서 맨 뒤로 갑니다
 	Released time.Time `json:"released,omitzero"`
 }
@@ -319,9 +352,12 @@ func (s *Site) ServeGames(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if s.Played != nil {
-		for i := range list {
+	for i := range list {
+		if s.Played != nil {
 			list[i].Plays = s.Played.Plays(list[i].ID)
+		}
+		if s.Models != nil {
+			list[i].AI = s.Models.Model(list[i].ID)
 		}
 	}
 	writeJSON(w, http.StatusOK, list)

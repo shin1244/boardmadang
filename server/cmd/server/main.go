@@ -14,6 +14,7 @@ import (
 
 	"github.com/shin1244/boardmadang/server/internal/account"
 	"github.com/shin1244/boardmadang/server/internal/admin"
+	"github.com/shin1244/boardmadang/server/internal/ai"
 	"github.com/shin1244/boardmadang/server/internal/auth"
 	"github.com/shin1244/boardmadang/server/internal/comment"
 	"github.com/shin1244/boardmadang/server/internal/config"
@@ -60,20 +61,31 @@ func main() {
 		log.Fatalf("운영 기록을 읽지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
 	}
 	ops.IDs, ops.Comments, ops.Uploads, ops.Accounts = ids, comments, uploads, accounts
+	var pages *site.Site // 아래에서 엽니다
+	models, err := ai.Open(cfg.DataDir)
+	if err != nil {
+		log.Fatalf("AI 모델 폴더를 열지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
+	}
+	// 모델은 있는 게임에만 올립니다 (레포 게임이나 올린 게임)
+	bots := &ai.Handler{Store: models, IDs: ids, Known: func(id string) bool {
+		_, ok := uploads.Admin(id)
+		return ok || (pages != nil && pages.Has(id))
+	}}
 	h := hub.New(cfg, ids, records)
-	pages, err := site.Open(cfg.SiteDir)
+	pages, err = site.Open(cfg.SiteDir)
 	if err != nil {
 		// 개발 서버(serve.js)를 앞에 두고 API만 쓸 때는 화면이 없어도 됩니다
 		log.Printf("경고: 화면 폴더를 열지 못해 화면과 게임 목록은 내보내지 않습니다 (SITE_DIR=%s): %v", cfg.SiteDir, err)
 	} else {
 		pages.Uploaded = uploads
 		pages.Played = records
+		pages.Models = models
 		uploads.Reserved = pages.Has
 	}
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           routes(h, ids, records, comments, uploads, login, mine, ops, pages),
+		Handler:           routes(h, ids, records, comments, uploads, login, mine, ops, pages, bots),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -136,8 +148,8 @@ func providers(cfg config.Config) []*auth.Provider {
 	return list
 }
 
-// pages가 nil이면 화면과 게임 목록 없이 API만 엽니다. ops가 nil이면 운영자 API를 열지 않습니다.
-func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *comment.Store, uploads *upload.Store, login *auth.Handler, mine account.Handler, ops *admin.Handler, pages *site.Site) http.Handler {
+// pages가 nil이면 화면과 게임 목록 없이 API만 엽니다. ops가 nil이면 운영자 API를, bots가 nil이면 AI 모델을 열지 않습니다.
+func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *comment.Store, uploads *upload.Store, login *auth.Handler, mine account.Handler, ops *admin.Handler, pages *site.Site, bots *ai.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
 	mux.HandleFunc("GET /api/locale", site.ServeLocale)
@@ -146,6 +158,7 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 		mux.HandleFunc("GET /web/", pages.ServeFile)
 		mux.HandleFunc("GET /sdk/playground/", pages.ServeFile)
 		mux.HandleFunc("GET /sdk/check.js", pages.ServeFile)
+		mux.HandleFunc("GET /trainer/", pages.ServeFile) // 브라우저 AI가 실행기 안에서 쓰는 학습 도구 두 파일만
 		mux.HandleFunc("GET /games/", pages.ServeFile)
 		mux.HandleFunc("GET /api/games", pages.ServeGames)
 	}
@@ -181,6 +194,11 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 	if ops != nil {
 		mux.HandleFunc("GET /api/admin", ops.ServeState)
 		mux.HandleFunc("POST /api/admin/actions", ops.ServeAction)
+	}
+	if bots != nil {
+		mux.HandleFunc("GET /ai/{game}/{file}", bots.ServeFile)
+		mux.HandleFunc("PUT /api/admin/ai/{game}", bots.ServePut)
+		mux.HandleFunc("DELETE /api/admin/ai/{game}", bots.ServeDelete)
 	}
 	return mux
 }

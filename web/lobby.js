@@ -3,7 +3,7 @@
 // 썸네일은 게임의 setup()이 만든 시작 화면을 플랫폼 렌더러로 그린 것입니다.
 
 import { BoardView } from '/sdk/playground/board.js';
-import { loadGame } from './engine.js';
+import { loadGame, modelFits } from './engine.js';
 import { LANGS, LANG_NAMES, NO_TIMER, fullLangs, gameLang, localize, timerOf } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { displayName, isMember, loadMe, renderMe, suspendedText } from './me.js';
@@ -104,6 +104,7 @@ function searchText(e) {
  * 게임 목록을 받고, 게임마다 실행기(engine.js)의 샌드박스에서 코드를 불러와 판 정보와 시작 판만 받은 뒤 닫습니다.
  * 남이 올린 게임 코드를 이 페이지(사이트 권한)에서 돌리지 않기 위해서입니다.
  * e.game은 실행기가 알려 준 정보 { board, pieces, specialActions, maxActions, turn: turn()이 있는지 }입니다.
+ * 학습한 AI(e.ai)가 있으면 그 관측과 행동의 모양이 지금 코드와 같은지도 봅니다 (e.aiReady, web/ai.js와 같은 확인).
  */
 async function loadGames() {
   const res = await fetch('/api/games');
@@ -113,7 +114,8 @@ async function loadGames() {
     try {
       runner = await loadGame(entry);
       const { look } = await runner.start(THUMB_SEED, { players: [0], lang: gameLang(entry.listing, lang) });
-      return { ...entry, game: runner.info, startView: look.views[0] };
+      const aiReady = !!entry.ai && runner.info.turn && modelFits(entry.ai, await runner.ai(entry.ai.lang).catch(() => null));
+      return { ...entry, game: runner.info, startView: look.views[0], aiReady };
     } catch (e) {
       return { ...entry, error: e.message };
     } finally {
@@ -305,6 +307,8 @@ function fillDialog() {
   if (listing) meta.push(t('tag.difficulty', { d: t(`difficulty.${listing.difficulty}`) }));
   $('#gd-meta').textContent = meta.join(' · ');
   $('#gd-match').href = `/web/match.html?game=${id}`;
+  $('#gd-ai').hidden = !entry.aiReady;
+  $('#gd-ai').href = `/web/ai.html?game=${id}`;
   $('#gd-create').setAttribute('aria-pressed', String(tab === 'create'));
 
   // 오른쪽
