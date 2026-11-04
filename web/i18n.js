@@ -26,6 +26,7 @@ const STRINGS = {
     'legal.title': '약관과 개인정보',
     'footer.legal': '약관과 개인정보',
     'footer.source': '소스 코드',
+    'footer.discord': '디스코드',
     'footer.contact': '문의',
     'soon': '준비 중',
     'login': '로그인',
@@ -80,6 +81,7 @@ const STRINGS = {
     'banner.make.title': '내가 만든 보드게임을 올려보세요',
     'banner.make.body': '규칙만 쓰면 보드 그리기, 온라인 대전, AI 상대는 보드마당이 맡습니다.',
     'banner.make.cta': '게임 만들기',
+    'banner.make.docs': 'SDK 문서',
     'banner.soon.title': '오픈 준비 중',
     'banner.soon.body': '지금은 예제 게임으로 온라인 대전, 관전, 기보 다시보기를 해볼 수 있습니다.',
 
@@ -748,6 +750,7 @@ const STRINGS = {
     'legal.title': 'Terms and privacy',
     'footer.legal': 'Terms & privacy',
     'footer.source': 'Source code',
+    'footer.discord': 'Discord',
     'footer.contact': 'Contact',
     'soon': 'Coming soon',
     'login': 'Log in',
@@ -802,6 +805,7 @@ const STRINGS = {
     'banner.make.title': 'Upload a board game you made',
     'banner.make.body': 'Write the rules. Boardmadang handles the board, online matches, and AI opponents.',
     'banner.make.cta': 'Make a game',
+    'banner.make.docs': 'SDK docs',
     'banner.soon.title': 'Opening soon',
     'banner.soon.body': 'For now, try online matches, spectating, and replays with the sample game.',
 

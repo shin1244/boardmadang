@@ -247,15 +247,20 @@ body {
 .tone-a { background: linear-gradient(120deg, #4b2f99, #7e57c2 55%, #b0407f); }
 .tone-b { background: linear-gradient(120deg, #0b2942, #1f5f99 55%, #12756d); }
 
+.ctas { flex: none; display: flex; flex-wrap: wrap; gap: 8px; }
 .cta {
   flex: none;
   padding: 10px 18px;
+  border: 1px solid #fff;
   border-radius: 8px;
   background: #fff;
   color: #011627;
   font-weight: 600;
   text-decoration: none;
 }
+/* 배너의 두 번째 버튼 (SDK 문서). 배너 색 위에 테두리만 */
+.cta.ghost { border-color: rgba(255, 255, 255, 0.75); background: transparent; color: #fff; }
+.cta.ghost:hover, .cta.ghost:focus-visible { background: rgba(255, 255, 255, 0.15); }
 
 .dots {
   position: absolute;
@@ -448,6 +453,8 @@ fieldset label:has(input:disabled) { opacity: 0.5; cursor: default; }
 .gd-desc { margin: 0; line-height: 1.6; }
 .gd-desc.muted { color: var(--muted); font-size: 14px; }
 .btn.gd-register { display: inline-block; margin-top: 12px; padding: 8px 18px; text-decoration: none; }
+/* 위의 display가 hidden 속성을 덮어쓰지 않게. 등록 정보가 있는 게임에는 "등록하기"가 없습니다 (lobby.js) */
+.btn.gd-register[hidden] { display: none; }
 
 /* 룰북 언어 고르기 (룰북을 여러 언어로 쓴 게임만) */
 .rulebook-lang { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 10px; color: var(--muted); font-size: 13px; }
