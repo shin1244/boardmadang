@@ -6,6 +6,7 @@
 //	matches/<id 앞 두 글자>/<id>.json   대국 하나
 //	users/<user id>.log                 그 유저가 둔 대국 id. 한 줄에 하나, 끝난 순서대로
 //	plays.json                          게임마다 둔 판 수 {"<게임 id>": 판 수}. 로비의 인기순에 씁니다
+//	days.json                           날마다 게임마다 둔 판 수 {"<한국 날짜>": {"<게임 id>": 판 수}}. 운영자 화면의 통계에 씁니다
 //
 // 서버 한 대(VM 디스크)를 전제로 합니다. 서버를 여러 대로 늘리면 DB나 Cloud Storage로 옮깁니다.
 //
@@ -21,6 +22,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -31,6 +33,7 @@ import (
 
 	"github.com/shin1244/boardmadang/server/internal/identity"
 	"github.com/shin1244/boardmadang/server/internal/protocol"
+	"github.com/shin1244/boardmadang/server/internal/stats"
 )
 
 // Player는 대국에 앉은 사람입니다. ID는 서버 안에서만 씁니다 (브라우저에는 View로 빼고 보냅니다).
@@ -91,12 +94,13 @@ type Store struct {
 	dir string
 
 	mu      sync.Mutex
-	pending map[string]*Match // 파일에 쓰는 중인 대국. 다 쓸 때까지 Get이 여기서 찾습니다
-	plays   map[string]int    // 게임마다 둔 판 수 (counts). plays.json에 남깁니다
+	pending map[string]*Match         // 파일에 쓰는 중인 대국. 다 쓸 때까지 Get이 여기서 찾습니다
+	plays   map[string]int            // 게임마다 둔 판 수 (counts). plays.json에 남깁니다
+	days    map[string]map[string]int // 끝난 한국 날짜 → 게임 → 판 수 (counts). days.json에 남깁니다
 	// 서버가 켜진 뒤 탈퇴한 계정 (Forget). 그때 진행 중이던 대국이 나중에 끝나도 그 자리를 지우고 씁니다
 	gone map[string]bool
 
-	writeMu sync.Mutex // 기보 파일, users/*.log, plays.json을 쓰는 것을 한 번에 하나씩
+	writeMu sync.Mutex // 기보 파일, users/*.log, plays.json, days.json을 쓰는 것을 한 번에 하나씩
 	wg      sync.WaitGroup
 }
 
@@ -124,41 +128,94 @@ func counts(m *Match) bool {
 	return len(m.Moves) > 0 && m.Players[0].ID != m.Players[1].ID
 }
 
-// loadPlays는 plays.json을 읽습니다. 없거나 깨졌으면(판 수를 세기 전의 데이터) 기보를 다 훑어 다시 셉니다.
+// loadPlays는 plays.json과 days.json을 읽습니다. 없거나 깨진 것은(그것을 세기 전의 데이터) 기보를 다 훑어 다시 셉니다.
 func (s *Store) loadPlays() error {
-	data, err := os.ReadFile(filepath.Join(s.dir, "plays.json"))
-	if err == nil && json.Unmarshal(data, &s.plays) == nil && s.plays != nil {
-		return nil
-	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	needPlays, err := readCounts(filepath.Join(s.dir, "plays.json"), &s.plays)
+	if err != nil {
 		return err
 	}
-	s.plays = make(map[string]int)
+	needDays, err := readCounts(filepath.Join(s.dir, "days.json"), &s.days)
+	if err != nil {
+		return err
+	}
+	if !needPlays && !needDays {
+		return nil
+	}
+	plays, days := make(map[string]int), make(map[string]map[string]int)
 	err = filepath.WalkDir(filepath.Join(s.dir, "matches"), func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".json") {
 			return err
 		}
 		m := new(Match)
 		if data, err := os.ReadFile(p); err == nil && json.Unmarshal(data, m) == nil && counts(m) {
-			s.plays[m.Game]++
+			plays[m.Game]++
+			addDay(days, m)
 		}
 		return nil // 깨진 파일은 건너뜁니다
 	})
 	if err != nil {
 		return err
 	}
+	if needPlays {
+		s.plays = plays
+	}
+	if needDays {
+		s.days = days
+	}
 	return s.writePlays()
 }
 
-// writePlays는 지금 판 수를 plays.json에 씁니다. writeMu를 잡고 부릅니다 (나중에 잡은 쪽이 더 새 값을 씁니다).
+// readCounts는 file의 JSON을 v에 읽습니다. 없거나 깨졌으면 다시 세야 한다고(true) 알려 줍니다.
+func readCounts[T any](file string, v *map[string]T) (missing bool, err error) {
+	data, err := os.ReadFile(file)
+	if err == nil && json.Unmarshal(data, v) == nil && *v != nil {
+		return false, nil
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	*v = nil
+	return true, nil
+}
+
+// addDay는 m이 끝난 날(한국 날짜)의 그 게임 판 수를 하나 늘립니다.
+func addDay(days map[string]map[string]int, m *Match) {
+	day := stats.Day(m.Ended)
+	if days[day] == nil {
+		days[day] = make(map[string]int)
+	}
+	days[day][m.Game]++
+}
+
+// writePlays는 지금 판 수를 plays.json과 days.json에 씁니다. writeMu를 잡고 부릅니다 (나중에 잡은 쪽이 더 새 값을 씁니다).
 func (s *Store) writePlays() error {
 	s.mu.Lock()
-	data, err := json.Marshal(s.plays)
+	plays, err := json.Marshal(s.plays)
+	var days []byte
+	if err == nil {
+		days, err = json.Marshal(s.days)
+	}
 	s.mu.Unlock()
 	if err != nil {
 		return err
 	}
-	return writeAtomic(filepath.Join(s.dir, "plays.json"), data)
+	if err := writeAtomic(filepath.Join(s.dir, "plays.json"), plays); err != nil {
+		return err
+	}
+	return writeAtomic(filepath.Join(s.dir, "days.json"), days)
+}
+
+// Daily는 from 날짜부터(포함) 날마다 게임마다 둔 판 수(counts)의 복사본입니다. 날짜는 한국 날짜 "2006-01-02"입니다.
+func (s *Store) Daily(from string) map[string]map[string]int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string]map[string]int)
+	for day, games := range s.days {
+		if day >= from {
+			out[day] = maps.Clone(games)
+		}
+	}
+	return out
 }
 
 // Plays는 그 게임을 둔 판 수입니다 (counts). 로비의 인기순에 씁니다.
@@ -175,6 +232,7 @@ func (s *Store) Save(m *Match) {
 	s.pending[m.ID] = m
 	if counts(m) {
 		s.plays[m.Game]++
+		addDay(s.days, m)
 	}
 	s.mu.Unlock()
 	s.wg.Add(1)

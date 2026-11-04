@@ -44,6 +44,30 @@
     <p id="denied" class="empty" hidden></p>
 
     <div id="body" hidden>
+      <!-- 통계 (GET /api/admin/stats). 그리는 것은 admin-stats.js -->
+      <section id="stats" class="profile-block">
+        <div class="list-head">
+          <h2 data-i18n="stats.title">통계</h2>
+          <div id="stat-range" class="stat-range" role="group" data-i18n-attr="aria-label:stats.range" aria-label="기간">
+            <button type="button" data-days="7">7일</button>
+            <button type="button" data-days="30" aria-pressed="true">30일</button>
+            <button type="button" data-days="90">90일</button>
+          </div>
+        </div>
+        <p class="rooms-lead" data-i18n="stats.lead"></p>
+        <p id="stat-error" class="admin-status" role="alert" hidden></p>
+        <div id="stat-body" hidden>
+          <div id="stat-tiles" class="stat-tiles"></div>
+          <div id="stat-charts" class="stat-charts"></div>
+          <h3 id="stat-top-title" class="stat-h3"></h3>
+          <div id="stat-top"></div>
+          <details class="stat-details">
+            <summary id="stat-table-label">표로 보기</summary>
+            <div id="stat-table" class="stat-table-wrap"></div>
+          </details>
+        </div>
+      </section>
+
       <section class="profile-block">
         <div class="list-head">
           <h2><span data-i18n="admin.queue">신고</span> <span id="queue-count" class="count"></span></h2>

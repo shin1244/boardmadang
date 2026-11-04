@@ -79,3 +79,126 @@
   .admin-suspend { flex-basis: 100%; }
   .admin-suspend .btn { flex: 1 1 auto; }
 }
+
+/* ---- 통계 (admin-stats.js) ----
+   그래프 계열 색은 두 가지를 이 순서로만 씁니다. 밝은 화면(#fff)과 어두운 화면(#0b2942) 위에서 색약 구분과 대비를 검사한 값입니다. */
+:root {
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
+  --chart-grid: #ececec;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --chart-1: #3987e5;
+    --chart-2: #d95926;
+    --chart-grid: #16354f;
+  }
+}
+
+.stat-range { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.stat-range button {
+  padding: 5px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.stat-range button + button { border-left: 1px solid var(--border); }
+.stat-range button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+.stat-range button:disabled { cursor: default; }
+/* 다른 기간을 불러오는 동안 앞의 그림을 흐리게 둡니다 */
+#stats.loading #stat-body { opacity: 0.55; transition: opacity 0.15s; }
+#stat-body[hidden], #stat-error[hidden] { display: none; }
+
+.stat-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
+.stat-tile {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.stat-label { color: var(--muted); font-size: 13px; }
+.stat-value { color: var(--text); font-size: 28px; font-weight: 600; line-height: 1.2; }
+.stat-sub { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+
+.stat-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.stat-chart {
+  min-width: 0;
+  margin: 0;
+  padding: 12px 14px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.stat-chart.wide { grid-column: 1 / -1; }
+.stat-chart figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+.stat-legend { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); font-size: 12px; }
+.stat-key { display: inline-flex; align-items: center; gap: 5px; }
+.stat-key i { display: inline-block; }
+.stat-key i.line { width: 14px; height: 2px; border-radius: 1px; }
+.stat-key i.box { width: 10px; height: 10px; border-radius: 2px; }
+.stat-plot { position: relative; border-radius: 6px; outline: none; touch-action: pan-y; }
+.stat-plot:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.stat-plot svg { display: block; overflow: visible; }
+.stat-grid { stroke: var(--chart-grid); stroke-width: 1; shape-rendering: crispEdges; }
+.stat-base { stroke: var(--border); stroke-width: 1; shape-rendering: crispEdges; }
+.stat-axis { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.stat-dot { stroke: var(--surface); stroke-width: 2; }
+.stat-band { fill: var(--text); opacity: 0.07; }
+.stat-cross { stroke: var(--muted); stroke-width: 1; shape-rendering: crispEdges; }
+.stat-tip {
+  position: absolute;
+  top: 2px;
+  z-index: 1;
+  display: grid;
+  gap: 2px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.stat-tip[hidden] { display: none; }
+.stat-tip-day { color: var(--muted); }
+.stat-tip-row { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.stat-tip-row i { flex: none; width: 12px; height: 2px; border-radius: 1px; }
+.stat-tip-row b { color: var(--text); font-variant-numeric: tabular-nums; }
+.stat-note { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+.stat-empty { margin: 0; padding: 48px 0; color: var(--muted); font-size: 14px; text-align: center; }
+
+.stat-h3 { margin: 20px 0 8px; font-size: 16px; }
+.stat-top { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.stat-top li { display: grid; grid-template-columns: minmax(0, 14em) minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 14px; }
+.stat-game { overflow-wrap: anywhere; }
+.stat-bar i { display: block; min-width: 2px; height: 8px; border-radius: 0 4px 4px 0; background: var(--chart-1); }
+.stat-count { font-variant-numeric: tabular-nums; }
+.stat-details { margin-top: 14px; font-size: 14px; }
+.stat-details summary { color: var(--accent); cursor: pointer; }
+.stat-table-wrap { overflow-x: auto; margin-top: 8px; }
+.stat-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.stat-table th, .stat-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
+.stat-table th:first-child { text-align: left; }
+.stat-table thead th { color: var(--muted); font-weight: 600; }
+
+@media (max-width: 760px) {
+  .stat-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stat-charts { grid-template-columns: minmax(0, 1fr); }
+  .stat-top li { grid-template-columns: minmax(0, 8em) minmax(0, 1fr) auto; }
+}
