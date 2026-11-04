@@ -1,2 +1,6 @@
 numpy>=1.26
 torch>=2.2
+# 브라우저 AI용 ONNX 내보내기 (--export-onnx)와 그 테스트
+onnx>=1.17
+onnxscript>=0.3
+onnxruntime>=1.20

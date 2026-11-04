@@ -19,10 +19,11 @@
 //   solve    { limit }   완전 탐색. 판 수가 limit을 넘으면 { tooBig: true }
 //   quit
 
+import { codeVersion } from '../sdk/lib/games.js';
 import { makeRng } from '../sdk/playground/platform.js';
 import { drawRule } from './env.js';
 import { loadEnv } from './load.js';
-import { Node, gumbelSearch, pick, rolloutEvaluator, search, visitPolicy } from './mcts.js';
+import { Node, gumbelSearch, networkPolicy, pick, rolloutEvaluator, search, visitPolicy } from './mcts.js';
 import { keyOf, solve } from './solve.js';
 
 // stdout은 메시지 전용입니다. 게임 코드가 console.log를 써도 stderr로 보냅니다
@@ -100,11 +101,7 @@ function networkEvaluator(env) {
     const out = await receive('R');
     const A = env.nActions;
     batch.forEach((r, i) => {
-      const logits = r.actions.map((a) => out[i * A + a]);
-      const top = Math.max(...logits);
-      const e = logits.map((x) => Math.exp(x - top));
-      const sum = e.reduce((s, x) => s + x, 0);
-      r.resolve({ policy: e.map((x) => x / sum), value: out[batch.length * A + i] });
+      r.resolve({ policy: networkPolicy(out, r.actions, i * A), value: out[batch.length * A + i] });
     });
   }
   return (pos, actions) => new Promise((resolve) => {
@@ -264,6 +261,7 @@ if (!dir) {
 const env = await loadEnv(dir);
 send('H', {
   id: env.game.id,
+  version: codeVersion(dir), // 사이트의 게임 코드 버전 (/api/games의 version과 같은 계산)
   rows: env.rows,
   cols: env.cols,
   channels: env.channels,

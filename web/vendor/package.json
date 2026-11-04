@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "브라우저 AI가 신경망을 돌리는 onnxruntime-web (web/ai-net.js). 사이트는 dist의 WebAssembly판 세 파일만 내보냅니다 (server/internal/site의 vendorFiles)",
+  "dependencies": {
+    "onnxruntime-web": "1.31.1"
+  }
+}

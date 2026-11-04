@@ -1,8 +1,10 @@
-"""신경망 모양과 자기대국 워커와 주고받는 메시지 테스트.
+"""신경망 모양, 자기대국 워커와 주고받는 메시지, 브라우저 AI용 ONNX 내보내기 테스트.
 
     python -m unittest discover -s trainer
 """
 
+import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -10,7 +12,7 @@ import numpy as np
 import torch
 
 from net import Net
-from train import Pool, Worker, fresh_loss, unpack_game
+from train import Pool, Worker, export_onnx, fresh_loss, unpack_game
 
 TICTACTOE = Path(__file__).resolve().parent.parent / "games" / "tictactoe"
 
@@ -140,6 +142,64 @@ class PoolTest(unittest.TestCase):
 
     def test_one(self):
         self.assertEqual(self.pool.one({"cmd": "solve"})["value"], 0)
+
+
+class ExportTest(unittest.TestCase):
+    """브라우저 AI가 쓰는 ONNX 내보내기. onnxruntime으로 돌린 결과가 PyTorch와 같아야 합니다"""
+
+    @classmethod
+    def setUpClass(cls):
+        worker = Worker(TICTACTOE)
+        worker.close()
+        cls.info = worker.info
+        torch.manual_seed(0)
+        net = Net(cls.info["channels"], 0, blocks=1, filters=8)
+        # BatchNorm의 기본 통계(평균 0, 분산 1)면 그 층이 하는 일이 없어서, 학습한 것처럼 바꿔 둡니다
+        for m in net.modules():
+            if isinstance(m, torch.nn.BatchNorm2d):
+                m.running_mean.uniform_(-0.5, 0.5)
+                m.running_var.uniform_(0.5, 2)
+        cls.net = net.eval()
+        cls.saved = {"config": net.config, "state": net.state_dict(), "iteration": 7, "info": cls.info}
+
+    def test_onnx_matches_torch(self):
+        import onnxruntime
+
+        with tempfile.TemporaryDirectory() as d:
+            meta = export_onnx(self.saved, self.info, Path(d), 123)
+            session = onnxruntime.InferenceSession(str(Path(d) / "model.onnx"))
+            saved_meta = json.loads((Path(d) / "model.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved_meta, meta)
+        self.assertEqual([i.name for i in session.get_inputs()], ["x"])
+        self.assertEqual([o.name for o in session.get_outputs()], ["logits", "value"])
+        # 브라우저는 한 판씩, 나중에 묶어서 넣을 수도 있으므로 묶음 크기를 바꿔 봅니다
+        for n in (1, 5):
+            x = np.random.default_rng(n).random((n, self.info["channels"], 3, 3), dtype=np.float32)
+            logits, value = session.run(None, {"x": x})
+            with torch.no_grad():
+                want_logits, want_value = self.net(torch.from_numpy(x))
+            np.testing.assert_allclose(logits, want_logits.numpy(), atol=1e-5)
+            np.testing.assert_allclose(value, want_value.numpy(), atol=1e-5)
+
+        self.assertEqual(meta["format"], 1)
+        self.assertEqual((meta["game"], meta["version"], meta["lang"]), ("tictactoe", self.info["version"], "ko"))
+        self.assertRegex(meta["version"], r"^[0-9a-f]{16}$")
+        self.assertEqual(meta["channelNames"], self.info["channelNames"])
+        self.assertEqual((meta["rows"], meta["cols"], meta["nActions"], meta["specials"]), (3, 3, 9, []))
+        self.assertEqual((meta["sims"], meta["iteration"], meta["net"]), (123, 7, {"blocks": 1, "filters": 8}))
+
+    def test_old_model_with_same_shape(self):
+        # 코드가 바뀌어도 모양이 같으면 내보내고, version은 학습한 코드의 것입니다 (없던 시절의 model.pt면 null)
+        old = {**self.saved, "info": {k: v for k, v in self.info.items() if k != "version"}}
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(export_onnx(old, self.info, Path(d), 50)["version"])
+
+    def test_refuses_other_shape(self):
+        other = {**self.saved, "info": {**self.info, "channelNames": self.info["channelNames"][::-1]}}
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(SystemExit):
+                export_onnx(other, self.info, Path(d), 50)
+            self.assertFalse((Path(d) / "model.onnx").exists())
 
 
 if __name__ == "__main__":

@@ -15,6 +15,8 @@
 // /api/me 는 Go 서버가 켜져 있으면 Go 서버의 신원을 그대로 넘깁니다. 의견, 방 만들기는 Go 서버가 계정인지 확인하므로
 // 화면만 계정으로 꾸미지 않습니다. 계정으로 시험하려면 Go 서버를 DEV_LOGIN=1로 켜고 상단의 "개발용 로그인"을 누릅니다.
 // Go 서버가 꺼져 있으면 가짜 신원(DEV_ME)만 돌려줍니다 (로비와 등록창은 됩니다).
+// AI 모델(/api/games의 ai, /ai/<게임>/<해시>.onnx)은 Go 서버와 같은 DATA_DIR(기본 server/data)의 ai/<게임>/에서 읽습니다.
+// 모델을 올리고 지우는 것(/api/admin/ai/<게임>)은 Go 서버로 넘깁니다 (server/internal/ai).
 // 소셜 로그인(/auth/..., /api/auth/providers), 내 계정(/api/account, 이름 바꾸기와 탈퇴), 운영자 화면(/api/admin)도 Go 서버로 넘깁니다. Host를 그대로 넘기므로
 // 돌아올 주소는 http://localhost:5173/auth/<google|github>/callback 입니다 (docs/identity.md).
 //   DEV_AS=guest node sdk/playground/serve.js    → Go 서버가 꺼져 있을 때 게스트로 보이게 (등록창이 막히는지 확인)
@@ -39,7 +41,33 @@ const TYPES = {
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.wasm': 'application/wasm', // 브라우저 AI의 onnxruntime-web (web/vendor)
 };
+
+/** Go 서버의 DATA_DIR/ai (server/internal/ai). Go 서버를 server/ 에서 켜면 DATA_DIR 기본값이 server/data 입니다 */
+const AI_DIR = path.join(process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT, 'server', 'data'), 'ai');
+
+/** 게임의 AI 모델 (/api/games의 ai). Go 서버의 site.AIModel과 같은 모양입니다. 없으면 null */
+function aiModel(id) {
+  try {
+    const m = JSON.parse(fs.readFileSync(path.join(AI_DIR, id, 'model.json'), 'utf8'));
+    if (m.game !== id || !/^[0-9a-f]{16}\.onnx$/.test(m.file)) return null;
+    return {
+      model: `/ai/${id}/${m.file}`,
+      version: m.version ?? null,
+      lang: m.lang,
+      rows: m.rows,
+      cols: m.cols,
+      channelNames: m.channelNames,
+      specials: m.specials ?? [],
+      nActions: m.nActions,
+      sims: m.sims,
+      updated: m.updated,
+    };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * games/<id>/index.js 와 games/private/<id>/index.js 를 찾아 목록으로 만듭니다. 등록 정보와 썸네일이 있으면 같이 넣습니다.
@@ -55,6 +83,8 @@ function listGames() {
       if (!fs.existsSync(path.join(base, d.name, 'index.js'))) continue;
       const folder = path.join(base, d.name);
       const entry = gameEntry(folder, { id: d.name, module: `/${dir}/${d.name}/index.js`, private: isPrivate });
+      const ai = aiModel(d.name);
+      if (ai) entry.ai = ai;
       Object.defineProperty(entry, 'folder', { value: folder }); // JSON에는 나가지 않습니다
       list.push(entry);
     }
@@ -243,7 +273,16 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/locale') return json(res, 200, detectLocale(req));
   if (url.pathname === '/api/me') return proxyMe(req, res);
   if (url.pathname === '/api/auth/providers' || url.pathname.startsWith('/auth/') || url.pathname === '/api/account') return proxyRaw(req, res, url);
-  if (url.pathname === '/api/admin' || url.pathname === '/api/admin/actions') return proxyRaw(req, res, url);
+  if (url.pathname === '/api/admin' || url.pathname === '/api/admin/actions' || /^\/api\/admin\/ai\/[a-z0-9-]+$/.test(url.pathname)) return proxyRaw(req, res, url);
+  const model = url.pathname.match(/^\/ai\/([a-z0-9-]+)\/[0-9a-f]{16}\.onnx$/);
+  if (model) {
+    if (aiModel(model[1])?.model !== url.pathname) {
+      res.writeHead(404);
+      return res.end('not found');
+    }
+    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store' });
+    return fs.createReadStream(path.join(AI_DIR, model[1], path.basename(url.pathname))).pipe(res);
+  }
   if (url.pathname === '/api/rooms' || url.pathname === '/api/live' || /^\/api\/matches(\/[A-Z0-9]+)?$/.test(url.pathname)) return proxyGo(req, res, url);
   if (/^\/api\/games\/[a-z0-9-]+\/comments(\/[A-Z0-9]+)?$/.test(url.pathname) || url.pathname === '/api/reports') return proxyGo(req, res, url);
   const m = url.pathname.match(/^\/api\/games\/([a-z0-9-]+)\/listing$/);
