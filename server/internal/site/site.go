@@ -41,6 +41,7 @@ var types = map[string]string{
 	".css":  "text/css; charset=utf-8",
 	".json": "application/json; charset=utf-8",
 	".svg":  "image/svg+xml",
+	".png":  "image/png", // 링크 미리보기 그림(og.png)과 아이콘
 }
 
 // roots는 내보내는 폴더입니다 (SITE_DIR 기준).
