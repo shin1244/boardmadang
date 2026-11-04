@@ -2,7 +2,7 @@
 // 들어오는 길은 셋입니다.
 //   ?game=x                       빠른 매칭. 등록 정보의 기본 타이머로 같은 타이머끼리 만납니다.
 //   ?game=x&create=1&minutes=N    방 만들기. 방 목록에 올라가고 누가 들어오면 시작합니다. minutes=none이면 타이머 없음.
-//   ?game=x&room=CODE             방 목록에서 그 방에 들어가기.
+//   ?game=x&room=CODE             방 목록이나 초대 링크로 그 방에 들어가기 (게스트도 됩니다).
 // 게임 코드의 버전(/api/games의 version)을 같이 보내서, 같은 코드를 불러온 사람끼리만 만납니다.
 // 서버는 규칙을 모르고 행동에 순번만 붙여 양쪽에 보냅니다 (docs/protocol.md).
 // 이 페이지가 게임 로직을 돌려 판을 계산하고, 행동마다 상태 해시를, 끝나면 결과를 서버에 보고합니다.
@@ -486,6 +486,7 @@ function renderHosting() {
   $('#hosting').hidden = phase !== 'hosting';
   if (phase !== 'hosting') return;
   $('#room-code').textContent = hostedRoom;
+  $('#invite').textContent = t(canShare() ? 'match.invite.share' : 'match.invite.copy');
   const wait = Math.max(0, Math.ceil((nextBumpAt - Date.now()) / 1000));
   $('#bump').disabled = wait > 0;
   $('#bump-wait').textContent = wait > 0 ? t('match.bump.wait', { s: wait }) : '';
@@ -614,6 +615,33 @@ function render() {
   $('#note').textContent = note;
 }
 
+/** 휴대폰처럼 공유 창(카톡 등)을 띄울 수 있으면 보내기, 아니면 복사합니다. PC의 공유 창은 쓰기 불편해서 터치 화면만 */
+const canShare = () => typeof navigator.share === 'function' && matchMedia('(pointer: coarse)').matches;
+
+/** 친구가 열면 이 방에 바로 들어오는 주소 (?room=, 게스트도 됩니다) */
+async function invite() {
+  const url = new URL('/web/match.html', location.origin);
+  url.searchParams.set('game', gameId);
+  url.searchParams.set('room', hostedRoom);
+  if (canShare()) {
+    const text = t('match.invite.text', { game: nameOfGame() });
+    try {
+      await navigator.share({ title: text, text, url: url.href });
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return; // 공유 창을 닫음
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url.href);
+    note = t('match.invite.copied');
+    render();
+  } catch {
+    // 복사를 막은 브라우저면 주소를 보여 주고 직접 복사하게 합니다
+    prompt(t('match.invite.manual'), url.href);
+  }
+}
+
 function fit() {
   if (!board) return;
   board.resize(Math.min(480, $('.match').clientWidth));
@@ -688,6 +716,7 @@ async function main() {
   $('#cancel').addEventListener('click', cancel);
   $('#again').addEventListener('click', findAgain);
   $('#bump').addEventListener('click', () => send({ type: 'bump' }));
+  $('#invite').addEventListener('click', invite);
   window.addEventListener('resize', () => {
     fit();
     render();

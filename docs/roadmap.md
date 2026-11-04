@@ -5,7 +5,8 @@
 ## 지금 된 것
 
 - **boardmadang.com 운영 중**: GCP VM 하나, Caddy HTTPS, Google·GitHub 로그인 ([deploy-gcp.md](deploy-gcp.md))
-- **대전**: 빠른 매칭, 방 만들기, 대국 시계, 무승부 제안, 재대결, 관전, 기보 다시보기, 이모티콘, 의견과 신고
+- **대전**: 빠른 매칭, 방 만들기와 초대 링크, 대국 시계, 무승부 제안, 재대결, 관전, 기보 다시보기, 이모티콘, 의견과 신고
+- **링크 미리보기**: 카톡, 디스코드에 주소를 붙이면 그림(`web/og.png`)과 소개가 나옵니다 (og 태그). 사이트 아이콘
 - **게임 코드 샌드박스**: 사이트 화면은 게임 코드를 출처 없는 iframe 안의 Worker에서만 돌립니다 ([architecture.md](architecture.md#보안))
 - **npm 패키지 `boardmadang` 0.2.0**: `npx boardmadang new / dev / check / pack`, 판을 찍는 썸네일 ([sdk/README.ko.md](../sdk/README.ko.md))
 - **게임**: 틱택토 하나
