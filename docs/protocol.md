@@ -5,7 +5,7 @@
 | 요청 | 응답 |
 |---|---|
 | `GET /healthz` | `ok` |
-| `GET /api/games` | 게임 목록 `[{"id":"tictactoe","module":"/games/tictactoe/index.js","version":"3f1c9a0b2e7d4c56","private":false,"listing":{...},"thumbnail":{...},"plays":12,"released":"…"}]`. `plays`는 둔 판 수로 로비의 인기순에 씁니다 (무효가 된 대국, 행동이 없는 대국, 한 사람이 두 자리에 앉은 대국은 빼고 셈. 0이면 없음). `released`는 올린 게임을 처음 등록한 때로 출시일순에 씁니다 (레포 게임은 없음). 운영자가 AI 모델을 올린 게임에는 `ai`(아래)가 붙습니다 |
+| `GET /api/games` | 게임 목록 `[{"id":"tictactoe","module":"/games/tictactoe/index.js","version":"3f1c9a0b2e7d4c56","private":false,"listing":{...},"thumbnail":{...},"plays":12,"released":"…"}]`. `plays`는 둔 판 수로 로비의 인기순에 씁니다 (무효가 된 대국, 행동이 없는 대국, 한 사람이 두 자리에 앉은 대국은 빼고 셈. 0이면 없음). `released`는 올린 게임을 처음 등록한 때로 출시일순에 씁니다 (레포 게임은 없음). `author`는 올린 게임의 제작자 이름으로, 계정의 지금 이름입니다 (레포 게임과 이름을 모르는 게임은 없음, `/api/uploads`에도 없음). 운영자가 AI 모델을 올린 게임에는 `ai`(아래)가 붙습니다 |
 | `GET /api/locale` | 접속 나라와 화면 언어 `{"country":"KR","lang":"ko"}` |
 | `GET /api/me` | 지금 신원 `{"id":"g_…","kind":"guest","tag":"4821"}`. 쿠키가 없으면 게스트를 새로 발급합니다. 계정이면 운영자(`"admin":true`)와 정지(`"suspended":true,"suspendedUntil":"…"`, 영구면 `suspendedUntil` 없음)도 옵니다 |
 | `GET /api/account` | 내 계정 `{"name":"shin","provider":"google","created":"…","renameAfter":"…","min":4,"max":8}`. `renameAfter`는 이름을 다시 바꿀 수 있는 때 (지금 바꿀 수 있으면 없음). 계정만 |

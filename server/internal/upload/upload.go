@@ -82,6 +82,8 @@ type Store struct {
 	now func() time.Time
 	// Reserved는 레포에 있는 게임 id인지입니다 (site.Site.Has). 그 id로는 올릴 수 없습니다.
 	Reserved func(id string) bool
+	// Names가 있으면 로비 목록(Games)에 제작자의 지금 계정 이름을 넣습니다 (internal/account). 이름을 바꾸면 바로 반영됩니다
+	Names identity.Members
 
 	mu     sync.Mutex
 	games  map[string]*gameMeta
@@ -425,6 +427,7 @@ func (s *Store) publishedToday(owner string) int {
 // ---- 목록 ----
 
 // Games는 올린 게임을 /api/games 모양으로 돌려줍니다. 처음 등록한 순서입니다. 내린 게임과 레포에 같은 id가 생긴 게임은 뺍니다.
+// Names가 있으면 제작자의 지금 이름(Author)도 넣습니다. 계정 id는 내보내지 않습니다.
 func (s *Store) Games() []site.Game {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -443,6 +446,10 @@ func (s *Store) Games() []site.Game {
 	out := make([]site.Game, len(list))
 	for i, g := range list {
 		out[i] = g.entry()
+		// 탈퇴한 계정의 게임은 Forget이 내리므로 이름이 없는 일은 드뭅니다. 그때는 이름 없이 둡니다
+		if s.Names != nil {
+			out[i].Author, _ = s.Names.Name(g.Owner)
+		}
 	}
 	return out
 }

@@ -222,6 +222,8 @@ type Game struct {
 	Thumbnail json.RawMessage `json:"thumbnail"`
 	// 제작자 클리어 기보가 있는지 (올린 게임만, GET /api/games/<id>/clear). 레포 게임은 클리어 체크를 하지 않습니다
 	Clear bool `json:"clear,omitempty"`
+	// 제작자의 지금 계정 이름 (올린 게임의 /api/games에만). 로비 게임 창의 '제작자'에 씁니다. 레포 게임이나 이름을 모르면 없습니다
+	Author string `json:"author,omitempty"`
 	// 둔 판 수 (/api/games에만). 로비의 인기순에 씁니다. 0이거나 개발 서버면 없습니다
 	Plays int `json:"plays,omitempty"`
 	// 브라우저에서 AI와 둘 때 쓰는 학습한 신경망 (/api/games에만, internal/ai). 없으면 안 나옵니다

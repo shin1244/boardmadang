@@ -358,6 +358,10 @@ fieldset label:has(input:disabled) { opacity: 0.5; cursor: default; }
 .gd-field.row h4 { flex: none; margin: 0; }
 .gd-field.row span { text-align: right; }
 .gd-link { color: var(--accent); font-size: 14px; text-align: right; }
+/* 제작자: 이름 아래에 직접 이긴 판 보기 */
+.gd-author { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 0; }
+.gd-author #gd-author { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.gd-author [hidden] { display: none; }
 
 /* 접는 칸: 세모를 누르면 펼칩니다 */
 .gd-fold summary { display: flex; align-items: center; gap: 8px; list-style: none; cursor: pointer; }
