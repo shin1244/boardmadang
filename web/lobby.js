@@ -11,9 +11,12 @@ import { displayName, isMember, loadMe, renderMe, suspendedText } from './me.js'
 const $ = (sel) => document.querySelector(sel);
 
 const BANNERS = [
-  { key: 'banner.make', cta: '/web/register.html', tone: 'tone-a' },
+  { key: 'banner.make', cta: '/web/register.html', docs: true, tone: 'tone-a' },
   { key: 'banner.soon', tone: 'tone-b' },
 ];
+
+/** 게임 만드는 법 (SDK 안내). 한국어 화면은 한국어판, 나머지는 영어판 */
+const sdkDocs = () => `https://github.com/shin1244/boardmadang/blob/main/sdk/README${lang === 'ko' ? '.ko' : ''}.md`;
 
 // ---- 배너 ----
 
@@ -55,12 +58,21 @@ function renderBanner() {
     s.innerHTML = `<div class="slide-text"><h2></h2><p></p></div>`;
     s.querySelector('h2').textContent = t(`${b.key}.title`);
     s.querySelector('p').textContent = t(`${b.key}.body`);
-    if (b.cta) {
+    const link = (cls, href, key) => {
       const a = document.createElement('a');
-      a.className = 'cta';
-      a.href = b.cta;
-      a.textContent = t(`${b.key}.cta`);
-      s.append(a);
+      a.className = cls;
+      a.href = href;
+      a.textContent = t(key);
+      return a;
+    };
+    const ctas = [];
+    if (b.docs) ctas.push(link('cta ghost', sdkDocs(), `${b.key}.docs`));
+    if (b.cta) ctas.push(link('cta', b.cta, `${b.key}.cta`));
+    if (ctas.length) {
+      const box = document.createElement('div');
+      box.className = 'ctas';
+      box.append(...ctas);
+      s.append(box);
     }
     return s;
   });

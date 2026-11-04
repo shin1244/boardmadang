@@ -247,15 +247,20 @@ body {
 .tone-a { background: linear-gradient(120deg, #4b2f99, #7e57c2 55%, #b0407f); }
 .tone-b { background: linear-gradient(120deg, #0b2942, #1f5f99 55%, #12756d); }
 
+.ctas { flex: none; display: flex; flex-wrap: wrap; gap: 8px; }
 .cta {
   flex: none;
   padding: 10px 18px;
+  border: 1px solid #fff;
   border-radius: 8px;
   background: #fff;
   color: #011627;
   font-weight: 600;
   text-decoration: none;
 }
+/* 배너의 두 번째 버튼 (SDK 문서). 배너 색 위에 테두리만 */
+.cta.ghost { border-color: rgba(255, 255, 255, 0.75); background: transparent; color: #fff; }
+.cta.ghost:hover, .cta.ghost:focus-visible { background: rgba(255, 255, 255, 0.15); }
 
 .dots {
   position: absolute;
