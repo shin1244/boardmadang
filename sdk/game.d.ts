@@ -48,6 +48,25 @@ export interface Mark extends Cell {
   piece?: string;
   /** frame의 색. 0 / 1이면 플랫폼이 정한 플레이어 색, 문자열이면 '#rrggbb' */
   color?: Player | string;
+  /** frame의 두께. 칸 한 변에 대한 % (1~30). 없으면 9% */
+  width?: number;
+}
+
+/**
+ * 두 칸의 가운데를 잇는 반투명한 선. 말 위에 그립니다.
+ * hover가 있으면 마우스를 그 칸에 올렸을 때만 보입니다 (돌을 두기 전의 미리보기 같은 것).
+ * legal()이 있으면 둘 수 있는 칸에만 마우스가 올라간 것으로 칩니다.
+ * 선은 AI 관측에 들어가지 않고, hover가 있는 선은 썸네일에도 들어가지 않습니다.
+ */
+export interface Line {
+  from: Cell;
+  to: Cell;
+  /** 0 / 1이면 플랫폼이 정한 플레이어 색, 문자열이면 '#rrggbb'. 없으면 진한 회색 */
+  color?: Player | string;
+  /** 두께. 칸 한 변에 대한 % (1~50). 없으면 20% */
+  width?: number;
+  /** 이 칸에 마우스를 올렸을 때만 그립니다 */
+  hover?: Cell;
 }
 
 /** 화면에 보일 것. 그리는 건 플랫폼이 합니다. */
@@ -58,6 +77,8 @@ export interface View {
   tint?: Array<Cell & { color: Player | string }>;
   /** 칸 위의 숫자나 짧은 글자 (만칼라의 씨앗 수 등) */
   text?: Array<Cell & { text: string }>;
+  /** 두 칸을 잇는 선 */
+  lines?: Line[];
   /** 보드 위 안내 문구 */
   message?: string;
 }

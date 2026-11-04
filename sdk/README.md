@@ -128,6 +128,7 @@ view(state, player, lang) {
     marks:   [{ row: 1, col: 1, type: 'last-move' }],
     tint:    [{ row: 0, col: 0, color: 0 }],  // color a square with player 0's color
     text:    [{ row: 2, col: 2, text: '4' }], // a short label on a square
+    lines:   [{ from: { row: 0, col: 0 }, to: { row: 2, col: 2 }, color: 1 }], // a line between two squares
     message: 'Your turn',
   };
 }
@@ -141,7 +142,12 @@ view(state, player, lang) {
 | `danger` | Danger (like check) |
 | `ghost` | See-through piece (needs `piece`), e.g. a preview |
 | `blocked` | A square you can't use (darkened) |
-| `frame` | A colored border (needs `color`), e.g. a goal square |
+| `frame` | A colored border (needs `color`), e.g. a goal square. Set `width` to make it 1–30% of a square's side (default 9%) |
+
+**Lines (`lines`):** a see-through line drawn over the pieces, from the center of one square to another. You can set `color` (default dark gray)
+and `width` (1–50% of a square's side, default 20%). Add `hover: { row, col }` to show it only while the mouse is over that square,
+for example to preview which stones a move would connect to. If your game has `legal()`, the mouse only counts as over squares you can play.
+Lines aren't part of what the AI sees, and lines with `hover` aren't saved in thumbnails.
 
 **Board options:** `places` is `'cells'` (inside squares, like chess) or `'points'` (on line crossings, like go).
 `rows` and `cols` are how many places there are (up to 32). You can also set `look` (`'plain'`, `'checker'`, `'wood'`),

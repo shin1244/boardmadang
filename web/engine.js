@@ -33,6 +33,9 @@ const PLACES = ['cells', 'points', 'both'];
 const LOOKS = ['plain', 'checker', 'wood'];
 const PIECE_SETS = ['chess', 'go-stones', 'xo'];
 const MARK_TYPES = ['dot', 'ring', 'last-move', 'danger', 'ghost', 'blocked', 'frame'];
+// 테두리(frame)와 선(lines)의 두께 범위. 칸 한 변의 %입니다 (sdk/playground/board.js의 FRAME_WIDTH, LINE_WIDTH)
+const FRAME_WIDTH = { min: 1, max: 30 };
+const LINE_WIDTH = { min: 1, max: 50 };
 
 let frame = null; // Promise<HTMLIFrameElement>, 페이지마다 하나
 let nextSession = 0;
@@ -77,6 +80,7 @@ addEventListener('message', async (e) => {
 const isInt = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
 const isStr = (v, max) => typeof v === 'string' && v.length <= max;
 const isColor = (c) => c === 0 || c === 1 || (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c));
+const isWidth = (w, range) => typeof w === 'number' && w >= range.min && w <= range.max;
 
 function cleanBoard(b) {
   if (!b || typeof b !== 'object' || !PLACES.includes(b.places) || !isInt(b.rows, 1, 32) || !isInt(b.cols, 1, 32)) {
@@ -123,10 +127,20 @@ function cleanView(v, board) {
     const o = { row: m.row, col: m.col, type: m.type };
     if (isStr(m.piece, 32)) o.piece = m.piece;
     if (isColor(m.color)) o.color = m.color;
+    if (isWidth(m.width, FRAME_WIDTH)) o.width = m.width;
     return o;
   });
   out.tint = list(v.tint).filter((x) => cell(x) && isColor(x.color)).map(({ row, col, color }) => ({ row, col, color }));
   out.text = list(v.text).filter((x) => cell(x) && isStr(x.text, 8)).map(({ row, col, text }) => ({ row, col, text }));
+  // 선은 칸마다 여러 개(이웃 8칸 등)일 수 있어 상한을 두 배로 둡니다
+  const at = ({ row, col }) => ({ row, col });
+  out.lines = (Array.isArray(v.lines) ? v.lines.slice(0, cap * 2) : []).filter((l) => l && cell(l.from) && cell(l.to) && (l.hover === undefined || cell(l.hover))).map((l) => {
+    const o = { from: at(l.from), to: at(l.to) };
+    if (isColor(l.color)) o.color = l.color;
+    if (isWidth(l.width, LINE_WIDTH)) o.width = l.width;
+    if (cell(l.hover)) o.hover = at(l.hover);
+    return o;
+  });
   if (isStr(v.message, 200)) out.message = v.message;
   return out;
 }

@@ -13,6 +13,13 @@ const CHESS_GLYPHS = { K: '♚', Q: '♛', R: '♜', B: '♝', N: '♞', P: '♟
 const CUSTOM_COLORS = ['#d94f4f', '#3f7fd9', '#3a9a5b', '#c98a1b', '#8a55c9', '#2a9aa8', '#c9558a', '#6b6b6b'];
 const COL_LABELS = 'abcdefghijklmnopqrstuvwxyzABCDEF';
 
+/** frame 테두리와 선(lines)의 두께. 칸 한 변에 대한 %입니다 (sdk/check.js, web/engine.js와 같은 범위) */
+export const FRAME_WIDTH = { min: 1, max: 30 };
+export const LINE_WIDTH = { min: 1, max: 50, default: 20 };
+const validWidth = (w, range) => Number.isFinite(w) && w >= range.min && w <= range.max;
+/** 0 / 1이면 플레이어 색, 문자열이면 그 색 */
+const colorOf = (c, fallback) => (typeof c === 'number' ? PLAYER_COLORS[c] : (c ?? fallback));
+
 /** 바둑판 크기별 기본 화점 */
 function defaultStars(rows, cols) {
   if (rows !== cols) return [];
@@ -174,12 +181,14 @@ export class BoardView {
       ctx.fillRect(x - S / 2, y - S / 2, S, S);
     }
     // 테두리: 칸 가장자리를 따라 굵게. 교차점 모드는 점 둘레의 사각형입니다.
+    // 두께는 width(칸 한 변의 %, 1~30)로 정하고, 없으면 칸의 9%(적어도 3px)입니다.
     const frameW = Math.max(3, Math.round(S * 0.09));
     for (const m of marksOf('frame')) {
       const [x, y] = at(m.row, m.col);
-      ctx.strokeStyle = typeof m.color === 'number' ? PLAYER_COLORS[m.color] : (m.color ?? '#333');
-      ctx.lineWidth = frameW;
-      const half = this.points ? S * 0.42 : S / 2 - frameW / 2;
+      const w = validWidth(m.width, FRAME_WIDTH) ? Math.max(1, (S * m.width) / 100) : frameW;
+      ctx.strokeStyle = colorOf(m.color, '#333');
+      ctx.lineWidth = w;
+      const half = this.points ? S * 0.42 : S / 2 - w / 2;
       ctx.strokeRect(x - half, y - half, half * 2, half * 2);
     }
     if (hover) {
@@ -202,6 +211,23 @@ export class BoardView {
       const [x, y] = at(m.row, m.col);
       if (m.piece) this.drawPiece(m.piece, x, y, 0.4);
     }
+
+    // 선: 두 칸의 가운데를 잇는 반투명한 선. hover가 있으면 마우스가 그 칸에 있을 때만 그립니다.
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    ctx.lineCap = 'round';
+    for (const l of view.lines ?? []) {
+      if (l.hover && !(hover && hover.row === l.hover.row && hover.col === l.hover.col)) continue;
+      const [x1, y1] = at(l.from.row, l.from.col);
+      const [x2, y2] = at(l.to.row, l.to.col);
+      ctx.strokeStyle = colorOf(l.color, '#333');
+      ctx.lineWidth = Math.max(1, (S * (validWidth(l.width, LINE_WIDTH) ? l.width : LINE_WIDTH.default)) / 100);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+    ctx.restore();
 
     // 말 위 표시
     for (const m of marksOf('last-move')) {
