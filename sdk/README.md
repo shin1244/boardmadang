@@ -92,6 +92,7 @@ export default {
 That's all. When someone clicks, boardmadang turns the click into `{ kind: 'click', row, col }` and calls `play()`.
 Both players' browsers run your `play()` with the same clicks in the same order, so they always see the same board.
 Your code never deals with the network, the screen, or who the opponent is.
+On the site your code runs in a sandbox, so `fetch`, storage, `eval`, and `Worker` aren't available.
 
 ## Four rules your code must follow
 
