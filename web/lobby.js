@@ -761,8 +761,6 @@ function apply() {
   const sizes = checked('size');
   const diffs = checked('difficulty');
   const langs = checked('support-lang');
-  const fullOnly = $('#full-only').checked;
-  $('#full-only').disabled = !langs.length;
   const anyFilter = q || places.length || sizes.length || diffs.length || langs.length;
   const sort = $('#sort').value;
 
@@ -774,7 +772,7 @@ function apply() {
     if (places.length && !places.includes(g.board.places === 'points' ? 'points' : 'cells')) return false;
     if (sizes.length && !sizes.includes(sizeClass(g.board))) return false;
     if (diffs.length && !diffs.includes(l?.difficulty)) return false;
-    if (langs.length && !langs.some((x) => (fullOnly ? l?.languages[x] === 'full' : l?.languages[x]))) return false;
+    if (langs.length && !langs.some((x) => l?.languages?.[x])) return false;
     return true;
   });
 
@@ -792,20 +790,20 @@ function apply() {
 
 /**
  * 지원 언어 필터: 등록된 게임이 쓰는 언어만 보여줍니다 (LANGS를 다 늘어놓지 않도록).
- * 언어 이름은 그 언어로 씁니다 (한국어 / English). '게임 안 글자까지 번역된 것만'은 맨 아래에 둡니다.
+ * 언어 이름은 그 언어로 씁니다 (한국어 / English). 룰북만 있는 언어도 그 언어를 지원하는 것으로 봅니다.
  */
 function buildLangFilter() {
   const used = LANGS.filter((l) => entries?.some((e) => e.listing?.languages?.[l]));
-  const fullOnly = $('#full-only').closest('label');
+  const box = $('#support-langs');
   for (const l of used) {
     const label = document.createElement('label');
     label.innerHTML = `<input type="checkbox" name="support-lang" value="${l}"> <span></span>`;
     label.querySelector('span').textContent = LANG_NAMES[l];
     label.querySelector('span').lang = l;
     label.querySelector('input').addEventListener('change', apply);
-    fullOnly.before(label);
+    box.append(label);
   }
-  $('#support-langs').hidden = !used.length;
+  box.hidden = !used.length;
 }
 
 function setupFilters() {
