@@ -73,8 +73,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("AI 모델 폴더를 열지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
 	}
-	// 모델은 있는 게임에만 올립니다 (레포 게임이나 올린 게임)
-	bots := &ai.Handler{Store: models, IDs: ids, Known: func(id string) bool {
+	// 모델은 있는 게임에만 올립니다 (레포 게임이나 올린 게임). AI 만들기 요청과 코드 받기는 올린 게임만입니다
+	bots := &ai.Handler{Store: models, IDs: ids, Games: uploads, Known: func(id string) bool {
 		_, ok := uploads.Admin(id)
 		return ok || (pages != nil && pages.Has(id))
 	}}
@@ -206,8 +206,16 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 	}
 	if bots != nil {
 		mux.HandleFunc("GET /ai/{game}/{file}", bots.ServeFile)
+		mux.HandleFunc("GET /api/ai/mine", bots.ServeMine)
+		mux.HandleFunc("POST /api/ai/{game}/request", bots.ServeAsk)
+		mux.HandleFunc("DELETE /api/ai/{game}/request", bots.ServeCancel)
+		mux.HandleFunc("GET /api/ai/{game}/training", bots.ServeTraining)
+		mux.HandleFunc("GET /api/admin/ai/requests", bots.ServeRequests)
+		mux.HandleFunc("POST /api/admin/ai/{game}/code", bots.ServeCode)
+		mux.HandleFunc("POST /api/admin/ai/{game}/decline", bots.ServeDecline)
 		mux.HandleFunc("PUT /api/admin/ai/{game}", bots.ServePut)
 		mux.HandleFunc("DELETE /api/admin/ai/{game}", bots.ServeDelete)
+		mux.HandleFunc("PUT /api/admin/ai/{game}/training", bots.ServePutTraining)
 	}
 	return mux
 }

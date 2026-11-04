@@ -652,6 +652,85 @@ func (s *Store) gameFile(id, version, name string) ([]byte, error) {
 	return readFile(filepath.Join(s.dir, "uploads", id, version), name)
 }
 
+// CodeZip은 올린 게임 한 버전의 코드와 지금 등록 정보(listing.json)를 zip으로 묶습니다.
+// 운영자가 받아 자기 컴퓨터에서 AI를 학습합니다 (internal/ai). zip 안은 <게임>/ 폴더 하나라서 풀면 그대로
+// trainer/train.py에 넘길 게임 폴더가 됩니다 (listing.json은 학습할 때 view()에 줄 언어를 고르는 데 씁니다).
+// 내린 게임도 코드는 그대로라 받을 수 있습니다. 레포 게임이거나 그 버전이 없으면 ErrNotFound입니다.
+func (s *Store) CodeZip(id, version string) ([]byte, error) {
+	if !IDPattern.MatchString(id) || !versionPattern.MatchString(version) {
+		return nil, ErrNotFound
+	}
+	s.mu.Lock()
+	g := s.games[id]
+	var listing Listing
+	var at time.Time // zip 안 파일의 시각: 그 버전을 등록한 때
+	if g != nil {
+		listing = g.Listing
+		at = g.Created
+		for _, p := range g.Published {
+			if p.Version == version {
+				at = p.At
+			}
+		}
+	}
+	s.mu.Unlock()
+	if g == nil || (s.Reserved != nil && s.Reserved(id)) {
+		return nil, ErrNotFound
+	}
+	root := filepath.Join(s.dir, "uploads", id, version)
+	var names []string
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		if name := filepath.ToSlash(rel); validPath(name) && isCode(name) {
+			names = append(names, name)
+		}
+		return nil
+	})
+	if errors.Is(err, fs.ErrNotExist) || (err == nil && len(names) == 0) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	slices.Sort(names)
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	add := func(name string, data []byte) error {
+		w, err := zw.CreateHeader(&zip.FileHeader{Name: id + "/" + name, Method: zip.Deflate, Modified: at})
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(data)
+		return err
+	}
+	for _, name := range names {
+		data, err := readFile(root, name)
+		if err == nil {
+			err = add(name, data)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	data, err := json.MarshalIndent(listing, "", "  ")
+	if err == nil {
+		err = add("listing.json", append(data, '\n'))
+	}
+	if err == nil {
+		err = zw.Close()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 func readFile(dir, name string) ([]byte, error) {
 	data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
 	if errors.Is(err, fs.ErrNotExist) {

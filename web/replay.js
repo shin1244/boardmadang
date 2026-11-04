@@ -2,6 +2,8 @@
 // 기보 id를 아는 사람은 누구나 볼 수 있습니다. 내가 둔 판이면 내 자리 시점으로 엽니다.
 // ?clear=<게임>이면 대국 기보 대신 제작자 클리어 기보(GET /api/games/<게임>/clear)를 봅니다.
 // 등록할 때 제작자가 혼자 양쪽을 둬서 이긴 판이라 두 자리 모두 "제작자"입니다 (server/internal/upload/clear.go).
+// ?training=<게임>&snap=<i>&n=<j>이면 AI 학습 기록(GET /api/ai/<게임>/training)의 i번째 스냅샷에서 AI끼리 둔 j번째 판을 봅니다.
+// 게임 제작자와 운영자만 받을 수 있습니다. 두 자리 모두 그때의 AI입니다 (trainer/train.py의 Snapshots, web/training.js).
 //
 // 제작자가 게임 코드를 고쳤으면 예전 기보가 다르게 재생될 수 있습니다.
 // 올린 게임은 옛 버전 코드도 남아 있어서(/uploads/<게임>/<버전>/) 기보를 둔 버전의 코드로 재생합니다. 내린 게임도 마찬가지입니다.
@@ -21,7 +23,13 @@ const params = new URLSearchParams(location.search);
 const recordId = params.get('id') ?? '';
 /** 제작자 클리어 기보를 볼 게임 id. 대국 기보면 null */
 const clearOf = params.get('clear');
-const titleKey = clearOf === null ? 'replay.title' : 'replay.clearTitle';
+/** AI 학습 기록을 볼 게임 id와 스냅샷, 판 번호 */
+const trainingOf = params.get('training');
+const snapAt = Number(params.get('snap') ?? 0);
+const gameAt = Number(params.get('n') ?? 0);
+/** 'match' | 'clear' | 'training' */
+const mode = trainingOf !== null ? 'training' : clearOf !== null ? 'clear' : 'match';
+const titleKey = { match: 'replay.title', clear: 'replay.clearTitle', training: 'replay.trainingTitle' }[mode];
 const STEP_MS = 700;
 
 let me = null;
@@ -37,11 +45,38 @@ let pos = 0;
 let viewAs = 0;
 let timer = null;
 let problem = '';
+let snapshot = null; // 학습 기록의 스냅샷 (mode가 'training'일 때)
 
 const playLang = () => gameLang(entry?.listing, lang);
 const nameOfGame = () => localize(entry?.listing?.name, lang).text || rec?.game || '';
 const flip = () => runner.info.board.flipForPlayer === viewAs;
-const playerName = (p) => (clearOf === null ? displayName(rec.players[p]) : t('replay.creator'));
+/** 학습 몇 분째인지. 0분은 "학습 전" (web/training.js와 같은 글) */
+const minuteText = (m) => (m === 0 ? t('training.before') : t('training.minute', { m: m < 10 ? Math.round(m * 10) / 10 : Math.round(m) }));
+
+function playerName(p) {
+  if (mode === 'clear') return t('replay.creator');
+  if (mode === 'training') return t('replay.aiAt', { at: minuteText(snapshot.minute) });
+  return displayName(rec.players[p]);
+}
+
+/** 학습 기록의 판을 대국 기보 모양으로 맞춥니다. 없는 판이면 null */
+function fromTraining(data) {
+  snapshot = data.snapshots?.[snapAt] ?? null;
+  const g = snapshot?.games?.[gameAt];
+  if (!g) return null;
+  return {
+    game: data.game,
+    version: data.version,
+    seed: g.seed,
+    moves: g.moves,
+    winner: g.winner,
+    reason: g.reason, // 'result' | 'maxActions' | 'cut'
+    minutes: null,
+    started: data.updated,
+    players: [null, null],
+    you: [],
+  };
+}
 
 /** 클리어 기보를 대국 기보 모양으로 맞춥니다. 시계도 기권도 없고, 게임 로직(result())이 끝낸 판입니다 */
 function fromClear(c) {
@@ -94,7 +129,9 @@ function outcome() {
   const { winner, reason } = rec;
   if (['desync', 'disagree', 'limit'].includes(reason)) return [t('match.void'), 'even'];
   if (winner === null) return [t('match.draw'), 'even'];
-  if (clearOf !== null) return [t('replay.clearWon', { side: t(winner === 0 ? 'match.first' : 'match.second') }), 'win'];
+  const side = t(winner === 0 ? 'match.first' : 'match.second');
+  if (mode === 'clear') return [t('replay.clearWon', { side }), 'win'];
+  if (mode === 'training') return [t('replay.sideWon', { side }), 'win'];
   return [t('replay.won', { name: playerName(winner) }), 'win'];
 }
 
@@ -113,6 +150,8 @@ function reasonText() {
     case 'timeout':
     case 'spam':
       return t(`replay.reason.${reason}`, { name: playerName(loser) });
+    case 'cut': // 학습에서 같은 판이 되풀이되어 끊은 판
+      return t('replay.reason.cut');
     default:
       return t(`match.reason.${reason}`);
   }
@@ -146,10 +185,18 @@ function renderHead() {
   $('#title').textContent = rec ? nameOfGame() : '';
   const when = $('#when');
   when.hidden = !rec;
+  const back = $('#back');
+  back.hidden = mode !== 'training';
+  back.href = `/web/training.html?game=${encodeURIComponent(trainingOf ?? '')}`;
+  back.textContent = t('replay.backToTraining');
   if (!rec) return;
-  const date = new Date(rec.started).toLocaleString(lang, { dateStyle: 'medium', timeStyle: 'short' });
+  const date = rec.started ? new Date(rec.started).toLocaleString(lang, { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  if (mode === 'training') {
+    when.textContent = t('replay.trainingNote', { at: minuteText(snapshot.minute), n: gameAt + 1, total: snapshot.games.length });
+    return;
+  }
   const timerText = rec.minutes === null ? t('timer.none') : t('timer.each', { m: rec.minutes });
-  when.textContent = `${date} · ${clearOf === null ? timerText : t('replay.clearNote')}`;
+  when.textContent = `${date} · ${mode === 'clear' ? t('replay.clearNote') : timerText}`;
 }
 
 function renderPlayers() {
@@ -276,13 +323,20 @@ async function main() {
   render();
   me = await loadMe();
 
-  const res = await fetch(clearOf === null
-    ? `/api/matches/${encodeURIComponent(recordId)}`
-    : `/api/games/${encodeURIComponent(clearOf)}/clear`);
-  if (res.status === 404 || !(clearOf ?? recordId)) return fail(t(clearOf === null ? 'replay.notFound' : 'replay.noClear'));
+  const url = {
+    match: `/api/matches/${encodeURIComponent(recordId)}`,
+    clear: `/api/games/${encodeURIComponent(clearOf)}/clear`,
+    training: `/api/ai/${encodeURIComponent(trainingOf)}/training`,
+  }[mode];
+  const missing = { match: 'replay.notFound', clear: 'replay.noClear', training: 'replay.noTraining' }[mode];
+  const res = await fetch(url, { cache: mode === 'training' ? 'no-store' : 'default' });
+  if (res.status === 401 && mode === 'training') return fail(t('training.login'));
+  if (res.status === 404 || !(trainingOf ?? clearOf ?? recordId)) return fail(t(missing));
   if (!res.ok) return fail(t('replay.loadFailed', { msg: res.status }));
   rec = await res.json();
-  if (clearOf !== null) rec = fromClear(rec);
+  if (mode === 'clear') rec = fromClear(rec);
+  if (mode === 'training') rec = fromTraining(rec);
+  if (!rec) return fail(t(missing));
   viewAs = rec.you[0] ?? 0;
 
   entry = (await (await fetch('/api/games')).json()).find((g) => g.id === rec.game) ?? null;

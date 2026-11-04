@@ -1,0 +1,49 @@
+/* AI 학습 기록. 색과 상단 메뉴는 lobby.css, 목록 모양은 rooms.css를 같이 씁니다. */
+
+/* 선공과 후공의 색은 판의 돌 색과 같습니다 (sdk/playground/board.js의 PLAYER_COLORS) */
+.training { --p0: #d94f4f; --p1: #3f7fd9; --draw: #9aa5ae; --cut: var(--warn); }
+
+.training-back { display: inline-block; margin-bottom: 6px; color: var(--muted); font-size: 14px; }
+.training-note {
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  color: var(--warn);
+  font-size: 13px;
+}
+.training-note[hidden], #body[hidden], #problem[hidden], #meta[hidden] { display: none; }
+.training-tips { display: grid; gap: 4px; margin: 0 0 12px; padding-left: 18px; color: var(--muted); font-size: 14px; }
+
+.training-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; color: var(--muted); font-size: 13px; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; }
+.swatch.first, .training-bar .first { background: var(--p0); }
+.swatch.second, .training-bar .second { background: var(--p1); }
+.swatch.draw, .training-bar .draw { background: var(--draw); }
+.swatch.cut, .training-bar .cut { background: var(--cut); }
+
+.training-snaps { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.training-snap {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.training-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 16px; }
+.training-iter { color: var(--muted); font-size: 13px; }
+.training-bar { display: flex; height: 10px; overflow: hidden; border-radius: 5px; background: var(--border); }
+.training-bar span { flex-basis: 0; min-width: 2px; }
+.training-line { margin: 0; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+.training-eval { display: grid; gap: 2px; margin: 0; padding-left: 18px; font-size: 14px; }
+.training-flags { display: grid; gap: 4px; margin: 0; padding: 8px 12px 8px 30px; border-radius: 8px; background: var(--bg); color: var(--warn); font-size: 14px; }
+.training-games { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.training-games .btn { padding: 6px 12px; border-left-width: 4px; font-size: 14px; }
+
+/* 좁은 화면에서는 판 링크를 한 줄에 하나씩, 너비를 꽉 채워 누르기 쉽게 */
+@media (max-width: 760px) {
+  .training-games li { flex: 1 1 100%; }
+  .training-games .btn { display: block; }
+}

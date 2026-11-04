@@ -7,8 +7,10 @@
 학습은 "강해질 때까지"가 아니라 정해진 시간(--minutes)만큼만 돌립니다 (예산제, docs/abuse-and-limits.md).
 
 결과는 trainer/runs/<게임 id>/에 남습니다.
-    model.pt    마지막 신경망과 설정
-    log.jsonl   반복마다 자기대국 통계, 손실(학습 중, 새 판), 평가
+    model.pt        마지막 신경망과 설정
+    log.jsonl       반복마다 자기대국 통계, 손실(학습 중, 새 판), 평가
+    snapshots.json  학습 기록: 학습 전과 몇 분마다(--snapshot-every) 그때의 AI끼리 둔 판과 자기대국 통계.
+                    운영자 화면에서 모델과 같이 올리면 제작자가 판마다 다시보기로 봅니다 (server/internal/ai/training.go)
 
 브라우저에서 AI와 두려면 학습한 신경망을 ONNX로 내보내 사이트에 올립니다 (trainer/README.md의 "브라우저에서 AI와 두기").
     python trainer/train.py games/tictactoe --export-onnx
@@ -302,6 +304,115 @@ def export_onnx(saved, info, out, play_sims):
     return meta
 
 
+# snapshots.json의 format (server/internal/ai의 TrainingFormat)과 스냅샷 수 상한 (MaxSnapshots)
+SNAPSHOT_FORMAT = 1
+MAX_SNAPSHOTS = 40
+
+
+def eval_summary(res):
+    """평가 결과에서 학습 기록에 남길 것만 (서버 internal/ai의 Eval). 없으면 None"""
+    if not res:
+        return None
+    out = {}
+    for name in ("random", "perfect"):
+        r = res.get(name)
+        if r and "first" in r:
+            out[name] = {"first": r["first"], "second": r["second"]}
+    acc = res.get("accuracy") or {}
+    if acc.get("policy") and acc.get("search"):
+        out["accuracy"] = {"policy": acc["policy"]["rate"], "search": acc["search"]["rate"]}
+    return out or None
+
+
+class Snapshots:
+    """학습 기록 (snapshots.json, 서버 internal/ai의 Training).
+
+    학습 전과 --snapshot-every분마다 그때의 신경망으로 AI끼리 --snapshot-games판을 두고(selfplay.js의 showcase),
+    앞 스냅샷부터 그때까지의 자기대국 통계와 마지막 평가를 같이 남깁니다. 제작자는 이것으로 학습이 되고 있는지,
+    AI가 규칙의 허점이나 꼼수(한쪽만 이김, 같은 판 되풀이)를 찾았는지 봅니다. 찍을 때마다 파일을 새로 씁니다."""
+
+    def __init__(self, path, info, args):
+        self.path = path
+        self.args = args
+        self.data = {
+            "format": SNAPSHOT_FORMAT,
+            "game": info["id"],
+            "version": info.get("version"),
+            "lang": info["lang"],
+            "minutes": args.minutes,
+            "snapshots": [],
+        }
+        self.base = 0.0  # 이어서 학습하면(--resume) 앞 기록의 마지막 분부터 셉니다
+        if args.resume and path.exists():
+            try:
+                old = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                old = {}
+            if old.get("game") == info["id"] and old.get("snapshots"):
+                self.data["snapshots"] = old["snapshots"]
+                self.data["minutes"] = old.get("minutes", 0) + args.minutes
+                self.base = old["snapshots"][-1]["minute"]
+        self.since = None  # 앞 스냅샷부터의 자기대국 통계
+        self.next = 0.0  # 다음에 찍을 때 (분)
+
+    @property
+    def empty(self):
+        return not self.data["snapshots"]
+
+    def add_selfplay(self, stats):
+        s = self.since or {"games": 0, "wins": [0, 0], "draws": 0, "cut": 0, "moves": 0}
+        s["games"] += stats["games"]
+        s["wins"] = [s["wins"][0] + stats["wins"][0], s["wins"][1] + stats["wins"][1]]
+        s["draws"] += stats["draws"]
+        s["cut"] += stats["cut"]
+        s["moves"] += stats["moves"]
+        self.since = s
+
+    def due(self, minute):
+        return self.args.snapshot_every > 0 and minute >= self.next
+
+    def take(self, pool, infer, minute, iteration, evaluated=None):
+        if self.args.snapshot_every <= 0:
+            return
+        cmd = {
+            "cmd": "showcase",
+            "games": self.args.snapshot_games,
+            "sims": self.args.sims,
+            "maxMoves": self.args.max_moves,
+            "seed": self.args.seed,
+        }
+        res = pool.one(cmd, infer)
+        if "error" in res:
+            print(f"snapshot failed: {res['error']}", flush=True)
+            return
+        snap = {
+            "minute": round(self.base + minute, 1),
+            "iteration": iteration,
+            "selfplay": self.since,
+            "games": res["games"],
+        }
+        ev = eval_summary(evaluated)
+        if ev:
+            snap["eval"] = ev
+        snaps = self.data["snapshots"]
+        snaps.append(snap)
+        # 너무 많으면 학습 전 것은 두고 그다음 것부터 버립니다 (서버의 상한)
+        while len(snaps) > MAX_SNAPSHOTS:
+            del snaps[1]
+        self.since = None
+        while self.next <= minute:
+            self.next += self.args.snapshot_every
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(self.data, ensure_ascii=False) + "\n", encoding="utf-8")
+        os.replace(tmp, self.path)
+        results = ", ".join(
+            f"{'draw' if g['winner'] is None else ('first' if g['winner'] == 0 else 'second') + ' wins'} in {len(g['moves'])}"
+            + ("" if g["reason"] == "result" else f" ({g['reason']})")
+            for g in res["games"]
+        )
+        print(f"snapshot at {snap['minute']:g} min: {results}", flush=True)
+
+
 def wdl(r):
     return "/".join(str(x) for x in r)
 
@@ -414,6 +525,13 @@ def main():
     ap.add_argument(
         "--play-sims", type=int, default=200, help="with --export-onnx: MCTS simulations per move of the browser AI"
     )
+    ap.add_argument(
+        "--snapshot-every",
+        type=float,
+        default=10,
+        help="every N minutes, save games the AI plays against itself to snapshots.json (0 = off, default 10)",
+    )
+    ap.add_argument("--snapshot-games", type=int, default=2, help="games per snapshot (default 2)")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
@@ -481,7 +599,15 @@ def main():
     log = open(out / "log.jsonl", "a", encoding="utf-8")
     last = first - 1  # 마지막으로 끝낸 반복
     evaluated = None
+    snaps = Snapshots(out / "snapshots.json", info, args)
+    since_eval = None  # 앞 스냅샷부터의 마지막 평가
+    minutes = lambda: (time.monotonic() - t0) / 60  # noqa: E731
     try:
+        # 학습 전의 AI (무작위 신경망 + 탐색). 이어서 학습하면 앞 기록에 이어 붙입니다
+        if snaps.empty:
+            snaps.take(pool, infer, 0, last)
+        else:
+            snaps.next = args.snapshot_every
         for it in range(first, first + args.iterations):
             if time.monotonic() - t0 > args.minutes * 60:
                 break
@@ -533,19 +659,29 @@ def main():
                 entry["teacher"] = "rollout"
             evaluated = None
             if it % args.eval_every == 0:
-                evaluated = entry["eval"] = evaluate(pool, infer, args, solvable)
+                evaluated = since_eval = entry["eval"] = evaluate(pool, infer, args, solvable)
             log.write(json.dumps(entry) + "\n")
             log.flush()
             torch.save({"config": net.config, "state": net.state_dict(), "iteration": it, "info": info}, out / "model.pt")
             last = it
+            snaps.add_selfplay(stats)
+            if snaps.due(minutes()):
+                snaps.take(pool, infer, minutes(), it, since_eval)
+                since_eval = None
         # 마지막 평가는 롤아웃 AI와도 둡니다 (학습 없이 공짜로 만드는 AI보다 나아졌는지)
         if last >= first and (evaluated is None or args.rollout_sims):
             print("final evaluation")
-            log.write(json.dumps({"iteration": last, "eval": evaluate(pool, infer, args, solvable, rollout=True)}) + "\n")
+            since_eval = evaluate(pool, infer, args, solvable, rollout=True)
+            log.write(json.dumps({"iteration": last, "eval": since_eval}) + "\n")
+        # 마지막 AI도 남깁니다 (올리는 모델과 같은 신경망)
+        if not snaps.empty and snaps.data["snapshots"][-1]["iteration"] != last:
+            snaps.take(pool, infer, minutes(), last, since_eval)
     finally:
         log.close()
         pool.close()
     print(f"done in {time.monotonic() - t0:.0f}s: {out / 'model.pt'}")
+    if not snaps.empty:
+        print(f"training record ({len(snaps.data['snapshots'])} snapshots): {snaps.path}")
 
 
 if __name__ == "__main__":
