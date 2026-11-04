@@ -128,6 +128,7 @@ view(state, player, lang) {
     marks:   [{ row: 1, col: 1, type: 'last-move' }],
     tint:    [{ row: 0, col: 0, color: 0 }],  // 플레이어 0의 색으로 칸 칠하기
     text:    [{ row: 2, col: 2, text: '4' }], // 칸 위 짧은 글자
+    lines:   [{ from: { row: 0, col: 0 }, to: { row: 2, col: 2 }, color: 1 }], // 두 칸을 잇는 선
     message: '당신 차례',
   };
 }
@@ -141,7 +142,11 @@ view(state, player, lang) {
 | `danger` | 위험 (체크 같은 것) |
 | `ghost` | 반투명 기물 (`piece` 필요), 미리보기 |
 | `blocked` | 쓸 수 없는 칸 (어둡게) |
-| `frame` | 색 테두리 (`color` 필요), 목표 칸 같은 것 |
+| `frame` | 색 테두리 (`color` 필요), 목표 칸 같은 것. `width`로 두께를 칸 한 변의 1~30%로 정합니다 (기본 9%) |
+
+**선 (`lines`):** 두 칸의 가운데를 잇는 반투명한 선을 말 위에 그립니다. `color`(기본 진한 회색), `width`(칸 한 변의 1~50%, 기본 20%)를 정할 수 있습니다.
+`hover: { row, col }`을 붙이면 마우스를 그 칸에 올렸을 때만 보입니다. 돌을 두기 전에 "여기 두면 이 돌들과 이어진다"를 미리 보여 줄 때 씁니다.
+`legal()`이 있으면 둘 수 있는 칸에만 마우스가 올라간 것으로 칩니다. 선은 AI 관측에 들어가지 않고, `hover`가 있는 선은 썸네일에도 들어가지 않습니다.
 
 **판 설정:** `places`는 `'cells'`(칸 안, 체스처럼) 또는 `'points'`(줄이 만나는 곳, 바둑처럼)입니다.
 `rows`, `cols`는 놓을 수 있는 자리 수입니다 (32까지). `look`(`'plain'`, `'checker'`, `'wood'`), `starPoints`(화점),

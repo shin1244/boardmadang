@@ -583,6 +583,21 @@ func TestCheckThumbnail(t *testing.T) {
 			t.Errorf("%s: %v, want %q", in, p, want)
 		}
 	}
+	// 테두리 두께(width)와 선(lines)
+	widths := map[string]string{
+		`{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[],"marks":[{"row":0,"col":0,"type":"frame","width":31}]}}`:                    "thumbnail.view.marks: each needs a place on the board and a known mark type",
+		`{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[],"marks":[{"row":0,"col":0,"type":"frame","width":"5"}]}}`:                   "thumbnail.view.marks: each needs a place on the board and a known mark type",
+		`{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[],"lines":{}}}`:                                                               "thumbnail.view.lines: must be a list if present",
+		`{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[],"lines":[{"from":{"row":0,"col":0},"to":{"row":3,"col":0}}]}}`:              "thumbnail.view.lines: each needs from and to on the board, and width from 1 to 50",
+		`{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[],"lines":[{"from":{"row":0,"col":0},"to":{"row":1,"col":0},"width":0.5}]}}`:  "thumbnail.view.lines: each needs from and to on the board, and width from 1 to 50",
+		`{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[],"lines":[{"from":{"row":0,"col":0},"to":{"row":1,"col":0},"hover":null}]}}`: "thumbnail.view.lines: each needs from and to on the board, and width from 1 to 50",
+		`{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[],"lines":[7]}}`:                                                              "thumbnail.view.lines: each needs from and to on the board, and width from 1 to 50",
+	}
+	for in, want := range widths {
+		if _, p := CheckThumbnail([]byte(in)); len(p) == 0 || p[0] != want {
+			t.Errorf("%s: %v, want %q", in, p, want)
+		}
+	}
 	big := `{"board":{"places":"cells","rows":32,"cols":32},"pieces":"xo","player":1,"view":{"pieces":[` +
 		strings.TrimSuffix(strings.Repeat(`{"row":1,"col":1,"piece":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"},`, 700), ",") + `]}}`
 	if _, p := CheckThumbnail([]byte(big)); len(p) != 1 || !strings.Contains(p[0], "larger than 32KB") {
@@ -592,6 +607,17 @@ func TestCheckThumbnail(t *testing.T) {
 	want := `{"board":{"cols":3,"places":"cells","rows":3},"pieces":"xo","player":0,"view":{"marks":[{"col":1,"color":1,"row":1,"type":"dot"}],"pieces":[{"col":1,"piece":"x","row":0}]}}`
 	if p != nil || string(out) != want {
 		t.Fatalf("%s %v", out, p)
+	}
+
+	// 테두리 두께와 선: hover가 있는 선은 빼고, 모르는 칸은 버립니다 (sdk/test/check.test.js와 같은 경우)
+	lined := `{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[],
+	  "marks":[{"row":0,"col":0,"type":"frame","color":1,"width":4.5,"extra":1}],
+	  "lines":[{"from":{"row":0,"col":0},"to":{"row":2,"col":2,"extra":1},"color":"#2563eb","width":12},
+	           {"from":{"row":1,"col":1},"to":{"row":0,"col":1},"hover":{"row":1,"col":1}}]}}`
+	out, p = CheckThumbnail([]byte(lined))
+	want = `{"board":{"cols":3,"places":"cells","rows":3},"pieces":"xo","player":0,"view":{"lines":[{"color":"#2563eb","from":{"col":0,"row":0},"to":{"col":2,"row":2},"width":12}],"marks":[{"col":0,"color":1,"row":0,"type":"frame","width":4.5}],"pieces":[]}}`
+	if p != nil || string(out) != want {
+		t.Fatalf("선: %s %v", out, p)
 	}
 }
 

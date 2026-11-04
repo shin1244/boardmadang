@@ -5,6 +5,7 @@
 // 썸네일도 여기서 검사합니다. 썸네일은 이미지가 아니라 혼자 두던 판을 그대로 찍은 데이터(thumbnail.json)이고,
 // 사이트가 보드 렌더러로 다시 그립니다. 판 설정과 기물 세트까지 들어 있어서 게임 코드 없이도 그릴 수 있습니다.
 
+import { FRAME_WIDTH, LINE_WIDTH } from './playground/board.js';
 import { hashOf, makeRng } from './playground/platform.js';
 
 /** 업로드할 때 검사하는 상한 */
@@ -280,6 +281,12 @@ const isCell = (c, b) => c && typeof c === 'object'
   && Number.isInteger(c.row) && Number.isInteger(c.col)
   && c.row >= 0 && c.col >= 0 && c.row < b.rows && c.col < b.cols;
 const isColor = (c) => c === 0 || c === 1 || (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c));
+/** 두께: 없거나, 칸 한 변의 % 범위 안의 숫자 */
+const isWidth = (w, range) => w === undefined || (typeof w === 'number' && w >= range.min && w <= range.max);
+/** 선(lines) 하나: 두 칸과 색, 두께, 마우스를 올렸을 때만 보일 칸(hover) */
+const isLine = (l, b) => l && typeof l === 'object' && isCell(l.from, b) && isCell(l.to, b)
+  && (l.color === undefined || isColor(l.color)) && isWidth(l.width, LINE_WIDTH)
+  && (l.hover === undefined || isCell(l.hover, b));
 
 /**
  * 썸네일을 저장할 모양으로 만듭니다. 판 설정, 기물 세트, 찍은 플레이어, 그 순간의 화면입니다.
@@ -303,11 +310,21 @@ export function normalizeThumbnail(t) {
       const out = { ...cell(m), type: m.type };
       if (m.piece !== undefined) out.piece = m.piece;
       if (m.color !== undefined) out.color = m.color;
+      if (m.width !== undefined) out.width = m.width;
       return out;
     });
   }
   if (v.tint) view.tint = v.tint.map((x) => ({ ...cell(x), color: x.color }));
   if (v.text) view.text = v.text.map((x) => ({ ...cell(x), text: x.text }));
+  // 마우스를 올렸을 때만 보이는 선(hover)은 썸네일에 넣지 않습니다
+  if (v.lines) {
+    view.lines = v.lines.filter((l) => l.hover === undefined).map((l) => {
+      const out = { from: cell(l.from), to: cell(l.to) };
+      if (l.color !== undefined) out.color = l.color;
+      if (l.width !== undefined) out.width = l.width;
+      return out;
+    });
+  }
   return { board, pieces: Array.isArray(t.pieces) ? [...t.pieces] : t.pieces, player: t.player, view };
 }
 
@@ -323,18 +340,22 @@ export function validateThumbnail(t) {
 
   const b = t.board;
   const list = (k) => v[k] === undefined || Array.isArray(v[k]);
-  for (const k of ['marks', 'tint', 'text']) if (!list(k)) p.push(`thumbnail.view.${k}: must be a list if present`);
+  for (const k of ['marks', 'tint', 'text', 'lines']) if (!list(k)) p.push(`thumbnail.view.${k}: must be a list if present`);
   if (p.length) return p;
   if (!v.pieces.every((x) => isCell(x, b) && typeof x.piece === 'string' && x.piece.length <= 32)) {
     p.push('thumbnail.view.pieces: each needs a place on the board and a piece name');
   }
   if (!(v.marks ?? []).every((m) => isCell(m, b) && MARK_TYPES.includes(m.type)
-    && (m.piece === undefined || typeof m.piece === 'string') && (m.color === undefined || isColor(m.color)))) {
+    && (m.piece === undefined || typeof m.piece === 'string') && (m.color === undefined || isColor(m.color))
+    && isWidth(m.width, FRAME_WIDTH))) {
     p.push('thumbnail.view.marks: each needs a place on the board and a known mark type');
   }
   if (!(v.tint ?? []).every((x) => isCell(x, b) && isColor(x.color))) p.push('thumbnail.view.tint: each needs a place on the board and a color');
   if (!(v.text ?? []).every((x) => isCell(x, b) && typeof x.text === 'string' && x.text.length <= 8)) {
     p.push('thumbnail.view.text: each needs a place on the board and up to 8 characters');
+  }
+  if (!(v.lines ?? []).every((l) => isLine(l, b))) {
+    p.push(`thumbnail.view.lines: each needs from and to on the board, and width from ${LINE_WIDTH.min} to ${LINE_WIDTH.max}`);
   }
   if (!p.length && new TextEncoder().encode(JSON.stringify(normalizeThumbnail(t))).length > GAME_LIMITS.thumbnailBytes) {
     p.push(`thumbnail is larger than ${GAME_LIMITS.thumbnailBytes / 1024}KB`);

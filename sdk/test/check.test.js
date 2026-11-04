@@ -133,6 +133,28 @@ test('썸네일 모양 검사', () => {
   assert.deepEqual(validateThumbnail(null), ['thumbnail: must be an object']);
 });
 
+test('썸네일의 테두리 두께와 선: hover가 있는 선은 빼고, 범위 밖의 두께는 막습니다', () => {
+  const thumb = makeThumbnail(tictactoe, 0, {
+    pieces: [],
+    marks: [{ row: 0, col: 0, type: 'frame', color: 1, width: 4.5, extra: 1 }],
+    lines: [
+      { from: { row: 0, col: 0 }, to: { row: 2, col: 2, extra: 1 }, color: '#2563eb', width: 12 },
+      { from: { row: 1, col: 1 }, to: { row: 0, col: 1 }, hover: { row: 1, col: 1 } },
+    ],
+  });
+  assert.deepEqual(thumb.view.marks, [{ row: 0, col: 0, type: 'frame', color: 1, width: 4.5 }]);
+  assert.deepEqual(thumb.view.lines, [{ from: { row: 0, col: 0 }, to: { row: 2, col: 2 }, color: '#2563eb', width: 12 }]);
+  assert.deepEqual(validateThumbnail(thumb), []);
+
+  const broken = (f) => validateThumbnail(f(structuredClone(thumb)));
+  assert.match(broken((t) => { t.view.marks[0].width = 31; return t; })[0], /thumbnail\.view\.marks/);
+  assert.match(broken((t) => { t.view.marks[0].width = '5'; return t; })[0], /thumbnail\.view\.marks/);
+  assert.match(broken((t) => { t.view.lines[0].width = 0.5; return t; })[0], /thumbnail\.view\.lines: .*width from 1 to 50/);
+  assert.match(broken((t) => { t.view.lines[0].to.row = 3; return t; })[0], /thumbnail\.view\.lines/);
+  assert.match(broken((t) => { t.view.lines[0].hover = { row: 9, col: 0 }; return t; })[0], /thumbnail\.view\.lines/);
+  assert.match(broken((t) => { t.view.lines = {}; return t; })[0], /thumbnail\.view\.lines: must be a list/);
+});
+
 test('찍은 뒤 게임의 판이나 기물을 바꾸면 다시 찍으라고 합니다', () => {
   const thumb = makeThumbnail(tictactoe, 0, tictactoe.view(midGame(), 0, 'ko'));
   const bigger = variant({ board: { ...tictactoe.board, rows: 4 } });

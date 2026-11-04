@@ -21,6 +21,12 @@ const (
 	pieceKinds = 32 // GAME_LIMITS.pieceKinds
 )
 
+// 테두리(frame 표시)와 선(lines)의 두께 범위. 칸 한 변의 %입니다 (sdk/playground/board.js의 FRAME_WIDTH, LINE_WIDTH).
+var (
+	frameWidth = [2]float64{1, 30}
+	lineWidth  = [2]float64{1, 50}
+)
+
 var (
 	places    = []string{"cells", "points", "both"}
 	pieceSets = []string{"chess", "go-stones", "xo"}
@@ -58,7 +64,7 @@ func CheckThumbnail(data []byte) (json.RawMessage, []string) {
 
 	b := t["board"].(map[string]any)
 	rows, cols := b["rows"].(float64), b["cols"].(float64)
-	for _, k := range []string{"marks", "tint", "text"} {
+	for _, k := range []string{"marks", "tint", "text", "lines"} {
 		if x, present := view[k]; present {
 			if _, isList := x.([]any); !isList {
 				p = append(p, fmt.Sprintf("thumbnail.view.%s: must be a list if present", k))
@@ -69,6 +75,9 @@ func CheckThumbnail(data []byte) (json.RawMessage, []string) {
 		return nil, p
 	}
 	isCell := func(c map[string]any) bool {
+		if c == nil {
+			return false
+		}
 		r, okR := whole(c["row"])
 		col, okC := whole(c["col"])
 		return okR && okC && r >= 0 && col >= 0 && r < rows && col < cols
@@ -93,7 +102,7 @@ func CheckThumbnail(data []byte) (json.RawMessage, []string) {
 	if !every("marks", func(m map[string]any) bool {
 		_, isStr := m["piece"].(string)
 		return isCell(m) && slices.Contains(markTypes, str(m["type"])) &&
-			(!has(m, "piece") || isStr) && (!has(m, "color") || isColor(m["color"]))
+			(!has(m, "piece") || isStr) && (!has(m, "color") || isColor(m["color"])) && isWidth(m, frameWidth)
 	}) {
 		p = append(p, "thumbnail.view.marks: each needs a place on the board and a known mark type")
 	}
@@ -105,6 +114,15 @@ func CheckThumbnail(data []byte) (json.RawMessage, []string) {
 		return isCell(x) && isStr && jsLen(s) <= 8
 	}) {
 		p = append(p, "thumbnail.view.text: each needs a place on the board and up to 8 characters")
+	}
+	if !every("lines", func(l map[string]any) bool {
+		from, _ := l["from"].(map[string]any)
+		to, _ := l["to"].(map[string]any)
+		hover, _ := l["hover"].(map[string]any)
+		return l != nil && isCell(from) && isCell(to) && (!has(l, "color") || isColor(l["color"])) &&
+			isWidth(l, lineWidth) && (!has(l, "hover") || isCell(hover))
+	}) {
+		p = append(p, fmt.Sprintf("thumbnail.view.lines: each needs from and to on the board, and width from %g to %g", lineWidth[0], lineWidth[1]))
 	}
 	if len(p) > 0 {
 		return nil, p
@@ -131,7 +149,7 @@ func CheckThumbnail(data []byte) (json.RawMessage, []string) {
 		for _, m := range items("marks") {
 			c := cell(m)
 			c["type"] = m["type"]
-			for _, k := range []string{"piece", "color"} {
+			for _, k := range []string{"piece", "color", "width"} {
 				if has(m, k) {
 					c[k] = m[k]
 				}
@@ -150,6 +168,24 @@ func CheckThumbnail(data []byte) (json.RawMessage, []string) {
 			}
 			out[k] = list
 		}
+	}
+	// 마우스를 올렸을 때만 보이는 선(hover)은 썸네일에 넣지 않습니다
+	if _, present := view["lines"]; present {
+		lines := []any{}
+		for _, l := range items("lines") {
+			if has(l, "hover") {
+				continue
+			}
+			from, to := l["from"].(map[string]any), l["to"].(map[string]any)
+			c := map[string]any{"from": cell(from), "to": cell(to)}
+			for _, k := range []string{"color", "width"} {
+				if has(l, k) {
+					c[k] = l[k]
+				}
+			}
+			lines = append(lines, c)
+		}
+		out["lines"] = lines
 	}
 	norm := map[string]any{"board": board, "pieces": t["pieces"], "player": t["player"], "view": out}
 	var buf bytes.Buffer
@@ -189,6 +225,15 @@ func piecesOk(v any) bool {
 	}
 	list, ok := v.([]any)
 	return ok && len(list) <= pieceKinds && !slices.ContainsFunc(list, func(x any) bool { _, isStr := x.(string); return !isStr })
+}
+
+// isWidth는 두께(width)가 없거나 범위 안의 숫자인지입니다.
+func isWidth(m map[string]any, r [2]float64) bool {
+	if !has(m, "width") {
+		return true
+	}
+	w, ok := m["width"].(float64)
+	return ok && w >= r[0] && w <= r[1]
 }
 
 func isColor(v any) bool {
