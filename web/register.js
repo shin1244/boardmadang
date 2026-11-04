@@ -183,6 +183,7 @@ function siteProblems(u) {
   const id = u.info?.id ?? '';
   if (id.length > MAX_ID) list.push(t('register.check.longId', { max: MAX_ID }));
   if (u.info && kindOf(u) === 'taken') list.push(t('register.check.taken', { id }));
+  if (u.info && kindOf(u) === 'new' && mine?.newLeft === 0) list.push(t('register.check.newLimit'));
   return list;
 }
 
@@ -201,6 +202,12 @@ function thumbText(u) {
   return t('register.thumb.none');
 }
 
+/** 오늘 남은 등록 횟수. 새 게임은 하루에 하나라 다 쓰면 따로 알립니다 (server/internal/upload의 NewGamesPerDay) */
+function leftText(m) {
+  if (m.left > 0 && m.newLeft === 0) return t('register.leftNoNew', { n: m.left });
+  return t('register.left', { n: m.left });
+}
+
 function renderUpload() {
   const u = upload;
   const line = $('#upload-status');
@@ -211,7 +218,7 @@ function renderUpload() {
     line.textContent = t('register.uploadFailed', { msg: u.msg });
     line.classList.add('bad');
   } else {
-    line.textContent = mine ? t('register.left', { n: mine.left }) : '';
+    line.textContent = mine ? leftText(mine) : '';
     if (mine?.left === 0) line.classList.add('bad');
   }
 
@@ -953,7 +960,7 @@ function saveError(status, body) {
   if (current?.edit) return editError(status, body);
   if (mode !== 'site') return body.error ?? status;
   if (status === 409) return t('register.check.taken', { id: current.id });
-  if (status === 429) return t('register.publish.tooMany');
+  if (status === 429) return t(body.error === 'too many new games' ? 'register.check.newLimit' : 'register.publish.tooMany');
   if (status === 404) return t('register.publish.expired');
   if (status === 400 && body.error === 'bad id') return t('register.check.longId', { max: MAX_ID });
   return body.error ?? status;

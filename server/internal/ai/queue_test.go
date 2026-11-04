@@ -56,6 +56,9 @@ func TestRequestFlow(t *testing.T) {
 			t.Errorf("ask %s = %d, want 404", game, c)
 		}
 	}
+	if rec := f.do("GET", "/api/ai/mine", "", "", creator); strings.Contains(rec.Body.String(), `"next"`) {
+		t.Errorf("mine before any request = %s", rec.Body)
+	}
 	rec := f.do("POST", "/api/ai/dots/request", "application/json", "{}", creator)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("ask = %d %s", rec.Code, rec.Body)
@@ -175,11 +178,26 @@ func TestRequestFlow(t *testing.T) {
 		t.Errorf("ask for the trained version = %d, want 409", c)
 	}
 
-	// 반려하면 이유가 남고 다시 요청할 수 있습니다
+	// 요청은 일주일에 한 번입니다. 마지막으로 요청한 때부터 세고, 거둔 요청은 세지 않습니다 (위에서 거둔 뒤 바로 요청함)
 	f.store.now = func() time.Time { return at.Add(time.Hour) }
-	if c := ask("dots2", creator); c != http.StatusOK {
-		t.Fatalf("ask dots2 = %d", c)
+	rec = f.do("POST", "/api/ai/dots2/request", "application/json", "{}", creator)
+	soon := decode[struct {
+		Error string
+		Next  time.Time
+	}](t, rec.Body.String())
+	if rec.Code != http.StatusTooManyRequests || soon.Error != ErrTooSoon.Error() || !soon.Next.Equal(at.Add(AskEvery)) {
+		t.Fatalf("ask within a week = %d %s", rec.Code, rec.Body)
 	}
+	rec = f.do("GET", "/api/ai/mine", "", "", creator)
+	if next := decode[struct{ Next time.Time }](t, rec.Body.String()).Next; !next.Equal(at.Add(AskEvery)) {
+		t.Errorf("mine within a week = %s", rec.Body)
+	}
+	f.store.now = func() time.Time { return at.Add(AskEvery) }
+	if c := ask("dots2", creator); c != http.StatusOK {
+		t.Fatalf("ask dots2 a week later = %d", c)
+	}
+
+	// 반려하면 이유가 남습니다
 	if rec := f.do("POST", "/api/admin/ai/dots2/decline", "application/json", `{"note":"`+strings.Repeat("가", MaxNote+1)+`"}`, admin); rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("long note = %d", rec.Code)
 	}

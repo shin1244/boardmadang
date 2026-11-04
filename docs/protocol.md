@@ -19,7 +19,7 @@
 | `POST /api/games/{id}/comments` | 의견 남기기 `{"text":"…"}` → `201`과 남긴 의견 |
 | `DELETE /api/games/{id}/comments/{comment}` | 내 의견 지우기 → `{"ok":true}` |
 | `POST /api/reports` | 신고 `{"game":"tictactoe","comment":"RN92MFYW","reason":"spam","detail":"…"}` → `{"ok":true,"hidden":false}`. `comment`가 없으면 게임 신고 |
-| `GET /api/uploads` | 내가 올린 게임과 오늘 남은 등록 횟수 `{"games":[{"id":"dots","module":"…","version":"e9ff673cd0205ffa","listing":{…},"thumbnail":{…},"clear":true,"published":"…","hidden":true}],"left":4}`. 게임마다 `/api/games`의 항목에 마지막으로 등록한 때와 내렸는지(`hidden`)를 더한 것입니다. 계정만 |
+| `GET /api/uploads` | 내가 올린 게임과 오늘 남은 등록 횟수 `{"games":[{"id":"dots","module":"…","version":"e9ff673cd0205ffa","listing":{…},"thumbnail":{…},"clear":true,"published":"…","hidden":true}],"left":4,"newLeft":0}`. 게임마다 `/api/games`의 항목에 마지막으로 등록한 때와 내렸는지(`hidden`)를 더한 것입니다. `left`는 새 게임과 새 버전을 합친 횟수, `newLeft`는 오늘 더 올릴 수 있는 새 게임 수(하루 1개, `left`를 넘지 않음)입니다. 계정만 |
 | `PATCH /api/uploads/{id}` | 내 게임의 등록 정보만 고치기 `{"listing":{…}}`, 내리기 `{"hidden":true}`, 다시 올리기 `{"hidden":false}` → `{"game":{…}}` (`GET /api/uploads`의 항목). 계정만 |
 | `POST /api/drafts` | 게임 zip을 초안으로 올리기. 본문은 zip 그대로(`Content-Type: application/zip`). 계정만 → `201 {"id":"<초안>","module":"/drafts/<초안>/index.js","version":"…","files":[{"path":"index.js","bytes":3640}],"listing":{…},"thumbnail":{…},"thumbnailProblems":["…"]}` |
 | `POST /api/drafts/{draft}/publish` | 초안 등록 `{"id":"dots","listing":{…},"thumbnail":{…},"clear":{"version":"…","seed":3551073280,"moves":[{"player":0,"action":{"kind":"click","row":1,"col":1}}],"winner":0}}` → `{"game":{…}}` (`/api/games`의 항목). 계정만 |
@@ -32,8 +32,8 @@
 | `PUT /api/admin/ai/{game}` | AI 모델 올리기 `{"meta":{…},"model":"<model.onnx의 base64>"}` → `{"ai":{…}}` (`/api/games`의 `ai`). `meta`는 `trainer/train.py --export-onnx`가 쓴 `model.json` 그대로. 모델은 16 MB까지 (`413`), 모양이 틀리면 `422 {"error":"…"}`, 없는 게임이면 `404`. 같은 게임의 모델은 바뀝니다. 운영자만 |
 | `DELETE /api/admin/ai/{game}` | AI 모델 지우기 → `{"ok":true}`. 요청과 학습 기록은 남습니다. 운영자만 |
 | `GET /api/admin/stats?days=30` | 운영자 화면의 통계. 날마다 방문, MAU, 대국, 등록, 가입과 지금 접속. 운영자만 ([moderation.md](moderation.md#통계)) |
-| `GET /api/ai/mine` | 내가 올린 게임마다 AI 상태 `{"games":{"<id>":{"request":{…},"training":{…},"ai":{…}}}}`. 없는 칸은 빠집니다. 계정만 |
-| `POST /api/ai/{game}/request` | AI 만들기 요청 (본문 `{}`, JSON만) → `{"request":{"game":"…","version":"…","by":"…","at":"…","status":"waiting","updated":"…"}}`. 내가 올린 게임의 지금 버전으로. 남의 게임이나 레포 게임이면 `404`, 내린 게임이면 `409 {"error":"hidden"}`, 이미 요청이 있으면 `409 {"error":"request open"}`, 이 버전으로 학습한 모델이 있으면 `409 {"error":"already trained"}`, 다른 게임의 요청이 안 끝났으면 `429 {"error":"another request"}`, 정지된 계정이면 `403` |
+| `GET /api/ai/mine` | 내가 올린 게임마다 AI 상태 `{"games":{"<id>":{"request":{…},"training":{…},"ai":{…}}},"next":"…"}`. 없는 칸은 빠집니다. `next`는 다음 AI 요청을 할 수 있는 때로, 지금 할 수 있으면 빠집니다 (일주일에 한 번). 계정만 |
+| `POST /api/ai/{game}/request` | AI 만들기 요청 (본문 `{}`, JSON만) → `{"request":{"game":"…","version":"…","by":"…","at":"…","status":"waiting","updated":"…"}}`. 내가 올린 게임의 지금 버전으로. 남의 게임이나 레포 게임이면 `404`, 내린 게임이면 `409 {"error":"hidden"}`, 이미 요청이 있으면 `409 {"error":"request open"}`, 이 버전으로 학습한 모델이 있으면 `409 {"error":"already trained"}`, 다른 게임의 요청이 안 끝났으면 `429 {"error":"another request"}`, 마지막으로 요청한 지 일주일이 안 됐으면 `429 {"error":"too soon","next":"…"}` (거둔 요청은 세지 않음), 정지된 계정이면 `403` |
 | `DELETE /api/ai/{game}/request` | 기다리는 중인 내 요청 거두기 → `{"ok":true}`. 운영자가 받아 갔거나 끝난 요청이면 `409 {"error":"no request"}` |
 | `GET /api/ai/{game}/training` | 학습 기록 (`snapshots.json` 그대로, 아래). 게임을 올린 사람과 운영자만, 다른 사람에게는 `404`. 로그인 전이면 `401` |
 | `GET /api/admin/ai/requests` | AI 요청 목록 `{"requests":[…],"trainings":{"<id>":{"version":"…","minutes":60,"snapshots":7,"updated":"…"}}}`. 안 끝난 요청을 오래된 것부터, 그다음 끝난 요청 30개를 최근 것부터. 운영자만 |
@@ -95,7 +95,8 @@ AI 모델을 올리면(`PUT /api/admin/ai/{game}`) 그 게임의 열린 요청�
   - 내린 게임은 `/api/games`와 클리어 기보에서 빠집니다. 코드(`/uploads/…`)는 그대로 내보내서 이미 둔 대국의 기보는 계속 다시볼 수 있고,
     id도 그대로 주인의 것입니다. 다시 올리거나 새로 등록하면 다시 나옵니다.
 - 실패: `409 {"error":"id taken"}` 레포 게임이거나 다른 계정이 올린 id, `400 {"error":"bad id"}` id 모양(영문 소문자, 숫자, `-`로 40자까지),
-  `429 {"error":"too many"}` 하루 등록 5번 또는 한 시간에 초안 30번, `404` 초안이 없거나 남의 것이거나 하루가 지남
+  `429 {"error":"too many"}` 하루 등록 5번 또는 한 시간에 초안 30번, `429 {"error":"too many new games"}` 새 게임은 하루 1개 (내 게임의 새 버전은 됨),
+  `404` 초안이 없거나 남의 것이거나 하루가 지남
 - 초안은 하루가 지나면 지우고, 계정마다 최근 3개만 남깁니다. 등록하면 그 초안은 없어집니다.
 - 서버는 게임 코드를 돌리지 않습니다. 자동 검사는 올린 사람의 브라우저에서 돌므로 서버는 그 결과를 믿지 않습니다 ([architecture.md](architecture.md#보안)).
   내 컴퓨터에서 온 요청과 계정만 받고(게스트면 `403 {"error":"member only"}`), 검사에 걸리면 `422 {"problems":[...]}`를 돌려줍니다.

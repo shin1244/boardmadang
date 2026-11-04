@@ -132,7 +132,7 @@ func (h Handler) ServeDelete(w http.ResponseWriter, r *http.Request) {
 
 // ---- 제작자 ----
 
-// ServeMine은 내가 올린 게임마다 AI 만들기 요청, 학습 기록, 모델입니다.
+// ServeMine은 내가 올린 게임마다 AI 만들기 요청, 학습 기록, 모델과 다음 요청을 할 수 있는 때(next)입니다.
 func (h Handler) ServeMine(w http.ResponseWriter, r *http.Request) {
 	u, ok := h.member(w, r)
 	if !ok {
@@ -151,7 +151,12 @@ func (h Handler) ServeMine(w http.ResponseWriter, r *http.Request) {
 			out[g.ID] = m
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"games": out})
+	resp := map[string]any{"games": out}
+	// 일주일에 한 번이라 다음 요청을 할 수 있는 때. 지금 할 수 있으면 빠집니다
+	if next := h.Store.NextAsk(u.ID); !next.IsZero() {
+		resp["next"] = next
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // ServeAsk는 내가 올린 게임의 지금 버전으로 AI를 요청합니다. 내린 게임은 안 됩니다.
@@ -176,6 +181,8 @@ func (h Handler) ServeAsk(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 	case errors.Is(err, ErrBusy):
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
+	case errors.Is(err, ErrTooSoon):
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": err.Error(), "next": h.Store.NextAsk(u.ID)})
 	case err != nil:
 		log.Printf("AI 요청 저장 실패 %s: %v", game, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server error"})

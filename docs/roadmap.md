@@ -24,7 +24,7 @@
   - `npx boardmadang pack`이 만든 zip을 받음 (300KB 이하)
   - 파일 규칙: `.js`, `.mjs`와 맨 위의 `listing.json`, `thumbnail.json`만 (다른 JSON은 버전에 안 들어가서 거절), 폴더 밖 경로와 점으로 시작하는 이름 거절, 코드 256KB 이하
   - 버전별 저장: `DATA_DIR/uploads/<id>/<버전>/`. 게임 주인(계정) 기록, id 중복 확인 (레포 게임 id도 막음)
-  - 하루 등록 5번, 초안은 한 시간에 30번 ([abuse-and-limits.md](abuse-and-limits.md))
+  - 하루 등록 5번(새 게임은 1개), 초안은 한 시간에 30번 ([abuse-and-limits.md](abuse-and-limits.md))
   - 등록 정보와 썸네일은 서버가 다시 검사 (`listing.js`, `check.js`의 규칙을 Go로 옮김)
 - [x] 올라온 게임도 `/api/games`에 나오고, `/uploads/<id>/<버전>/…`에서 내보내기 (실행기용 CORS, 버전이 내용의 해시라 오래 캐시)
 - [x] **새 등록 화면**: zip 올리기 → 실행기 안에서 자동 검사(`sdk/check.js`) → 등록 정보 → 등록

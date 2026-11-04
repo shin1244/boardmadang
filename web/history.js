@@ -24,6 +24,8 @@ let mineError = '';
 let mineBusy = null;
 /** GET /api/ai/mine: 게임 id → { request, training, ai }. 개발 서버처럼 없으면 null */
 let myAI = null;
+/** 다음 AI 요청을 할 수 있는 때 (GET /api/ai/mine의 next, 일주일에 한 번). 지금 할 수 있으면 null */
+let aiNext = null;
 
 const gameName = (id) => localize(games.get(id)?.listing?.name, lang).text || id;
 
@@ -31,14 +33,10 @@ const gameName = (id) => localize(games.get(id)?.listing?.name, lang).text || id
 
 async function loadMine() {
   try {
-    const [res, aiRes] = await Promise.all([
-      fetch('/api/uploads', { cache: 'no-store' }),
-      fetch('/api/ai/mine', { cache: 'no-store' }).catch(() => null),
-    ]);
+    const [res] = await Promise.all([fetch('/api/uploads', { cache: 'no-store' }), loadAI()]);
     if (res.status === 404) return; // 개발 서버
     if (!res.ok) throw new Error(res.status);
     mine = (await res.json()).games;
-    myAI = aiRes?.ok ? (await aiRes.json()).games : null;
     mineError = '';
   } catch (e) {
     mine ??= [];
@@ -46,11 +44,28 @@ async function loadMine() {
   }
 }
 
+/** GET /api/ai/mine으로 myAI와 aiNext를 고칩니다. 없거나(개발 서버) 실패하면 그대로 둡니다 */
+async function loadAI() {
+  const res = await fetch('/api/ai/mine', { cache: 'no-store' }).catch(() => null);
+  if (!res?.ok) return;
+  const body = await res.json().catch(() => null);
+  if (!body?.games) return;
+  myAI = body.games;
+  aiNext = body.next ?? null;
+}
+
+/** 아직 일주일이 안 지나 AI를 요청할 수 없는지 */
+const aiTooSoon = () => !!aiNext && Date.parse(aiNext) > Date.now();
+const when = (s) => new Date(s).toLocaleString(lang, { dateStyle: 'medium', timeStyle: 'short' });
+
 function renderMine() {
   const section = $('#mine');
   section.hidden = !isMember(me) || mine === null;
   if (section.hidden) return;
   $('#mine-count').textContent = `${mine.length}`;
+  const next = $('#mine-ai-next');
+  next.hidden = !aiTooSoon();
+  next.textContent = next.hidden ? '' : t('mine.ai.nextAsk', { date: when(aiNext) });
   $('#mine-list').replaceChildren(...mine.map(renderMyGame));
   const empty = $('#mine-empty');
   empty.hidden = mine.length > 0;
@@ -127,23 +142,25 @@ function aiLine(g, ai) {
 function aiButton(g, ai, actions) {
   if (myAI === null || g.hidden) return;
   const r = ai?.request;
-  const make = (key, onClick) => {
+  const make = (key, onClick, blocked = false) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'btn ghost';
     b.textContent = t(key);
-    b.disabled = mineBusy !== null || !!me?.suspended;
+    b.disabled = mineBusy !== null || !!me?.suspended || blocked;
     b.addEventListener('click', onClick);
     actions.append(b);
   };
   if (r?.status === 'waiting') make('mine.ai.cancel', () => cancelAI(g));
   else if (r?.status === 'training') return;
-  else if (ai?.ai?.version !== g.version) make(ai?.ai ? 'mine.ai.again' : 'mine.ai.ask', () => askAI(g));
+  // 일주일이 안 지났으면 누를 수 없고, 언제부터 되는지는 목록 위(#mine-ai-next)에 씁니다
+  else if (ai?.ai?.version !== g.version) make(ai?.ai ? 'mine.ai.again' : 'mine.ai.ask', () => askAI(g), aiTooSoon());
 }
 
 /** POST /api/ai/<게임>/request의 실패 이유 */
 function askError(status, body) {
   if (status === 403 && body.error === 'suspended') return t('suspended');
+  if (status === 429 && body.error === 'too soon') return t('mine.ai.tooSoon', { date: when(body.next) });
   if (status === 429) return t('mine.ai.busy');
   if (status === 404) return t('mine.gone');
   const known = { hidden: 'mine.ai.hidden', 'request open': 'mine.ai.open', 'already trained': 'mine.ai.trained' }[body.error];
@@ -152,8 +169,27 @@ function askError(status, body) {
 
 async function askAI(g) {
   const name = localize(g.listing?.name, lang).text || g.id;
-  if (mineBusy !== null || !confirm(t('mine.ai.confirm', { name }))) return;
+  if (mineBusy !== null || !(await agreeAI(name))) return;
   await aiRequest(g, 'POST');
+}
+
+/** AI 만들기 동의 창을 엽니다. "동의합니다"를 누르면 true, 취소하거나 Esc로 닫으면 false */
+function agreeAI(name) {
+  const dlg = $('#ai-ask');
+  $('#ai-ask-title').textContent = t('mine.ai.agree.title', { name });
+  $('#ai-ask-lead').textContent = t('mine.ai.confirm');
+  $('#ai-ask-notes').replaceChildren(...['mine.ai.agree.strength', 'mine.ai.agree.week'].map((key) => {
+    const li = document.createElement('li');
+    li.textContent = t(key);
+    return li;
+  }));
+  $('#ai-ask-cancel').textContent = t('mine.ai.agree.cancel');
+  $('#ai-ask-ok').textContent = t('mine.ai.agree.ok');
+  dlg.returnValue = '';
+  return new Promise((resolve) => {
+    dlg.addEventListener('close', () => resolve(dlg.returnValue === 'agree'), { once: true });
+    dlg.showModal();
+  });
 }
 
 async function cancelAI(g) {
@@ -178,6 +214,7 @@ async function aiRequest(g, method) {
     if (method === 'POST') ai.request = body.request;
     else delete ai.request;
     myAI = { ...myAI, [g.id]: ai };
+    await loadAI(); // 다음 요청을 할 수 있는 때(next)는 서버가 압니다
   } catch (e) {
     mineError = t('mine.ai.failed', { msg: e.message });
   }

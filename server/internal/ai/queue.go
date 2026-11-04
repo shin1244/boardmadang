@@ -17,6 +17,8 @@ import (
 // 제작자가 내 프로필의 "내가 올린 게임"에서 "AI 만들기"를 누르면 그때의 코드 버전으로 요청이 생깁니다 (waiting).
 // 운영자가 운영자 화면에서 코드를 받으면 학습 중(training)이 되고, 자기 컴퓨터에서 학습한 뒤 모델을 올리면 끝(done)입니다.
 // 학습할 수 없는 게임이면 이유를 적어 반려합니다(declined). 제작자는 기다리는 동안 취소할 수 있습니다 (요청이 지워짐).
+// 운영자의 학습 시간을 지키려고 계정마다 요청은 한 번에 하나, 그리고 일주일(AskEvery)에 한 번입니다.
+// 끝나거나 반려된 요청도 요청한 때부터 일주일을 셉니다. 거둔 요청은 지워져서 세지 않습니다.
 //
 //	ai/<게임 id>/request.json   게임마다 마지막 요청 하나
 
@@ -29,11 +31,14 @@ const (
 	MaxNote       = 500 // 반려 이유 글자 수
 	ClosedListed  = 30  // 운영자 화면에 보여 줄 끝난 요청 수
 	OpenPerMember = 1   // 계정마다 동시에 둘 수 있는 요청 (docs/abuse-and-limits.md)
+
+	AskEvery = 7 * 24 * time.Hour // 계정마다 요청 간격. 마지막으로 요청한 때부터 셉니다
 )
 
 var (
 	ErrOpen     = errors.New("request open")     // 이 게임에 이미 요청이 있음
 	ErrBusy     = errors.New("another request")  // 이 계정의 다른 게임 요청이 아직 안 끝남
+	ErrTooSoon  = errors.New("too soon")         // 이 계정이 AskEvery 안에 요청한 적이 있음
 	ErrTrained  = errors.New("already trained")  // 이 버전으로 학습한 모델이 이미 있음
 	ErrNoAsk    = errors.New("no request")       // 요청이 없거나 이미 끝남
 	ErrNotYours = errors.New("not your request") // 다른 사람의 요청
@@ -72,8 +77,37 @@ func (s *Store) Ask(by, game, version string) (Request, error) {
 		return Request{}, ErrBusy
 	}
 	now := s.now().UTC()
+	if now.Before(s.nextAsk(by)) {
+		return Request{}, ErrTooSoon
+	}
 	r := Request{Game: game, Version: version, By: by, At: now, Status: StatusWaiting, Updated: now}
 	return r, s.saveRequest(r)
+}
+
+// NextAsk는 제작자 by가 다음 요청을 할 수 있는 때입니다. 지금 할 수 있으면 0입니다.
+func (s *Store) NextAsk(by string) time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := s.nextAsk(by)
+	if !s.now().Before(next) {
+		return time.Time{}
+	}
+	return next
+}
+
+// nextAsk는 by가 마지막으로 요청한 때에서 AskEvery 뒤입니다. 요청한 적이 없으면 0입니다. s.mu를 잡고 부릅니다.
+// 게임마다 마지막 요청만 남지만, 같은 게임을 다시 요청하는 것도 일주일 뒤라 마지막 요청한 때는 그대로 남습니다.
+func (s *Store) nextAsk(by string) time.Time {
+	var last time.Time
+	for _, r := range s.requests {
+		if r.By == by && r.At.After(last) {
+			last = r.At
+		}
+	}
+	if last.IsZero() {
+		return last
+	}
+	return last.Add(AskEvery)
 }
 
 // Cancel은 제작자 by가 기다리는 중인 요청을 거둡니다. 운영자가 이미 받아 간 요청은 거둘 수 없습니다.
