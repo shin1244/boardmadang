@@ -57,6 +57,7 @@ const (
 	DraftTTL        = 24 * time.Hour
 	DraftsPerHour   = 30
 	PublishesPerDay = 5  // 계정마다. 같은 zip을 다시 올려 등록해도 셉니다
+	NewGamesPerDay  = 1  // 계정마다 새 게임(처음 등록하는 id). 내 게임의 새 버전은 PublishesPerDay로만 셉니다
 	EditsPerHour    = 30 // 계정마다. 등록 정보만 고치기, 내리기, 다시 올리기 (Edit)
 )
 
@@ -65,7 +66,8 @@ var (
 	ErrBadID    = errors.New("bad id")
 	ErrTaken    = errors.New("id taken") // 레포 게임이거나 다른 계정이 올린 게임
 	ErrTooMany  = errors.New("too many")
-	ErrNoChange = errors.New("nothing to change") // Edit에 바꿀 것이 없음
+	ErrTooNew   = errors.New("too many new games") // 24시간 안에 새 게임을 NewGamesPerDay개 올림
+	ErrNoChange = errors.New("nothing to change")  // Edit에 바꿀 것이 없음
 )
 
 var (
@@ -323,6 +325,9 @@ func (s *Store) Publish(u identity.User, draftID string, req PublishRequest) (si
 	if s.publishedToday(u.ID) >= PublishesPerDay {
 		return site.Game{}, ErrTooMany
 	}
+	if g == nil && s.newToday(u.ID) >= NewGamesPerDay {
+		return site.Game{}, ErrTooNew
+	}
 	clean, problems := CheckListing(req.Listing)
 	var thumbnail json.RawMessage
 	if !isNull(req.Thumbnail) {
@@ -424,6 +429,26 @@ func (s *Store) publishedToday(owner string) int {
 	return n
 }
 
+// newToday는 계정 owner가 24시간 안에 처음 등록한 게임 수입니다. 내린 게임도 셉니다.
+func (s *Store) newToday(owner string) int {
+	n := 0
+	now := s.now()
+	for _, g := range s.games {
+		if g.Owner == owner && now.Sub(g.firstPublished()) < 24*time.Hour {
+			n++
+		}
+	}
+	return n
+}
+
+// firstPublished는 처음 등록한 때입니다. 등록 기록을 남기기 전에 올린 게임은 만든 때입니다.
+func (g *gameMeta) firstPublished() time.Time {
+	if len(g.Published) == 0 {
+		return g.Created
+	}
+	return g.Published[0].At
+}
+
 // ---- 목록 ----
 
 // Games는 올린 게임을 /api/games 모양으로 돌려줍니다. 처음 등록한 순서입니다. 내린 게임과 레포에 같은 id가 생긴 게임은 뺍니다.
@@ -470,7 +495,9 @@ func (g *gameMeta) entry() site.Game {
 // Mine은 GET /api/uploads의 응답입니다.
 type Mine struct {
 	Games []MyGame `json:"games"`
-	Left  int      `json:"left"` // 오늘 더 등록할 수 있는 횟수
+	Left  int      `json:"left"` // 오늘 더 등록할 수 있는 횟수 (새 게임과 새 버전 모두)
+	// 오늘 더 올릴 수 있는 새 게임 수. Left를 넘지 않습니다
+	NewLeft int `json:"newLeft"`
 }
 
 // MyGame은 내가 올린 게임 하나입니다. 로비 항목(site.Game)에 마지막으로 등록한 때와 내렸는지를 더합니다.
@@ -486,11 +513,12 @@ func (g *gameMeta) mine() MyGame {
 	return MyGame{Game: g.entry(), Published: g.Published[len(g.Published)-1].At, Hidden: g.Hidden, Blocked: g.Blocked}
 }
 
-// Mine은 owner가 올린 게임과 오늘 남은 등록 횟수입니다.
+// Mine은 owner가 올린 게임과 오늘 남은 등록 횟수, 새 게임 수입니다.
 func (s *Store) Mine(owner string) Mine {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := Mine{Games: []MyGame{}, Left: max(0, PublishesPerDay-s.publishedToday(owner))}
+	left := max(0, PublishesPerDay-s.publishedToday(owner))
+	out := Mine{Games: []MyGame{}, Left: left, NewLeft: min(left, max(0, NewGamesPerDay-s.newToday(owner)))}
 	for _, g := range s.games {
 		if g.Owner == owner {
 			out.Games = append(out.Games, g.mine())

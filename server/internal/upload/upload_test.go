@@ -371,6 +371,44 @@ func TestPublish(t *testing.T) {
 }
 
 // 로비 목록에는 제작자의 지금 이름을 넣고, 계정 id는 넣지 않습니다
+func TestNewGamesPerDay(t *testing.T) {
+	s, now := open(t, t.TempDir())
+	a, b := member("m_a"), member("m_b")
+	publish := func(u identity.User, id, code string) error {
+		d, err := s.NewDraft(u, makeZip(t, "index.js", code))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = s.Publish(u, d.ID, publishing(id, d))
+		return err
+	}
+	if err := publish(a, "dots", gameCode); err != nil {
+		t.Fatal(err)
+	}
+	if m := s.Mine("m_a"); m.Left != PublishesPerDay-1 || m.NewLeft != 0 {
+		t.Fatalf("새 게임을 올린 뒤: left %d, newLeft %d", m.Left, m.NewLeft)
+	}
+	*now = now.Add(time.Hour)
+	if err := publish(a, "dots-two", gameCode); !errors.Is(err, ErrTooNew) {
+		t.Fatalf("하루에 새 게임 둘: %v", err)
+	}
+	// 내 게임의 새 버전과 다른 계정의 새 게임은 됩니다
+	if err := publish(a, "dots", gameCode+"// v2\n"); err != nil {
+		t.Fatalf("새 버전: %v", err)
+	}
+	if err := publish(b, "dots-b", gameCode); err != nil {
+		t.Fatalf("다른 계정: %v", err)
+	}
+	// 처음 올린 때부터 24시간이 지나면 다시 새 게임을 올릴 수 있습니다
+	*now = now.Add(23 * time.Hour)
+	if m := s.Mine("m_a"); m.NewLeft != NewGamesPerDay {
+		t.Fatalf("다음 날 newLeft: %d", m.NewLeft)
+	}
+	if err := publish(a, "dots-two", gameCode); err != nil {
+		t.Fatalf("다음 날: %v", err)
+	}
+}
+
 func TestAuthor(t *testing.T) {
 	s, _ := open(t, t.TempDir())
 	a := member("m_a")

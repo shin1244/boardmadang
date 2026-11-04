@@ -46,6 +46,7 @@
         <div class="rooms-tools"><a class="btn ghost" href="/web/register.html" data-i18n="mine.new">새 게임 등록</a></div>
       </div>
       <p class="rooms-lead" data-i18n="mine.lead"></p>
+      <p id="mine-ai-next" class="rooms-lead" hidden></p>
       <ul id="mine-list" class="room-list"></ul>
       <p id="mine-empty" class="empty" hidden></p>
       <p id="mine-status" class="mine-status" role="status"></p>
@@ -111,6 +112,19 @@
     <a href="https://github.com/shin1244/boardmadang" data-i18n="footer.source">소스 코드</a>
     <a href="mailto:shincl1244@gmail.com" data-i18n="footer.contact">문의</a>
   </footer>
+
+  <!-- AI 만들기 동의 창 (history.js의 agreeAI). "동의합니다"를 눌러야 요청을 보냅니다. 글자는 열 때 채웁니다 -->
+  <dialog id="ai-ask" class="ask-dialog" aria-labelledby="ai-ask-title">
+    <form method="dialog">
+      <h2 id="ai-ask-title"></h2>
+      <p id="ai-ask-lead"></p>
+      <ul id="ai-ask-notes" class="ask-notes"></ul>
+      <div class="ask-actions">
+        <button id="ai-ask-cancel" class="btn ghost" value="cancel"></button>
+        <button id="ai-ask-ok" class="btn" value="agree"></button>
+      </div>
+    </form>
+  </dialog>
 
   <script type="module" src="history.js"></script>
 </body>

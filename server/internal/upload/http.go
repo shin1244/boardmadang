@@ -208,7 +208,7 @@ func (h Handler) fail(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 	case errors.Is(err, ErrTaken):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-	case errors.Is(err, ErrTooMany):
+	case errors.Is(err, ErrTooMany), errors.Is(err, ErrTooNew):
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
 	default:
 		log.Printf("게임 올리기 오류: %v", err)
