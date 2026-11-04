@@ -1,8 +1,11 @@
 // 운영자 화면: 신고를 대상(의견이나 게임)별로 묶어 보고 조치합니다. 설계는 docs/moderation.md에 있습니다.
 // GET /api/admin으로 신고, 정지된 계정, 운영 기록을 한 번에 받고, 조치는 POST /api/admin/actions로 하나씩 보냅니다.
 // 조치하고 나면 다시 불러옵니다. 운영자(서버의 ADMIN_IDS)가 아니면 서버가 403을 주고 안내만 보입니다.
+// "AI 요청" 칸은 제작자가 내 프로필에서 누른 AI 만들기 요청입니다 (GET /api/admin/ai/requests). "코드 받기"로 그 버전의 코드를
+// zip으로 받으면(POST /api/admin/ai/<게임>/code) 요청이 학습 중이 되고, 학습할 수 없으면 이유를 적어 반려합니다(.../decline).
 // "AI 모델" 칸에서는 운영자가 학습한 모델(trainer/train.py --export-onnx의 model.onnx, model.json)을 올리고 지웁니다
 // (PUT, DELETE /api/admin/ai/<게임>, server/internal/ai). 올린 모델은 /api/games의 ai로 나가고 로비에 "AI와 두기"가 생깁니다.
+// 학습 기록(snapshots.json)도 같이 고르면 PUT /api/admin/ai/<게임>/training으로 올라가 제작자가 학습 기록 화면에서 봅니다.
 
 import { localize } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
@@ -21,6 +24,10 @@ let busy = false;
 let status = null;
 /** AI 모델 칸의 결과 글 { key, params, ok } */
 let aiStatus = null;
+/** GET /api/admin/ai/requests의 응답 { requests, trainings }. 개발 서버처럼 없으면 null */
+let asks = null;
+/** AI 요청 칸의 결과 글 { key, params, ok } */
+let asksStatus = null;
 let showClosed = false;
 /** 대상마다 적고 있는 메모와 고른 정지 기간. 다시 그려도 남게 따로 둡니다 */
 const notes = new Map();
@@ -84,11 +91,13 @@ const untilText = (u) => (u.suspendedUntil ? t('admin.until', { date: when(u.sus
 
 async function load({ fresh = false } = {}) {
   try {
-    const [res, gamesRes] = await Promise.all([
+    const [res, gamesRes, asksRes] = await Promise.all([
       fetch('/api/admin', { cache: 'no-store' }),
       games.size && !fresh ? null : fetch('/api/games', { cache: 'no-store' }).catch(() => null),
+      fetch('/api/admin/ai/requests', { cache: 'no-store' }).catch(() => null),
     ]);
     if (gamesRes?.ok) games = new Map((await gamesRes.json()).map((g) => [g.id, g]));
+    asks = asksRes?.ok ? await asksRes.json() : null;
     if (res.status === 401) denied = 'login';
     else if (res.status === 403) denied = 'admin';
     else if (res.status === 404) denied = 'missing'; // 개발 서버(serve.js)에는 운영자 API가 없습니다
@@ -316,58 +325,81 @@ function base64Of(file) {
   });
 }
 
-/** 고른 파일에서 model.onnx와 model.json을 찾습니다 */
-function pickedFiles() {
+/**
+ * 고른 파일을 나눕니다: model.onnx, model.json(신경망의 설명), snapshots.json(학습 기록, snapshots 칸이 있음).
+ * JSON 두 개는 이름이 아니라 내용으로 가립니다. 읽지 못한 JSON의 이름은 bad에 담깁니다.
+ */
+async function pickedFiles() {
   const files = [...$('#ai-files').files];
-  return { onnx: files.find((f) => f.name.endsWith('.onnx')), json: files.find((f) => f.name.endsWith('.json')) };
-}
-
-/** model.json을 고르면 그 게임을 골라 둡니다 */
-async function onFiles() {
-  aiStatus = null;
-  const { json } = pickedFiles();
-  if (json) {
+  const out = { onnx: files.find((f) => f.name.endsWith('.onnx')), meta: null, training: null, bad: null };
+  for (const file of files.filter((f) => f.name.endsWith('.json'))) {
     try {
-      const meta = JSON.parse(await json.text());
-      if (games.has(meta.game)) $('#ai-game').value = meta.game;
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (Array.isArray(data?.snapshots)) out.training = { text, data };
+      else out.meta = data;
     } catch {
-      aiStatus = { key: 'admin.ai.badJson' };
+      out.bad = file.name;
     }
   }
+  return out;
+}
+
+/** model.json이나 snapshots.json을 고르면 그 게임을 골라 둡니다 */
+async function onFiles() {
+  aiStatus = null;
+  const { meta, training, bad } = await pickedFiles();
+  const game = meta?.game ?? training?.data.game;
+  if (games.has(game)) $('#ai-game').value = game;
+  if (bad) aiStatus = { key: 'admin.ai.badJson', params: { name: bad } };
   render();
 }
 
+/** PUT 하나를 보내고, 실패하면 그 이유로 던집니다 */
+async function put(url, body) {
+  const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
+  const reply = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(ERRORS[reply.error] ? t(ERRORS[reply.error]) : (reply.error ?? res.status));
+  return reply;
+}
+
+/** 모델(model.onnx와 model.json)과 학습 기록(snapshots.json)을 올립니다. 둘 중 하나만 올려도 됩니다 */
 async function uploadModel(e) {
   e.preventDefault();
   if (busy) return;
-  const { onnx, json } = pickedFiles();
-  if (!onnx || !json) {
-    aiStatus = { key: 'admin.ai.needBoth' };
+  const { onnx, meta, training, bad } = await pickedFiles();
+  const model = !!(onnx || meta);
+  let problem = null;
+  if (bad) problem = { key: 'admin.ai.badJson', params: { name: bad } };
+  else if (model && !(onnx && meta)) problem = { key: 'admin.ai.needBoth' };
+  else if (!model && !training) problem = { key: 'admin.ai.needFiles' };
+  if (problem) {
+    aiStatus = problem;
     render();
     return;
   }
   const game = $('#ai-game').value;
+  const base = `/api/admin/ai/${encodeURIComponent(game)}`;
   busy = true;
   aiStatus = null;
   render();
+  let done = '';
   try {
-    const meta = JSON.parse(await json.text());
-    const res = await fetch(`/api/admin/ai/${encodeURIComponent(game)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ meta, model: await base64Of(onnx) }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      aiStatus = ERRORS[body.error] ? { key: ERRORS[body.error] } : { key: 'admin.ai.failed', params: { msg: body.error ?? res.status } };
-    } else {
-      aiStatus = { key: 'admin.ai.uploaded', params: { name: gameName(game) }, ok: true };
-      $('#ai-form').reset();
-      await load({ fresh: true });
+    if (model) {
+      await put(base, JSON.stringify({ meta, model: await base64Of(onnx) }));
+      done = 'model';
     }
+    if (training) {
+      await put(`${base}/training`, training.text);
+      done = model ? 'both' : 'training';
+    }
+    aiStatus = { key: `admin.ai.uploaded.${done}`, params: { name: gameName(game) }, ok: true };
+    $('#ai-form').reset();
   } catch (err) {
-    aiStatus = { key: 'admin.ai.failed', params: { msg: err.message } };
+    // 모델은 올라갔는데 학습 기록에서 실패했으면 그렇게 알립니다
+    aiStatus = { key: done ? 'admin.ai.trainingFailed' : 'admin.ai.failed', params: { msg: err.message } };
   }
+  if (done) await load({ fresh: true });
   busy = false;
   render();
 }
@@ -400,8 +432,144 @@ function renderModel(g) {
   const version = g.ai.version === null ? t('admin.ai.versionUnknown')
     : g.ai.version === g.version ? t('admin.ai.versionSame') : t('admin.ai.versionOld');
   info.append(el('small', 'room-meta', t('admin.ai.meta', { sims: g.ai.sims, version, date: when(g.ai.updated) })));
-  li.append(info, button(t('admin.ai.delete'), () => deleteModel(g.id)));
+  const actions = el('div', 'mine-actions');
+  const record = trainingLink(g.id);
+  if (record) actions.append(record);
+  actions.append(button(t('admin.ai.delete'), () => deleteModel(g.id)));
+  li.append(info, actions);
   return li;
+}
+
+/** 학습 기록이 있으면 그 화면으로 가는 링크 */
+function trainingLink(game) {
+  const info = asks?.trainings?.[game];
+  if (!info) return null;
+  const a = el('a', 'btn ghost', t('admin.ai.training', { n: info.snapshots, minutes: Math.round(info.minutes) }));
+  a.href = `/web/training.html?game=${encodeURIComponent(game)}`;
+  return a;
+}
+
+// ---- AI 요청 ----
+
+/** 계정 id. 신고 목록에 나온 계정이면 이름도 보입니다 */
+function who(id) {
+  return state.users[id] ? userLine(id) : el('small', 'admin-id', id);
+}
+
+/** 요청한 버전의 코드를 zip으로 받습니다. 받으면 요청이 학습 중이 됩니다 */
+async function downloadCode(r) {
+  if (busy) return;
+  busy = true;
+  asksStatus = null;
+  render();
+  try {
+    const res = await fetch(`/api/admin/ai/${encodeURIComponent(r.game)}/code`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error ?? res.status);
+    }
+    const name = /filename="?([^";]+)"?/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? `${r.game}.zip`;
+    const url = URL.createObjectURL(await res.blob());
+    const a = el('a');
+    a.href = url;
+    a.download = name;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    asksStatus = { key: 'admin.asks.downloaded', params: { file: name }, ok: true };
+    await load();
+  } catch (err) {
+    asksStatus = { key: 'admin.asks.failed', params: { msg: err.message } };
+  }
+  busy = false;
+  render();
+}
+
+/** 요청을 반려합니다. 적은 이유는 제작자에게 보입니다 */
+async function decline(r) {
+  const key = `ai:${r.game}`;
+  if (busy || !confirm(t('admin.asks.confirmDecline', { name: gameName(r.game) }))) return;
+  busy = true;
+  asksStatus = null;
+  render();
+  try {
+    const res = await fetch(`/api/admin/ai/${encodeURIComponent(r.game)}/decline`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note: (notes.get(key) ?? '').trim() }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? res.status);
+    notes.delete(key);
+    asksStatus = { key: 'admin.asks.declinedNow', params: { name: gameName(r.game) }, ok: true };
+    await load();
+  } catch (err) {
+    asksStatus = { key: 'admin.asks.failed', params: { msg: err.message } };
+  }
+  busy = false;
+  render();
+}
+
+/** 요청 하나: 게임, 요청한 사람, 버전, 상태, 반려 이유, 코드 받기와 반려 */
+function renderAsk(r) {
+  const open = r.status === 'waiting' || r.status === 'training';
+  const li = el('li', 'admin-target');
+  li.classList.toggle('open', open);
+  const head = el('div', 'admin-head');
+  head.append(el('span', `admin-badge${open ? ' open' : ''}`, t(`admin.asks.${r.status}`)));
+  const title = el('b', 'admin-title');
+  const link = el('a', '', gameName(r.game));
+  link.href = `/web/?game=${encodeURIComponent(r.game)}`;
+  title.append(link, ' ', el('small', 'admin-id', r.game));
+  head.append(title, el('span', 'admin-when', t('admin.asks.at', { date: when(r.at) })));
+  li.append(head);
+
+  const meta = el('p', 'admin-meta');
+  meta.append(t('admin.asks.by'), ' ', who(r.by), ' · ', t('admin.asks.version', { version: r.version.slice(0, 8) }));
+  const current = games.get(r.game)?.version;
+  if (current && current !== r.version) meta.append(' · ', t('admin.asks.newer'));
+  if (r.updated !== r.at) meta.append(' · ', t('admin.asks.updated', { date: when(r.updated) }));
+  li.append(meta);
+  if (r.note) li.append(el('p', 'admin-last', t('admin.asks.note', { note: r.note })));
+
+  const actions = el('div', 'admin-actions');
+  if (open) {
+    actions.append(button(t(r.status === 'training' ? 'admin.asks.codeAgain' : 'admin.asks.code'), () => downloadCode(r), 'btn'));
+    const key = `ai:${r.game}`;
+    const note = el('input', 'admin-note');
+    note.type = 'text';
+    note.maxLength = 500;
+    note.placeholder = t('admin.asks.notePlaceholder');
+    note.setAttribute('aria-label', t('admin.asks.notePlaceholder'));
+    note.value = notes.get(key) ?? '';
+    note.disabled = busy;
+    note.addEventListener('input', () => notes.set(key, note.value));
+    li.append(note);
+    actions.append(button(t('admin.asks.decline'), () => decline(r)));
+  }
+  const record = trainingLink(r.game);
+  if (record) actions.append(record);
+  if (actions.childElementCount) li.append(actions);
+  return li;
+}
+
+function renderAsks() {
+  const section = $('#asks').closest('section');
+  section.hidden = !asks;
+  if (!asks) return;
+  const open = asks.requests.filter((r) => r.status === 'waiting' || r.status === 'training');
+  $('#asks-count').textContent = `${open.length}`;
+  $('#asks').replaceChildren(...asks.requests.map(renderAsk));
+  $('#asks-empty').hidden = asks.requests.length > 0;
+  $('#asks-empty').textContent = t('admin.asks.none');
+  const s = $('#asks-status');
+  s.textContent = asksStatus ? t(asksStatus.key, asksStatus.params) : '';
+  s.classList.toggle('good', !!asksStatus?.ok);
 }
 
 function renderModels() {
@@ -455,6 +623,7 @@ function render() {
   $('#suspended-empty').hidden = state.suspended.length > 0;
   $('#suspended-empty').textContent = t('admin.suspended.empty');
 
+  renderAsks();
   renderModels();
 
   $('#log').replaceChildren(...state.log.map(renderLog));

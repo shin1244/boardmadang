@@ -30,7 +30,21 @@
 | `GET /api/admin` | 운영자 화면. 신고 목록, 정지된 계정, 최근 운영 기록. 운영자만 ([moderation.md](moderation.md#api)) |
 | `POST /api/admin/actions` | 운영 조치 하나 `{"action":"comment.hide","game":"…","comment":"…","note":"…"}` → `{"ok":true}`. 운영자만 |
 | `PUT /api/admin/ai/{game}` | AI 모델 올리기 `{"meta":{…},"model":"<model.onnx의 base64>"}` → `{"ai":{…}}` (`/api/games`의 `ai`). `meta`는 `trainer/train.py --export-onnx`가 쓴 `model.json` 그대로. 모델은 16 MB까지 (`413`), 모양이 틀리면 `422 {"error":"…"}`, 없는 게임이면 `404`. 같은 게임의 모델은 바뀝니다. 운영자만 |
-| `DELETE /api/admin/ai/{game}` | AI 모델 지우기 → `{"ok":true}`. 운영자만 |
+| `DELETE /api/admin/ai/{game}` | AI 모델 지우기 → `{"ok":true}`. 요청과 학습 기록은 남습니다. 운영자만 |
+| `GET /api/ai/mine` | 내가 올린 게임마다 AI 상태 `{"games":{"<id>":{"request":{…},"training":{…},"ai":{…}}}}`. 없는 칸은 빠집니다. 계정만 |
+| `POST /api/ai/{game}/request` | AI 만들기 요청 (본문 `{}`, JSON만) → `{"request":{"game":"…","version":"…","by":"…","at":"…","status":"waiting","updated":"…"}}`. 내가 올린 게임의 지금 버전으로. 남의 게임이나 레포 게임이면 `404`, 내린 게임이면 `409 {"error":"hidden"}`, 이미 요청이 있으면 `409 {"error":"request open"}`, 이 버전으로 학습한 모델이 있으면 `409 {"error":"already trained"}`, 다른 게임의 요청이 안 끝났으면 `429 {"error":"another request"}`, 정지된 계정이면 `403` |
+| `DELETE /api/ai/{game}/request` | 기다리는 중인 내 요청 거두기 → `{"ok":true}`. 운영자가 받아 갔거나 끝난 요청이면 `409 {"error":"no request"}` |
+| `GET /api/ai/{game}/training` | 학습 기록 (`snapshots.json` 그대로, 아래). 게임을 올린 사람과 운영자만, 다른 사람에게는 `404`. 로그인 전이면 `401` |
+| `GET /api/admin/ai/requests` | AI 요청 목록 `{"requests":[…],"trainings":{"<id>":{"version":"…","minutes":60,"snapshots":7,"updated":"…"}}}`. 안 끝난 요청을 오래된 것부터, 그다음 끝난 요청 30개를 최근 것부터. 운영자만 |
+| `POST /api/admin/ai/{game}/code` | 게임 코드 받기 (본문 `{}`, JSON만) → `application/zip` 첨부 `<게임>-<버전>.zip` (`<게임>/` 안에 코드와 `listing.json`). 열린 요청이 있으면 그 버전이고 요청이 학습 중(`training`)이 됩니다. 없으면 지금 버전. 레포 게임이면 `404`. 운영자만 |
+| `POST /api/admin/ai/{game}/decline` | 요청 반려 `{"note":"…"}` (500자까지, 제작자에게 보임) → `{"request":{…,"status":"declined"}}`. 열린 요청이 없으면 `409`. 운영자만 |
+| `PUT /api/admin/ai/{game}/training` | 학습 기록 올리기. 본문은 `trainer/train.py`가 쓴 `snapshots.json` 그대로 → `{"training":{…}}`. 2 MB까지 (`413`), 모양이 틀리면 `422`. 같은 게임의 기록은 바뀝니다. 운영자만 |
+
+AI 모델을 올리면(`PUT /api/admin/ai/{game}`) 그 게임의 열린 요청이 끝납니다(`done`).
+학습 기록은 `{"format":1,"game":"…","version":"…","lang":"ko","minutes":60,"snapshots":[{"minute":10,"iteration":12,"selfplay":{"games":1200,"wins":[500,420],"draws":280,"cut":3,"moves":51000},"eval":{"random":{"first":[w,d,l],"second":[w,d,l]},"perfect":{…},"accuracy":{"policy":0.8,"search":0.95}},"games":[{"seed":1,"moves":[{"player":0,"action":{…}}],"winner":0,"reason":"result"}]}],"updated":"…","by":"…"}`입니다.
+`selfplay`는 앞 스냅샷부터 그때까지의 자기대국(`draws`는 `cut`을 포함), `eval`은 그때까지의 마지막 평가이고 없으면 빠집니다 (`selfplay`는 학습 전이면 `null`).
+`games`는 그때의 AI끼리 둔 판이고 `reason`은 `result`(게임이 끝냄), `maxActions`(행동 수 상한), `cut`(학습용 무승부 규칙: 같은 판 되풀이, `--max-moves`)입니다.
+`updated`와 `by`는 서버가 붙입니다. 다시보기는 `/web/replay.html?training=<게임>&snap=<i>&n=<j>`입니다.
 
 - `version`은 게임 코드 버전입니다. 게임 폴더의 `.js`, `.mjs` 파일(테스트와 `node_modules` 제외)을 `/`로 구분한 상대 경로 순으로
   "경로\0내용\0"씩 이어 SHA-256을 구하고 앞 16글자를 씁니다. 개발 서버와 Go 서버의 계산이 같아야 합니다.

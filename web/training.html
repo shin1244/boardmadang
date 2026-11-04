@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI 학습 기록 · 보드마당</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="icon-32.png" sizes="32x32">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="stylesheet" href="lobby.css">
+  <link rel="stylesheet" href="rooms.css">
+  <link rel="stylesheet" href="training.css">
+</head>
+<body class="page">
+  <!-- 글자는 web/i18n.js에 언어별로 있습니다. 여기 적힌 한국어는 스크립트가 돌기 전 잠깐 보이는 기본값입니다. -->
+  <header class="topbar">
+    <a class="logo" href="/web/">
+      <span class="logo-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span data-i18n="site.name">보드마당</span>
+    </a>
+    <nav class="menu" data-i18n-attr="aria-label:menu.label" aria-label="메뉴">
+      <a href="/web/" data-i18n="menu.games">게임</a>
+      <a href="/web/rooms.html" data-i18n="menu.rooms">방 목록</a>
+      <span class="soon" data-i18n="menu.ranking" data-i18n-attr="title:soon" title="준비 중">랭킹</span>
+      <a href="/web/register.html" data-i18n="menu.register">게임 등록</a>
+    </nav>
+    <div class="langs" role="group" data-i18n-attr="aria-label:lang.label" aria-label="화면 언어">
+      <button type="button" data-lang="ko" lang="ko">KR</button>
+      <button type="button" data-lang="en" lang="en">EN</button>
+    </div>
+    <a class="me" href="/web/history.html" hidden></a>
+    <button class="logout" type="button" data-i18n="logout" hidden>로그아웃</button>
+    <div class="login-box">
+      <button class="login" type="button" aria-haspopup="menu" aria-expanded="false" disabled data-i18n="login">로그인</button>
+      <div class="login-menu" role="menu" hidden></div>
+    </div>
+  </header>
+
+  <!-- AI 학습 기록 (GET /api/ai/<게임>/training). 게임 제작자와 운영자만 봅니다. 설명은 training.js 맨 위에 있습니다 -->
+  <main class="rooms training">
+    <a class="training-back" href="/web/history.html" data-i18n="training.back">내 프로필로</a>
+    <h1 id="title" class="profile-name" data-i18n="training.title">AI 학습 기록</h1>
+    <p id="meta" class="rooms-lead"></p>
+    <p id="version-note" class="training-note" hidden data-i18n="training.versionOld"></p>
+    <p id="problem" class="empty" hidden></p>
+
+    <div id="body" hidden>
+      <section class="profile-block">
+        <p class="rooms-lead" data-i18n="training.lead"></p>
+        <ul class="training-tips">
+          <li data-i18n="training.tip.better"></li>
+          <li data-i18n="training.tip.exploit"></li>
+          <li data-i18n="training.tip.bug"></li>
+        </ul>
+        <p class="training-legend">
+          <span><i class="swatch first"></i> <span data-i18n="training.legend.first">선공 승</span></span>
+          <span><i class="swatch draw"></i> <span data-i18n="training.legend.draw">무승부</span></span>
+          <span><i class="swatch second"></i> <span data-i18n="training.legend.second">후공 승</span></span>
+          <span><i class="swatch cut"></i> <span data-i18n="training.legend.cut">되풀이로 끊음</span></span>
+        </p>
+      </section>
+      <ol id="snaps" class="training-snaps"></ol>
+    </div>
+  </main>
+
+  <script type="module" src="training.js"></script>
+</body>
+</html>

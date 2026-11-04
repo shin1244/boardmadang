@@ -1,4 +1,4 @@
-"""신경망 모양, 자기대국 워커와 주고받는 메시지, 브라우저 AI용 ONNX 내보내기 테스트.
+"""신경망 모양, 자기대국 워커와 주고받는 메시지, 학습 기록(스냅샷), 브라우저 AI용 ONNX 내보내기 테스트.
 
     python -m unittest discover -s trainer
 """
@@ -7,12 +7,13 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import torch
 
 from net import Net
-from train import Pool, Worker, export_onnx, fresh_loss, unpack_game
+from train import Pool, Snapshots, Worker, eval_summary, export_onnx, fresh_loss, unpack_game
 
 TICTACTOE = Path(__file__).resolve().parent.parent / "games" / "tictactoe"
 
@@ -142,6 +143,68 @@ class PoolTest(unittest.TestCase):
 
     def test_one(self):
         self.assertEqual(self.pool.one({"cmd": "solve"})["value"], 0)
+
+    def test_snapshots(self):
+        """학습 기록: AI끼리 둔 판은 기보처럼 시드와 { player, action }이고, 앞 스냅샷부터의 자기대국 통계가 붙습니다"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "snapshots.json"
+            args = SimpleNamespace(
+                snapshot_every=10, snapshot_games=3, sims=8, max_moves=512, seed=1, minutes=60, resume=False
+            )
+            snaps = Snapshots(path, self.pool.info, args)
+            self.assertTrue(snaps.empty)
+            self.assertTrue(snaps.due(0))
+            snaps.take(self.pool, uniform, 0, 0)
+            self.assertFalse(snaps.due(9.9))
+            self.assertTrue(snaps.due(10))
+            snaps.add_selfplay({"games": 4, "wins": [2, 1], "draws": 1, "cut": 1, "moves": 30})
+            snaps.add_selfplay({"games": 4, "wins": [0, 1], "draws": 3, "cut": 0, "moves": 31})
+            evaluated = {"random": {"first": [3, 0, 0], "second": [2, 1, 0], "cut": 0, "lost": []}}
+            snaps.take(self.pool, uniform, 10.04, 7, evaluated)
+
+            data = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(data["format"], 1)
+            self.assertEqual(data["game"], "tictactoe")
+            self.assertEqual(data["version"], self.pool.info["version"])
+            self.assertEqual(data["minutes"], 60)
+            first, second = data["snapshots"]
+            self.assertEqual((first["minute"], first["iteration"], first["selfplay"]), (0, 0, None))
+            self.assertNotIn("eval", first)
+            self.assertEqual((second["minute"], second["iteration"]), (10, 7))
+            self.assertEqual(second["selfplay"], {"games": 8, "wins": [2, 2], "draws": 4, "cut": 1, "moves": 61})
+            self.assertEqual(second["eval"], {"random": {"first": [3, 0, 0], "second": [2, 1, 0]}})
+            for snap in data["snapshots"]:
+                self.assertEqual(len(snap["games"]), 3)
+                for g in snap["games"]:
+                    self.assertEqual(g["seed"], 1)
+                    self.assertIn(g["reason"], ("result", "maxActions", "cut"))
+                    self.assertIn(g["winner"], (0, 1, None))
+                    # 틱택토는 번갈아 두고, 칸마다 한 번만 둡니다
+                    self.assertEqual([m["player"] for m in g["moves"]], [i % 2 for i in range(len(g["moves"]))])
+                    cells = [(m["action"]["row"], m["action"]["col"]) for m in g["moves"]]
+                    self.assertEqual(len(set(cells)), len(cells))
+                    self.assertTrue(all(m["action"]["kind"] == "click" for m in g["moves"]))
+            # 같은 신경망이면 첫 판(가장 좋은 수만)은 같습니다
+            self.assertEqual(first["games"][0], second["games"][0])
+
+            # 이어서 학습하면 앞 기록에 붙이고 분은 이어서 셉니다
+            args.resume = True
+            again = Snapshots(path, self.pool.info, args)
+            self.assertEqual(len(again.data["snapshots"]), 2)
+            self.assertEqual(again.data["minutes"], 120)
+            again.take(self.pool, uniform, 5, 9)
+            self.assertEqual(again.data["snapshots"][-1]["minute"], 15)
+
+    def test_eval_summary(self):
+        self.assertIsNone(eval_summary(None))
+        res = {
+            "random": {"first": [1, 2, 3], "second": [4, 5, 6], "cut": 0, "lost": []},
+            "accuracy": {"positions": 10, "policy": {"rate": 0.5, "missedWins": 1}, "search": {"rate": 0.9}},
+        }
+        self.assertEqual(
+            eval_summary(res),
+            {"random": {"first": [1, 2, 3], "second": [4, 5, 6]}, "accuracy": {"policy": 0.5, "search": 0.9}},
+        )
 
 
 class ExportTest(unittest.TestCase):

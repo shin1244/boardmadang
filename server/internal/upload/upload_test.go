@@ -759,6 +759,57 @@ func TestBlock(t *testing.T) {
 	check(again, false)
 }
 
+func TestCodeZip(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := open(t, dir)
+	a := member("m_a")
+	d, _ := s.NewDraft(a, makeZip(t, "dots/index.js", gameCode, "dots/lib/rules.mjs", "export const n = 3;\n", "dots/thumbnail.json", thumbnailJSON))
+	if _, err := s.Publish(a, d.ID, publishing("dots", d)); err != nil {
+		t.Fatal(err)
+	}
+	next, _ := s.NewDraft(a, makeZip(t, "index.js", gameCode+"// fix\n"))
+	if _, err := s.Publish(a, next.ID, publishing("dots", next)); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ id, version string }{{"nope", d.Version}, {"tictactoe", d.Version}, {"dots", "0123456789abcdef"}, {"dots", "../x"}} {
+		if _, err := s.CodeZip(c.id, c.version); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("CodeZip(%s, %s): %v", c.id, c.version, err)
+		}
+	}
+	// 예전 버전의 코드도 받습니다. 등록 정보는 지금 것이고, 썸네일은 넣지 않습니다
+	unzip := func(version string) map[string]string {
+		t.Helper()
+		data, err := s.CodeZip("dots", version)
+		if err != nil {
+			t.Fatal(err)
+		}
+		zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files := map[string]string{}
+		for _, f := range zr.File {
+			r, _ := f.Open()
+			var b bytes.Buffer
+			b.ReadFrom(r)
+			r.Close()
+			files[f.Name] = b.String()
+		}
+		return files
+	}
+	files := unzip(d.Version)
+	if len(files) != 3 || files["dots/index.js"] != gameCode || files["dots/lib/rules.mjs"] == "" {
+		t.Fatalf("files = %v", files)
+	}
+	var listing Listing
+	if err := json.Unmarshal([]byte(files["dots/listing.json"]), &listing); err != nil || listing.Languages["ko"] != "full" {
+		t.Fatalf("listing.json = %q, %v", files["dots/listing.json"], err)
+	}
+	if files := unzip(next.Version); files["dots/index.js"] != gameCode+"// fix\n" {
+		t.Fatalf("지금 버전: %v", files)
+	}
+}
+
 func TestForget(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := open(t, dir)

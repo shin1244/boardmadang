@@ -1,6 +1,8 @@
 // 내 프로필: 상단의 내 이름을 누르면 오는 화면입니다.
 // 내가 올린 게임(계정만, GET /api/uploads): 내리기와 다시 올리기는 여기서 바로 하고(PATCH /api/uploads/<id>),
 //   등록 정보 고치기는 게임 등록 화면을 ?edit=<id>로 엽니다. 개발 서버에는 /api/uploads가 없어서(404) 빠집니다.
+//   게임마다 AI 만들기 요청도 여기서 합니다 (GET /api/ai/mine, POST·DELETE /api/ai/<id>/request, server/internal/ai).
+//   운영자가 학습을 마치고 올리면 로비에 "AI와 두기"가 생기고, 학습 기록(web/training.html)을 볼 수 있습니다.
 // 내 대국: 서버에 저장된 내 기보를 최근 것부터 보여줍니다 (GET /api/matches).
 // 게스트의 기록은 이 브라우저의 세션 쿠키에 묶여 있습니다. 쿠키를 지우면 새 게스트가 되어 목록이 비어 보입니다.
 // 계정(계정만, GET /api/account): 이름 바꾸기(PATCH)와 탈퇴(DELETE, 지금 이름을 적어야 함). 개발 서버에는 없어서(404) 빠집니다.
@@ -20,6 +22,8 @@ let mine = null;
 let mineError = '';
 /** 내리기나 다시 올리기를 보내는 중인 게임 id */
 let mineBusy = null;
+/** GET /api/ai/mine: 게임 id → { request, training, ai }. 개발 서버처럼 없으면 null */
+let myAI = null;
 
 const gameName = (id) => localize(games.get(id)?.listing?.name, lang).text || id;
 
@@ -27,10 +31,14 @@ const gameName = (id) => localize(games.get(id)?.listing?.name, lang).text || id
 
 async function loadMine() {
   try {
-    const res = await fetch('/api/uploads', { cache: 'no-store' });
+    const [res, aiRes] = await Promise.all([
+      fetch('/api/uploads', { cache: 'no-store' }),
+      fetch('/api/ai/mine', { cache: 'no-store' }).catch(() => null),
+    ]);
     if (res.status === 404) return; // 개발 서버
     if (!res.ok) throw new Error(res.status);
     mine = (await res.json()).games;
+    myAI = aiRes?.ok ? (await aiRes.json()).games : null;
     mineError = '';
   } catch (e) {
     mine ??= [];
@@ -72,6 +80,9 @@ function renderMyGame(g) {
     id: g.id, version: g.version.slice(0, 8), date: new Date(g.published).toLocaleDateString(lang),
   });
   if (g.blocked) sub.append(document.createElement('br'), t('mine.blockedHint'));
+  const ai = myAI?.[g.id];
+  const aiText = aiLine(g, ai);
+  if (aiText) sub.append(document.createElement('br'), aiText);
 
   const actions = li.querySelector('.mine-actions');
   const link = (key, href) => {
@@ -83,6 +94,7 @@ function renderMyGame(g) {
   };
   const id = encodeURIComponent(g.id);
   link('mine.edit', `/web/register.html?edit=${id}`);
+  if (ai?.training) link('mine.ai.training', `/web/training.html?game=${id}`);
   if (g.blocked) return li;
   const toggle = document.createElement('button');
   toggle.type = 'button';
@@ -91,9 +103,86 @@ function renderMyGame(g) {
   toggle.disabled = mineBusy !== null || !!me?.suspended;
   toggle.addEventListener('click', () => setHidden(g, !g.hidden));
   actions.append(toggle);
+  aiButton(g, ai, actions);
   // 내린 게임은 로비에 없습니다
   if (!g.hidden) link('register.toLobby', `/web/?game=${id}`);
   return li;
+}
+
+// ---- AI 만들기 (server/internal/ai의 요청. 운영자가 코드를 받아 자기 컴퓨터에서 학습하고 모델과 학습 기록을 올립니다) ----
+
+/** 이 게임의 AI가 어떤지 한 줄. 요청도 모델도 없으면 null */
+function aiLine(g, ai) {
+  if (!ai) return null;
+  const r = ai.request;
+  const date = (s) => new Date(s).toLocaleDateString(lang);
+  if (r?.status === 'waiting') return t('mine.ai.waiting', { date: date(r.at) });
+  if (r?.status === 'training') return t('mine.ai.learning', { date: date(r.updated) });
+  if (ai.ai) return t(ai.ai.version === g.version ? 'mine.ai.ready' : 'mine.ai.readyOld', { date: date(ai.ai.updated) });
+  if (r?.status === 'declined') return t(r.note ? 'mine.ai.declinedNote' : 'mine.ai.declined', { note: r.note });
+  return null;
+}
+
+/** AI 만들기, 다시 만들기, 요청 거두기 버튼. 개발 서버(/api/ai/mine 없음)와 내린 게임에는 없습니다 */
+function aiButton(g, ai, actions) {
+  if (myAI === null || g.hidden) return;
+  const r = ai?.request;
+  const make = (key, onClick) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn ghost';
+    b.textContent = t(key);
+    b.disabled = mineBusy !== null || !!me?.suspended;
+    b.addEventListener('click', onClick);
+    actions.append(b);
+  };
+  if (r?.status === 'waiting') make('mine.ai.cancel', () => cancelAI(g));
+  else if (r?.status === 'training') return;
+  else if (ai?.ai?.version !== g.version) make(ai?.ai ? 'mine.ai.again' : 'mine.ai.ask', () => askAI(g));
+}
+
+/** POST /api/ai/<게임>/request의 실패 이유 */
+function askError(status, body) {
+  if (status === 403 && body.error === 'suspended') return t('suspended');
+  if (status === 429) return t('mine.ai.busy');
+  if (status === 404) return t('mine.gone');
+  const known = { hidden: 'mine.ai.hidden', 'request open': 'mine.ai.open', 'already trained': 'mine.ai.trained' }[body.error];
+  return known ? t(known) : (body.error ?? String(status));
+}
+
+async function askAI(g) {
+  const name = localize(g.listing?.name, lang).text || g.id;
+  if (mineBusy !== null || !confirm(t('mine.ai.confirm', { name }))) return;
+  await aiRequest(g, 'POST');
+}
+
+async function cancelAI(g) {
+  if (mineBusy !== null) return;
+  await aiRequest(g, 'DELETE');
+}
+
+/** 요청을 보내거나(POST) 거두고(DELETE), 결과로 그 게임의 AI 상태를 고칩니다 */
+async function aiRequest(g, method) {
+  mineBusy = g.id;
+  mineError = '';
+  render();
+  try {
+    const res = await fetch(`/api/ai/${encodeURIComponent(g.id)}/request`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: method === 'POST' ? '{}' : undefined,
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(askError(res.status, body));
+    const ai = { ...myAI[g.id] };
+    if (method === 'POST') ai.request = body.request;
+    else delete ai.request;
+    myAI = { ...myAI, [g.id]: ai };
+  } catch (e) {
+    mineError = t('mine.ai.failed', { msg: e.message });
+  }
+  mineBusy = null;
+  render();
 }
 
 /** 로비에서 내리거나(hidden = true) 다시 올립니다 */
