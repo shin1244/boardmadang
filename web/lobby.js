@@ -4,8 +4,8 @@
 
 import { BoardView } from '/sdk/playground/board.js';
 import { loadGame, modelFits } from './engine.js';
-import { LANGS, LANG_NAMES, NO_TIMER, fullLangs, gameLang, localize, timerOf } from '/sdk/playground/listing.js';
-import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
+import { LANGS, LANG_NAMES, NO_TIMER, fullLangs, gameLang, isRtl, localize, timerOf } from '/sdk/playground/listing.js';
+import { applyStatic, byLangOrder, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { displayName, isMember, loadMe, renderMe, suspendedText } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -351,6 +351,31 @@ function fillAbout(entry) {
   }
 }
 
+// 룰북 언어: 처음에는 화면 언어로 보여 줍니다 (그 언어 룰북이 없으면 listing.js의 대체 순서).
+// 화면 언어를 지원하지 않아도 읽을 수 있게, 게임이 가진 룰북 언어 중에서 고를 수 있습니다. 화면 언어는 그대로입니다.
+// 고른 언어는 이 탭에서 여는 다른 게임에도 씁니다 (그 게임에 그 언어 룰북이 있으면). 화면 언어와 같은 언어를 고르면 다시 화면 언어를 따릅니다.
+const RULEBOOK_KEY = 'boardmadang.rulebookLang';
+let rulebookPick = null;
+try {
+  rulebookPick = sessionStorage.getItem(RULEBOOK_KEY);
+} catch {
+  // 저장소를 못 쓰면 이 화면에서만 기억합니다
+}
+
+function pickRulebookLang(l) {
+  rulebookPick = l === lang ? null : l;
+  try {
+    if (rulebookPick) sessionStorage.setItem(RULEBOOK_KEY, rulebookPick);
+    else sessionStorage.removeItem(RULEBOOK_KEY);
+  } catch {
+    // 저장 못 해도 이 화면에는 적용됩니다
+  }
+  if (current) fillRulebook(current);
+}
+
+/** 이 게임에 룰북이 있는 언어들 (i18n.js의 LANG_ORDER 순서: 화자 수가 많은 언어부터) */
+const rulebookLangs = (listing) => byLangOrder(LANGS.filter((l) => typeof listing.rulebook?.[l] === 'string' && listing.rulebook[l]));
+
 function fillRulebook(entry) {
   const { listing } = entry;
   const field = $('#gd-rulebook');
@@ -360,14 +385,27 @@ function fillRulebook(entry) {
     text.replaceChildren();
     return;
   }
-  const book = localize(listing.rulebook, lang);
+  const have = rulebookLangs(listing);
+  const picked = have.includes(rulebookPick) ? rulebookPick : null;
+  const book = picked ? { text: listing.rulebook[picked], lang: picked } : localize(listing.rulebook, lang);
+
+  // 룰북 언어가 둘 이상이면 고르는 칸을 보입니다. 언어 이름은 그 언어로 씁니다
+  const select = $('#rulebook-lang');
+  select.replaceChildren(...have.map((l) => {
+    const option = new Option(LANG_NAMES[l], l, false, l === book.lang);
+    option.lang = l;
+    return option;
+  }));
+  select.closest('.rulebook-lang').hidden = have.length < 2;
+
   const notes = [];
-  if (book.lang !== lang) notes.push(t('rulebook.fallback', { ui: LANG_NAMES[lang], lang: LANG_NAMES[book.lang] }));
+  if (!picked && book.lang !== lang) notes.push(t('rulebook.fallback', { ui: LANG_NAMES[lang], lang: LANG_NAMES[book.lang] }));
   notes.push(t('rulebook.ingame', { lang: LANG_NAMES[gameLang(listing, lang)] }));
   field.querySelector('.rulebook-notes').textContent = notes.join(' ');
 
   // 빈 줄로 문단을 나눕니다. 글은 textContent로만 넣습니다 (제작자가 쓴 글을 HTML로 해석하지 않음).
-  text.lang = book.lang;
+  text.lang = book.lang ?? '';
+  text.dir = isRtl(book.lang) ? 'rtl' : 'ltr';
   text.replaceChildren(...book.text.split(/\n\s*\n/).map((para) => {
     const el = document.createElement('p');
     el.textContent = para.trim();
@@ -681,6 +719,7 @@ function setupDialog() {
     reportTarget = null;
     syncUrl();
   });
+  $('#rulebook-lang').addEventListener('change', (e) => pickRulebookLang(e.target.value));
   $('#create-form').addEventListener('change', syncCreateForm);
   $('#create-form').addEventListener('submit', (e) => {
     e.preventDefault();
