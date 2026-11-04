@@ -166,6 +166,15 @@ func TestServeFile(t *testing.T) {
 		"games/tictactoe/listing.json": "{}",
 		"server/go.mod":                "x",
 		".env":                         "SECRET",
+		"trainer/env.js":               "env",
+		"trainer/mcts.js":              "mcts",
+		"trainer/selfplay.js":          "node only",
+		"trainer/train.py":             "python",
+		"web/vendor/node_modules/onnxruntime-web/dist/ort.wasm.min.mjs":            "ort",
+		"web/vendor/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm": "wasm",
+		"web/vendor/node_modules/onnxruntime-web/dist/ort.min.mjs":                 "other build",
+		"web/vendor/node_modules/onnxruntime-web/package.json":                     "{}",
+		"games/tictactoe/node_modules/x/index.js":                                  "x",
 	})
 	cases := []struct {
 		path   string
@@ -196,6 +205,17 @@ func TestServeFile(t *testing.T) {
 		{"/.env", 404, "", ""},
 		{"/web/../.env", 404, "", ""},
 		{"/web//lobby.js", 404, "", ""},
+		// 브라우저 AI가 실행기 안에서 쓰는 학습 도구 두 파일만
+		{"/trainer/env.js", 200, "text/javascript; charset=utf-8", "env"},
+		{"/trainer/mcts.js", 200, "text/javascript; charset=utf-8", "mcts"},
+		{"/trainer/selfplay.js", 404, "", ""},
+		{"/trainer/train.py", 404, "", ""},
+		// node_modules는 브라우저 AI의 onnxruntime-web 몇 파일만
+		{"/web/vendor/node_modules/onnxruntime-web/dist/ort.wasm.min.mjs", 200, "text/javascript; charset=utf-8", "ort"},
+		{"/web/vendor/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm", 200, "application/wasm", "wasm"},
+		{"/web/vendor/node_modules/onnxruntime-web/dist/ort.min.mjs", 404, "", ""},
+		{"/web/vendor/node_modules/onnxruntime-web/package.json", 404, "", ""},
+		{"/games/tictactoe/node_modules/x/index.js", 404, "", ""},
 	}
 	for _, c := range cases {
 		req := httptest.NewRequest("GET", "/", nil)
@@ -355,5 +375,31 @@ func TestServeGamesPlays(t *testing.T) {
 	}
 	if _, ok := list[0]["released"]; ok || list[2]["released"] != "2026-11-03T01:02:03Z" {
 		t.Errorf("released = %v %v, want none and the publish time", list[0]["released"], list[2]["released"])
+	}
+}
+
+type models map[string]*AIModel
+
+func (m models) Model(game string) *AIModel { return m[game] }
+
+// 모델이 있는 게임만 ai가 붙습니다 (레포 게임, 올린 게임 모두)
+func TestServeGamesAI(t *testing.T) {
+	s := openSite(t, map[string]string{"web/index.html": "", "games/a/index.js": "a", "games/b/index.js": "b"})
+	s.Uploaded = uploaded{{ID: "u"}}
+	s.Models = models{"b": {Model: "/ai/b/0123456789abcdef.onnx", Lang: "ko", Rows: 3, Cols: 3, NActions: 9, Sims: 200}, "u": {Model: "/ai/u/x.onnx"}}
+	rec := httptest.NewRecorder()
+	s.ServeGames(rec, httptest.NewRequest("GET", "/api/games", nil))
+	var list []struct {
+		ID string
+		AI *AIModel
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil || len(list) != 3 {
+		t.Fatalf("games: %v %s", err, rec.Body)
+	}
+	if list[0].AI != nil || list[1].AI == nil || list[1].AI.Model != "/ai/b/0123456789abcdef.onnx" || list[1].AI.Sims != 200 || list[2].AI == nil {
+		t.Errorf("ai = %+v %+v %+v", list[0].AI, list[1].AI, list[2].AI)
+	}
+	if strings.Contains(rec.Body.String(), `"id":"a","module":"/games/a/index.js","version":"`) && strings.Contains(strings.SplitN(rec.Body.String(), `"id":"b"`, 2)[0], `"ai"`) {
+		t.Errorf("a game without a model has an ai field: %s", rec.Body)
 	}
 }

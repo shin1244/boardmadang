@@ -1,6 +1,8 @@
 // 운영자 화면: 신고를 대상(의견이나 게임)별로 묶어 보고 조치합니다. 설계는 docs/moderation.md에 있습니다.
 // GET /api/admin으로 신고, 정지된 계정, 운영 기록을 한 번에 받고, 조치는 POST /api/admin/actions로 하나씩 보냅니다.
 // 조치하고 나면 다시 불러옵니다. 운영자(서버의 ADMIN_IDS)가 아니면 서버가 403을 주고 안내만 보입니다.
+// "AI 모델" 칸에서는 운영자가 학습한 모델(trainer/train.py --export-onnx의 model.onnx, model.json)을 올리고 지웁니다
+// (PUT, DELETE /api/admin/ai/<게임>, server/internal/ai). 올린 모델은 /api/games의 ai로 나가고 로비에 "AI와 두기"가 생깁니다.
 
 import { localize } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
@@ -17,6 +19,8 @@ let games = new Map(); // 게임 id → /api/games 항목 (레포 게임과 로�
 let busy = false;
 /** 조치의 결과 글 { key, params, ok } */
 let status = null;
+/** AI 모델 칸의 결과 글 { key, params, ok } */
+let aiStatus = null;
 let showClosed = false;
 /** 대상마다 적고 있는 메모와 고른 정지 기간. 다시 그려도 남게 따로 둡니다 */
 const notes = new Map();
@@ -78,11 +82,11 @@ const untilText = (u) => (u.suspendedUntil ? t('admin.until', { date: when(u.sus
 
 // ---- 불러오기와 조치 ----
 
-async function load() {
+async function load({ fresh = false } = {}) {
   try {
     const [res, gamesRes] = await Promise.all([
       fetch('/api/admin', { cache: 'no-store' }),
-      games.size ? null : fetch('/api/games').catch(() => null),
+      games.size && !fresh ? null : fetch('/api/games', { cache: 'no-store' }).catch(() => null),
     ]);
     if (gamesRes?.ok) games = new Map((await gamesRes.json()).map((g) => [g.id, g]));
     if (res.status === 401) denied = 'login';
@@ -300,6 +304,127 @@ function renderLog(a) {
   return li;
 }
 
+// ---- AI 모델 ----
+
+/** 파일을 base64로 (data: 주소의 앞부분을 뗌) */
+function base64Of(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).slice(String(r.result).indexOf(',') + 1));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+}
+
+/** 고른 파일에서 model.onnx와 model.json을 찾습니다 */
+function pickedFiles() {
+  const files = [...$('#ai-files').files];
+  return { onnx: files.find((f) => f.name.endsWith('.onnx')), json: files.find((f) => f.name.endsWith('.json')) };
+}
+
+/** model.json을 고르면 그 게임을 골라 둡니다 */
+async function onFiles() {
+  aiStatus = null;
+  const { json } = pickedFiles();
+  if (json) {
+    try {
+      const meta = JSON.parse(await json.text());
+      if (games.has(meta.game)) $('#ai-game').value = meta.game;
+    } catch {
+      aiStatus = { key: 'admin.ai.badJson' };
+    }
+  }
+  render();
+}
+
+async function uploadModel(e) {
+  e.preventDefault();
+  if (busy) return;
+  const { onnx, json } = pickedFiles();
+  if (!onnx || !json) {
+    aiStatus = { key: 'admin.ai.needBoth' };
+    render();
+    return;
+  }
+  const game = $('#ai-game').value;
+  busy = true;
+  aiStatus = null;
+  render();
+  try {
+    const meta = JSON.parse(await json.text());
+    const res = await fetch(`/api/admin/ai/${encodeURIComponent(game)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ meta, model: await base64Of(onnx) }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      aiStatus = ERRORS[body.error] ? { key: ERRORS[body.error] } : { key: 'admin.ai.failed', params: { msg: body.error ?? res.status } };
+    } else {
+      aiStatus = { key: 'admin.ai.uploaded', params: { name: gameName(game) }, ok: true };
+      $('#ai-form').reset();
+      await load({ fresh: true });
+    }
+  } catch (err) {
+    aiStatus = { key: 'admin.ai.failed', params: { msg: err.message } };
+  }
+  busy = false;
+  render();
+}
+
+async function deleteModel(game) {
+  if (busy || !confirm(t('admin.ai.confirmDelete', { name: gameName(game) }))) return;
+  busy = true;
+  aiStatus = null;
+  render();
+  try {
+    const res = await fetch(`/api/admin/ai/${encodeURIComponent(game)}`, { method: 'DELETE' });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) aiStatus = { key: 'admin.ai.failed', params: { msg: body.error ?? res.status } };
+    else {
+      aiStatus = { key: 'admin.ai.deleted', params: { name: gameName(game) }, ok: true };
+      await load({ fresh: true });
+    }
+  } catch (err) {
+    aiStatus = { key: 'admin.ai.failed', params: { msg: err.message } };
+  }
+  busy = false;
+  render();
+}
+
+/** 모델이 있는 게임 한 줄: 이름, 탐색 횟수, 학습한 버전이 지금과 같은지, 올린 때 */
+function renderModel(g) {
+  const li = el('li', 'room');
+  const info = el('div', 'room-info');
+  info.append(el('b', '', gameName(g.id)), ' ', el('small', 'admin-id', g.id));
+  const version = g.ai.version === null ? t('admin.ai.versionUnknown')
+    : g.ai.version === g.version ? t('admin.ai.versionSame') : t('admin.ai.versionOld');
+  info.append(el('small', 'room-meta', t('admin.ai.meta', { sims: g.ai.sims, version, date: when(g.ai.updated) })));
+  li.append(info, button(t('admin.ai.delete'), () => deleteModel(g.id)));
+  return li;
+}
+
+function renderModels() {
+  const select = $('#ai-game');
+  const chosen = select.value;
+  const list = [...games.values()];
+  select.replaceChildren(...list.map((g) => {
+    const o = el('option', '', `${gameName(g.id)} (${g.id})`);
+    o.value = g.id;
+    return o;
+  }));
+  if (games.has(chosen)) select.value = chosen;
+  const withAI = list.filter((g) => g.ai);
+  $('#ai-count').textContent = `${withAI.length}`;
+  $('#ai-list').replaceChildren(...withAI.map(renderModel));
+  $('#ai-empty').hidden = withAI.length > 0;
+  $('#ai-empty').textContent = t('admin.ai.none');
+  $('#ai-upload').disabled = busy;
+  const s = $('#ai-status');
+  s.textContent = aiStatus ? t(aiStatus.key, aiStatus.params) : '';
+  s.classList.toggle('good', !!aiStatus?.ok);
+}
+
 // ---- 그리기 ----
 
 function render() {
@@ -330,6 +455,8 @@ function render() {
   $('#suspended-empty').hidden = state.suspended.length > 0;
   $('#suspended-empty').textContent = t('admin.suspended.empty');
 
+  renderModels();
+
   $('#log').replaceChildren(...state.log.map(renderLog));
   $('#log-empty').hidden = state.log.length > 0;
   $('#log-empty').textContent = t('admin.log.empty');
@@ -342,6 +469,8 @@ async function main() {
     showClosed = e.target.checked;
     render();
   });
+  $('#ai-files').addEventListener('change', onFiles);
+  $('#ai-form').addEventListener('submit', uploadModel);
   $('#refresh').addEventListener('click', async () => {
     if (busy) return;
     status = null;

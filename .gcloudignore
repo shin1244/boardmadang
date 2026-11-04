@@ -3,4 +3,7 @@
 .git
 .gitignore
 #!include:.gitignore
-trainer/
+# 학습 도구는 브라우저 AI가 쓰는 두 파일만 올립니다 (Dockerfile)
+trainer/*
+!trainer/env.js
+!trainer/mcts.js

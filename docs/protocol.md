@@ -5,7 +5,7 @@
 | 요청 | 응답 |
 |---|---|
 | `GET /healthz` | `ok` |
-| `GET /api/games` | 게임 목록 `[{"id":"tictactoe","module":"/games/tictactoe/index.js","version":"3f1c9a0b2e7d4c56","private":false,"listing":{...},"thumbnail":{...},"plays":12,"released":"…"}]`. `plays`는 둔 판 수로 로비의 인기순에 씁니다 (무효가 된 대국, 행동이 없는 대국, 한 사람이 두 자리에 앉은 대국은 빼고 셈. 0이면 없음). `released`는 올린 게임을 처음 등록한 때로 출시일순에 씁니다 (레포 게임은 없음). `author`는 올린 게임의 제작자 이름으로, 계정의 지금 이름입니다 (레포 게임과 이름을 모르는 게임은 없음, `/api/uploads`에도 없음) |
+| `GET /api/games` | 게임 목록 `[{"id":"tictactoe","module":"/games/tictactoe/index.js","version":"3f1c9a0b2e7d4c56","private":false,"listing":{...},"thumbnail":{...},"plays":12,"released":"…"}]`. `plays`는 둔 판 수로 로비의 인기순에 씁니다 (무효가 된 대국, 행동이 없는 대국, 한 사람이 두 자리에 앉은 대국은 빼고 셈. 0이면 없음). `released`는 올린 게임을 처음 등록한 때로 출시일순에 씁니다 (레포 게임은 없음). `author`는 올린 게임의 제작자 이름으로, 계정의 지금 이름입니다 (레포 게임과 이름을 모르는 게임은 없음, `/api/uploads`에도 없음). 운영자가 AI 모델을 올린 게임에는 `ai`(아래)가 붙습니다 |
 | `GET /api/locale` | 접속 나라와 화면 언어 `{"country":"KR","lang":"ko"}` |
 | `GET /api/me` | 지금 신원 `{"id":"g_…","kind":"guest","tag":"4821"}`. 쿠키가 없으면 게스트를 새로 발급합니다. 계정이면 운영자(`"admin":true`)와 정지(`"suspended":true,"suspendedUntil":"…"`, 영구면 `suspendedUntil` 없음)도 옵니다 |
 | `GET /api/account` | 내 계정 `{"name":"shin","provider":"google","created":"…","renameAfter":"…","min":4,"max":8}`. `renameAfter`는 이름을 다시 바꿀 수 있는 때 (지금 바꿀 수 있으면 없음). 계정만 |
@@ -26,8 +26,11 @@
 | `GET /api/games/{id}/clear` | 제작자 클리어 기보. 올린 게임의 지금 버전만 `{"game":"dots","version":"…","seed":3551073280,"moves":[…],"winner":0,"at":"…"}`. 없으면 `404` |
 | `GET /drafts/{draft}/{path}` | 초안의 파일. 등록창이 실행기에 불러와 검사합니다 |
 | `GET /uploads/{id}/{version}/{path}` | 올린 게임의 코드. 버전이 곧 내용의 해시라 오래 캐시합니다 (`immutable`) |
+| `GET /ai/{game}/{file}` | 게임의 AI 모델(ONNX). 파일 이름이 내용의 해시라 오래 캐시합니다 (`immutable`). 지금 모델만 |
 | `GET /api/admin` | 운영자 화면. 신고 목록, 정지된 계정, 최근 운영 기록. 운영자만 ([moderation.md](moderation.md#api)) |
 | `POST /api/admin/actions` | 운영 조치 하나 `{"action":"comment.hide","game":"…","comment":"…","note":"…"}` → `{"ok":true}`. 운영자만 |
+| `PUT /api/admin/ai/{game}` | AI 모델 올리기 `{"meta":{…},"model":"<model.onnx의 base64>"}` → `{"ai":{…}}` (`/api/games`의 `ai`). `meta`는 `trainer/train.py --export-onnx`가 쓴 `model.json` 그대로. 모델은 16 MB까지 (`413`), 모양이 틀리면 `422 {"error":"…"}`, 없는 게임이면 `404`. 같은 게임의 모델은 바뀝니다. 운영자만 |
+| `DELETE /api/admin/ai/{game}` | AI 모델 지우기 → `{"ok":true}`. 운영자만 |
 
 - `version`은 게임 코드 버전입니다. 게임 폴더의 `.js`, `.mjs` 파일(테스트와 `node_modules` 제외)을 `/`로 구분한 상대 경로 순으로
   "경로\0내용\0"씩 이어 SHA-256을 구하고 앞 16글자를 씁니다. 개발 서버와 Go 서버의 계산이 같아야 합니다.
@@ -37,6 +40,11 @@
 - `thumbnail`은 썸네일(`thumbnail.json`)입니다. 이미지가 아니라 혼자 두던 판을 그대로 찍은 데이터
   `{"board":{…},"pieces":"xo","player":0,"view":{"pieces":[…],"marks":[…]}}`이고, 화면이 보드 렌더러로 다시 그립니다.
   없거나 깨졌으면 `null`이고 화면은 시작 판을 그립니다. 모양은 [sdk/game.d.ts](../sdk/game.d.ts)의 `Thumbnail`입니다.
+- `ai`는 그 게임의 AI 모델입니다. 없으면 빠집니다 ([trainer/README.md](../trainer/README.md#브라우저에서-ai와-두기)).
+  `{"model":"/ai/tictactoe/<해시 16글자>.onnx","version":"3f1c…","lang":"en","rows":3,"cols":3,"channelNames":["piece:x","piece:o","mark:dot",…,"toPlay"],"specials":[],"nActions":9,"sims":200,"updated":"…"}`.
+  `version`은 학습한 게임 코드 버전(모르면 `null`)이고, 관측과 행동의 모양(`rows`, `cols`, `channelNames`, `specials`, `nActions`)이
+  지금 게임 코드와 같아야 화면이 "AI와 두기"를 보여 줍니다. `lang`은 학습할 때 `view()`에 준 언어, `sims`는 한 수마다 탐색 횟수입니다.
+  모델 파일은 서버의 `DATA_DIR/ai/<게임>/`에 `model.json`과 함께 있습니다. 개발 서버도 같은 폴더에서 읽습니다.
 - `PUT /api/games/<id>/thumbnail`: 개발 서버 전용. 플레이그라운드의 "Use as thumbnail"이 찍은 판을 `thumbnail.json`에 저장합니다.
   내 컴퓨터에서 온 JSON만 받고, 모양이 틀리면 `422 {"problems":[...]}`입니다.
 - `PUT /api/games/<id>/listing`: 개발 서버 전용. 등록창이 등록 정보를 `games/<id>/listing.json`에 저장합니다.

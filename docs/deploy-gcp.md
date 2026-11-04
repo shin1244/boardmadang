@@ -123,6 +123,8 @@ GCP 프로젝트 `boardmadang`에 이렇게 놓았습니다. gcloud의 기본 �
 
 학습은 실시간 대국과 무관한 일괄 작업이라 리전이 중요하지 않습니다.
 GPU가 있고 싼 리전에서 **Spot VM**으로 돌리면 비용을 크게 줄일 수 있습니다.
+지금은 운영자가 자기 컴퓨터에서 학습하고, 운영자 화면에서 모델을 올립니다 ([trainer/README.md](../trainer/README.md#브라우저에서-ai와-두기)).
+모델은 `/data/ai/<게임>/`에 남습니다.
 
 ## 컨테이너 빌드
 
@@ -134,7 +136,7 @@ docker run --rm -p 8080:8080 -v boardmadang-data:/data --env-file .env boardmada
 ```
 
 - http://localhost:8080 을 열면 로비가 보입니다.
-- 기보와 계정은 컨테이너 안의 `/data`에 씁니다. 볼륨(`-v boardmadang-data:/data`)을 붙이지 않으면 컨테이너를 지울 때 같이 사라집니다.
+- 기보, 계정, AI 모델은 컨테이너 안의 `/data`에 씁니다. 볼륨(`-v boardmadang-data:/data`)을 붙이지 않으면 컨테이너를 지울 때 같이 사라집니다.
 - 게임을 더하거나 고치면 이미지를 다시 빌드합니다.
 - 비공개 게임(`games/private/`), `.env`, 개발 중에 쌓인 `server/data/`는 `.dockerignore`로 빼서 이미지에 들어가지 않습니다.
   비공개 게임을 이미지에 넣으면 사이트에서 누구나 그 코드를 받아 갈 수 있습니다. 비밀값은 실행할 때 `--env-file`이나 환경변수로 넘깁니다.
