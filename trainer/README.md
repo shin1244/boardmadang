@@ -128,7 +128,7 @@ final evaluation
 학습한 신경망을 ONNX로 내보내 운영자 화면에서 올리면, 로비의 게임 창에 "AI와 두기"가 생깁니다.
 
 ```bash
-python trainer/train.py games/tictactoe --export-onnx --play-sims 200
+python trainer/train.py games/tictactoe --export-onnx --play-sims 100
 ```
 
 `trainer/runs/<게임 id>/model.pt`를 읽어 같은 폴더에 `model.onnx`와 `model.json`(관측과 행동의 모양, 탐색 횟수)을 씁니다.
@@ -138,12 +138,11 @@ python trainer/train.py games/tictactoe --export-onnx --play-sims 200
 - **모양이 같으면 예전 모델도 씁니다.** 관측 채널 이름, `rows`, `cols`, 특수 행동, 행동 수가 지금 게임 코드와 같아야 합니다.
   코드 버전은 달라도 됩니다 (규칙을 조금 고친 게임이면 약해질 뿐 둘 수는 있습니다). 내보낼 때(`train.py`), 올릴 때(서버),
   둘 때(브라우저) 세 번 봅니다. 모양이 다르면 다시 학습해야 합니다. 운영자 화면은 학습한 버전이 지금 버전과 같은지 보여 줍니다.
-- **세기는 탐색 횟수**로 정합니다. `--play-sims`(기본 200, 1~2000)가 `model.json`의 `sims`가 됩니다.
-  다만 브라우저 AI는 한 행동에 1초, 한 차례(여러 행동)에 모두 3초까지만 생각하고(그 뒤 행동은 0.4초씩),
-  그 안에 다 못 채우면 거기까지의 탐색으로 둡니다 (`web/ai.js`의 `THINK_MS`, `TURN_MS`).
-  판이 크거나 기기가 느리면 sims보다 적게 탐색합니다. 예를 들어 Node에서 잰 WebAssembly 신경망 한 번은
-  스플체스(8×8, 6×96)가 12ms, 개척 오목(13×13, 6×96)이 18ms라서, 1초면 각각 80번, 55번쯤입니다.
-  시험할 때는 대국 화면 주소에 `&sims=1`처럼 붙이면 시간 제한 없이 그만큼 탐색합니다. 1이면 신경망의 첫 느낌대로 둡니다.
+- **세기는 탐색 횟수**로 정합니다. `--play-sims`(기본 100, 1~2000)가 `model.json`의 `sims`가 됩니다.
+  브라우저 AI는 행동마다 이만큼 탐색하므로, 기다리는 시간은 탐색 횟수 × 신경망 한 번 시간 × 한 차례의 행동 수입니다.
+  Node에서 잰 WebAssembly 신경망 한 번은 스플체스(8×8, 6×96)가 12ms, 개척 오목(13×13, 6×96)이 18ms라서,
+  100번이면 한 행동에 1.2초, 1.8초쯤입니다 (200번이던 때는 개척 오목 한 차례에 6~12초).
+  시험할 때는 대국 화면 주소에 `&sims=1`처럼 붙여 바꿀 수 있습니다. 1이면 신경망의 첫 느낌대로 둡니다.
 - 내보내기에는 `onnx`, `onnxscript`가, 내보낸 모델이 PyTorch와 같은 값을 내는지 보는 테스트에는 `onnxruntime`이 필요합니다
   (`requirements.txt`에 있음).
 
