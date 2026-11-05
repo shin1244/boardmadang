@@ -5,7 +5,7 @@
 // 탐색이 고른 행동(done)은 사람의 클릭처럼 play로 둡니다.
 //
 // 모델은 운영자가 학습해 올린 것입니다 (/api/games의 ai, server/internal/ai). 관측과 행동의 모양이 지금 게임 코드와 같아야 씁니다.
-// 한 수마다 탐색 횟수는 모델에 적힌 sims이고, 시험할 때는 주소에 ?sims=을 붙여 바꿀 수 있습니다.
+// 난이도는 한 수마다의 탐색 횟수만 다릅니다 (LEVELS). 보통이 모델에 적힌 sims이고, 시험할 때는 주소에 ?sims=을 붙여 바꿀 수 있습니다.
 
 import { BoardView, PLAYER_COLORS } from '/sdk/playground/board.js';
 import { gameLang, localize } from '/sdk/playground/listing.js';
@@ -19,6 +19,20 @@ const gameId = params.get('game') ?? '';
 const NET_MS = 120_000; // 신경망 불러오기 (처음에는 onnxruntime-web의 WebAssembly 15MB를 받습니다. Caddy가 압축해서 4MB쯤)
 const RUN_MS = 10_000; // 신경망 한 번
 const MIN_THINK_MS = 400; // AI가 너무 빨리 두면 무엇을 뒀는지 놓치므로 이만큼은 기다립니다
+
+// 난이도 → 한 행동마다의 탐색 횟수. n은 모델에 적힌 sims (운영자가 내보낼 때 정함, 기본 100).
+// 쉬움은 탐색 없이 신경망의 첫 느낌대로, 어려움은 보통의 두 배라 그만큼 오래 생각합니다.
+const LEVELS = {
+  easy: () => 1,
+  normal: (n) => n,
+  hard: (n) => Math.min(2000, n * 2),
+};
+const LEVEL_KEY = 'boardmadang.aiLevel'; // 고른 난이도는 이 브라우저에 기억합니다
+// 주소의 ?sims=N (1~2000). 있으면 난이도 대신 이 횟수로 두고 난이도 칸을 숨깁니다
+const testSims = (() => {
+  const n = Number(params.get('sims'));
+  return Number.isInteger(n) && n >= 1 && n <= 2000 ? n : null;
+})();
 
 let me = null;
 let entry = null; // /api/games의 항목. entry.ai가 모델
@@ -35,16 +49,24 @@ let ended = null; // { winner, why: 'result' | 'maxActions' | 'noTurn' | 'resign
 let hover = null;
 let round = 0; // 새 판마다 늘립니다. 앞 판의 AI가 늦게 돌아오면 버립니다
 let queue = Promise.resolve(); // 실행기 호출은 하나씩
+let level = savedLevel(); // easy | normal | hard. 판을 고르는 화면에서만 바꿀 수 있어 한 판 동안은 그대로입니다
 
 const aiSeat = () => 1 - seat;
 const playLang = () => gameLang(entry?.listing, lang);
 const nameOfGame = () => localize(entry?.listing?.name, lang).text || entry?.id || gameId;
 const flip = () => runner.info.board.flipForPlayer === seat;
 const lookOpts = () => ({ players: [seat], lang: playLang(), legalFor: seat });
-const sims = () => {
-  const n = Number(params.get('sims'));
-  return Number.isInteger(n) && n >= 1 && n <= 2000 ? n : entry.ai.sims;
-};
+const sims = () => testSims ?? LEVELS[level](entry.ai.sims);
+const levelName = () => (testSims === null ? t(`ai.level.${level}`) : `sims ${testSims}`);
+
+function savedLevel() {
+  try {
+    const l = localStorage.getItem(LEVEL_KEY);
+    return Object.hasOwn(LEVELS, l ?? '') ? l : 'normal';
+  } catch {
+    return 'normal'; // 저장소를 못 쓰는 브라우저
+  }
+}
 
 function fail(text) {
   phase = 'error';
@@ -244,7 +266,16 @@ function renderPlayers() {
   $('#ai-dot').style.background = PLAYER_COLORS[aiSeat()];
   $('#my-name').textContent = `${displayName(me)} (${t('match.you')})`;
   $('#my-seat').textContent = t(seat === 0 ? 'match.first' : 'match.second');
-  $('#ai-seat').textContent = t(seat === 0 ? 'match.second' : 'match.first');
+  $('#ai-seat').textContent = `${t(seat === 0 ? 'match.second' : 'match.first')} · ${levelName()}`;
+}
+
+function renderLevel() {
+  const box = $('#level-box');
+  box.hidden = phase !== 'choose' || testSims !== null;
+  if (box.hidden) return;
+  for (const b of box.querySelectorAll('[data-level]')) b.setAttribute('aria-pressed', String(b.dataset.level === level));
+  const key = { easy: 'ai.level.hint.easy', normal: 'ai.level.hint', hard: 'ai.level.hint.hard' }[level];
+  $('#level-hint').textContent = t(key, { n: sims() });
 }
 
 function renderBoard() {
@@ -280,6 +311,7 @@ function render() {
   document.title = `${nameOfGame()} · ${t('ai.title')} · ${t('site.name')}`;
   renderMe(me);
   $('#title').textContent = entry ? `${nameOfGame()} · ${t('ai.title')}` : t('ai.title');
+  renderLevel();
   renderStatus();
   renderPlayers();
   renderBoard();
@@ -322,6 +354,18 @@ function setupBoard() {
 }
 
 function setupButtons() {
+  for (const b of document.querySelectorAll('#level-box [data-level]')) {
+    b.addEventListener('click', () => {
+      if (phase !== 'choose') return;
+      level = b.dataset.level;
+      try {
+        localStorage.setItem(LEVEL_KEY, level);
+      } catch {
+        // 기억하지 못해도 이번 화면에는 적용됩니다
+      }
+      render();
+    });
+  }
   for (const side of [0, 1]) $(`#as-${side}`).addEventListener('click', () => enqueue(() => newGame(side)));
   $('#resign').addEventListener('click', () => {
     if (phase !== 'playing' || !confirm(t('match.resign.confirm'))) return;

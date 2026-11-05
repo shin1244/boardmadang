@@ -54,6 +54,19 @@
       <span class="who"><i class="dot" id="ai-dot"></i><b data-i18n="ai.name">AI</b> <small id="ai-seat"></small></span>
     </div>
 
+    <!-- AI 난이도: 한 수마다의 탐색 횟수만 다릅니다 (web/ai.js의 LEVELS) -->
+    <div id="level-box" class="ai-level" hidden>
+      <div class="level-row">
+        <span id="level-label" data-i18n="ai.level">난이도</span>
+        <div class="seg" role="group" aria-labelledby="level-label">
+          <button type="button" data-level="easy" data-i18n="ai.level.easy" aria-pressed="false">쉬움</button>
+          <button type="button" data-level="normal" data-i18n="ai.level.normal" aria-pressed="true">보통</button>
+          <button type="button" data-level="hard" data-i18n="ai.level.hard" aria-pressed="false">어려움</button>
+        </div>
+      </div>
+      <p id="level-hint" class="level-hint"></p>
+    </div>
+
     <p id="status" class="match-status" role="status"></p>
 
     <!-- 어느 쪽으로 둘지 고릅니다 -->
