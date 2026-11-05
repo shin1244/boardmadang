@@ -13,7 +13,7 @@ import numpy as np
 import torch
 
 from net import Net
-from train import Pool, Snapshots, Worker, eval_summary, export_onnx, fresh_loss, unpack_game
+from train import Pool, Snapshots, Worker, balance_from_log, eval_summary, export_onnx, fresh_loss, unpack_game
 
 TICTACTOE = Path(__file__).resolve().parent.parent / "games" / "tictactoe"
 
@@ -230,6 +230,7 @@ class ExportTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as d:
             meta = export_onnx(self.saved, self.info, Path(d), 123)
+            self.assertNotIn("balance", meta)  # 학습 기록(log.jsonl)이 없으면 넣지 않습니다
             session = onnxruntime.InferenceSession(str(Path(d) / "model.onnx"))
             saved_meta = json.loads((Path(d) / "model.json").read_text(encoding="utf-8"))
         self.assertEqual(saved_meta, meta)
@@ -250,6 +251,27 @@ class ExportTest(unittest.TestCase):
         self.assertEqual(meta["channelNames"], self.info["channelNames"])
         self.assertEqual((meta["rows"], meta["cols"], meta["nActions"], meta["specials"]), (3, 3, 9, []))
         self.assertEqual((meta["sims"], meta["iteration"], meta["net"]), (123, 7, {"blocks": 1, "filters": 8}))
+
+    def test_balance(self):
+        # 자기대국 기록이 있으면 마지막 5분의 1 반복의 결과를 model.json에 넣습니다
+        def row(it, wins, draws=0, **extra):
+            sp = {"games": wins[0] + wins[1] + draws, "wins": wins, "draws": draws, "cut": 0, "moves": 50}
+            return json.dumps({"iteration": it, "selfplay": sp, **extra})
+
+        with tempfile.TemporaryDirectory() as d:
+            log = Path(d) / "log.jsonl"
+            self.assertIsNone(balance_from_log(log))
+            lines = [row(1, [9, 1]), row(2, [9, 1])]  # 앞서 학습하다 그만둔 기록
+            lines += [row(1, [0, 10], teacher="rollout")]  # 다시 시작. 롤아웃 AI가 둔 반복은 빼고
+            lines += [row(i, [6, 3], 1) for i in range(2, 10)]
+            lines += [json.dumps({"iteration": 9, "eval": {}}), "not json"]
+            lines += [row(10, [1, 1])]  # model.pt(반복 9)보다 뒤
+            log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            # 반복 2~9의 여덟 개 중 마지막 둘 (8, 9)
+            want = {"games": 20, "wins": [12, 6], "draws": 2, "cut": 0, "from": 8, "to": 9}
+            self.assertEqual(balance_from_log(log, 9), want)
+            self.assertEqual(export_onnx({**self.saved, "iteration": 9}, self.info, Path(d), 50)["balance"], want)
+            self.assertEqual(balance_from_log(log, 2)["from"], 2)  # 하나뿐이어도 그 반복
 
     def test_old_model_with_same_shape(self):
         # 코드가 바뀌어도 모양이 같으면 내보내고, version은 학습한 코드의 것입니다 (없던 시절의 model.pt면 null)

@@ -33,7 +33,8 @@ const metaJSON = `{
   "channels": 14,
   "sims": 200,
   "iteration": 41,
-  "net": {"blocks": 4, "filters": 64}
+  "net": {"blocks": 4, "filters": 64},
+  "balance": {"games": 2048, "wins": [1100, 900], "draws": 48, "cut": 0, "from": 33, "to": 41}
 }`
 
 // onnx는 ONNX 파일처럼 시작하는 바이트입니다 (ir_version 필드)
@@ -154,6 +155,9 @@ func TestPutServeAndReopen(t *testing.T) {
 	if *got.Version != "0123456789abcdef" || got.Lang != "ko" || got.NActions != 9 || got.Sims != 200 || len(got.ChannelNames) != 14 || !got.Updated.Equal(at) {
 		t.Errorf("model = %+v", got)
 	}
+	if b := got.Balance; b == nil || b.Games != 2048 || b.Wins != [2]int{1100, 900} || b.Draws != 48 || b.From != 33 || b.To != 41 {
+		t.Errorf("balance = %+v", got.Balance)
+	}
 	if f.store.Model("dots") != nil {
 		t.Error("dots has no model")
 	}
@@ -243,6 +247,9 @@ func TestPutChecks(t *testing.T) {
 	if rec := f.put("nope", onnx, func(m map[string]any) { m["game"] = "nope" }); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown game = %d, want 404", rec.Code)
 	}
+	balance := func(b string) func(m map[string]any) {
+		return func(m map[string]any) { m["balance"] = json.RawMessage(b) }
+	}
 	bad := map[string]func(m map[string]any){
 		"other game":     func(m map[string]any) { m["game"] = "dots" },
 		"format":         func(m map[string]any) { m["format"] = 2 },
@@ -258,11 +265,19 @@ func TestPutChecks(t *testing.T) {
 		"too many sims":  func(m map[string]any) { m["sims"] = MaxSims + 1 },
 		"many specials":  func(m map[string]any) { m["specials"] = strings.Split("abcdefghi", ""); m["nActions"] = 18 },
 		"negative count": func(m map[string]any) { m["iteration"] = -1 },
+		"no games":       balance(`{"games": 0, "wins": [0, 0]}`),
+		"too many wins":  balance(`{"games": 10, "wins": [6, 5]}`),
+		"cut over draws": balance(`{"games": 10, "wins": [5, 4], "draws": 1, "cut": 2}`),
+		"from after to":  balance(`{"games": 10, "wins": [5, 5], "from": 9, "to": 8}`),
 	}
 	for name, edit := range bad {
 		if rec := f.put("tictactoe", onnx, edit); rec.Code != http.StatusUnprocessableEntity {
 			t.Errorf("%s: %d %s, want 422", name, rec.Code, rec.Body)
 		}
+	}
+	// 이 기능 전에 내보낸 model.json에는 balance가 없습니다
+	if rec := f.put("tictactoe", onnx, func(m map[string]any) { delete(m, "balance") }); rec.Code != http.StatusOK || f.store.Model("tictactoe").Balance != nil {
+		t.Errorf("without balance: %d %s", rec.Code, rec.Body)
 	}
 	// 특수 행동은 클릭 뒤에 붙습니다
 	if rec := f.put("tictactoe", onnx, func(m map[string]any) { m["specials"] = []string{"pass"}; m["nActions"] = 10 }); rec.Code != http.StatusOK {

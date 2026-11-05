@@ -258,6 +258,8 @@ def fresh_loss(net, data, device, batch=4096):
 # web/ai.js의 SHAPE와 같아야 합니다
 SHAPE = ("rows", "cols", "channelNames", "specials", "nActions")
 MODEL_FORMAT = 1
+# model.json의 balance는 학습의 마지막 이만큼(반복 수 기준)에서 AI끼리 둔 자기대국의 결과입니다
+BALANCE_SHARE = 0.2
 
 
 def same_shape(a, b):
@@ -269,7 +271,7 @@ def export_onnx(saved, info, out, play_sims):
 
     saved는 torch.load한 model.pt, info는 지금 게임 코드의 정보(selfplay.js의 H)입니다.
     학습한 뒤에 코드가 바뀌었어도 SHAPE가 같으면 내보냅니다. model.json의 version은 학습한 코드의 버전입니다
-    (이 기능 전에 학습한 model.pt에는 없어서 null)."""
+    (이 기능 전에 학습한 model.pt에는 없어서 null). 같은 폴더에 log.jsonl이 있으면 선공 승률(balance)도 넣습니다."""
     trained = saved.get("info") or info
     if not same_shape(trained, info):
         diff = [k for k in SHAPE if trained.get(k) != info.get(k)]
@@ -300,8 +302,49 @@ def export_onnx(saved, info, out, play_sims):
         "iteration": saved.get("iteration"),
         "net": {"blocks": saved["config"]["blocks"], "filters": saved["config"]["filters"]},
     }
+    balance = balance_from_log(out / "log.jsonl", saved.get("iteration"))
+    if balance:
+        meta["balance"] = balance
     (out / "model.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return meta
+
+
+def balance_from_log(path, upto=None):
+    """log.jsonl → 학습 마지막 BALANCE_SHARE(적어도 한 반복)의 자기대국 합계 (서버 internal/site의 AIBalance).
+
+    게임 창이 선공·후공 승률로 보여 줍니다. 처음 몇 수를 뽑아 두는 학습용 대국이라 사람끼리 둘 때와 같지는 않지만,
+    한쪽이 크게 유리한 게임은 드러납니다. 같은 폴더에서 다시 학습해 이어 쓴 기록이면 다시 시작한 반복부터 봅니다.
+    upto(model.pt의 반복)보다 뒤의 기록과 롤아웃 AI가 둔 반복은 뺍니다. 기록이 없으면 None."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    rows = {}  # 반복 → 자기대국 통계
+    last = 0
+    for line in lines:
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        it, sp = e.get("iteration"), e.get("selfplay")
+        if not isinstance(it, int) or not sp:
+            continue
+        if it <= last:  # 이 반복부터 다시 학습했습니다
+            rows = {k: v for k, v in rows.items() if k < it}
+        last = it
+        if (upto is None or it <= upto) and "teacher" not in e:
+            rows[it] = sp
+    its = sorted(rows)[-max(1, round(len(rows) * BALANCE_SHARE)) :]
+    total = {"games": 0, "wins": [0, 0], "draws": 0, "cut": 0}
+    for i in its:
+        sp = rows[i]
+        total["games"] += sp["games"]
+        total["wins"] = [total["wins"][0] + sp["wins"][0], total["wins"][1] + sp["wins"][1]]
+        total["draws"] += sp["draws"]
+        total["cut"] += sp.get("cut", 0)
+    if not total["games"]:
+        return None
+    return {**total, "from": its[0], "to": its[-1]}
 
 
 # snapshots.json의 format (server/internal/ai의 TrainingFormat)과 스냅샷 수 상한 (MaxSnapshots)
@@ -548,6 +591,12 @@ def main():
         meta = export_onnx(saved, info, out, args.play_sims)
         same = "same code version" if meta["version"] == info["version"] else "trained on another code version"
         print(f"exported iteration {meta['iteration']} ({same}): {out / 'model.onnx'}, {out / 'model.json'}")
+        if b := meta.get("balance"):
+            print(
+                f"balance (self-play, iterations {b['from']}-{b['to']}, {b['games']} games): "
+                f"first wins {b['wins'][0] / b['games']:.1%}, second wins {b['wins'][1] / b['games']:.1%}, "
+                f"draws {b['draws'] / b['games']:.1%}"
+            )
         return
 
     t0 = time.monotonic()

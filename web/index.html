@@ -158,6 +158,13 @@
             <h4 data-i18n="detail.timer">타이머</h4>
             <span id="gd-timer"></span>
           </div>
+          <!-- 학습한 AI가 있으면 학습 마지막 구간에 AI끼리 둔 판의 선공·후공 승률 (model.json의 balance) -->
+          <div id="gd-balance-row" class="gd-field" hidden>
+            <h4 data-i18n="detail.balance">선공·후공 승률</h4>
+            <div id="gd-balance-bar" class="balance-bar" role="img"></div>
+            <ul id="gd-balance-legend" class="balance-legend"></ul>
+            <p id="gd-balance-note" class="gd-desc muted"></p>
+          </div>
           <!-- 올린 게임은 제작자의 이름과, 제작자가 등록할 때 직접 이긴 판(클리어 기보)이 있습니다 -->
           <div id="gd-author-row" class="gd-field row" hidden>
             <h4 data-i18n="detail.author">제작자</h4>

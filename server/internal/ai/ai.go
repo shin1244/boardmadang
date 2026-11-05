@@ -94,6 +94,8 @@ type Meta struct {
 	Size         int       `json:"size"`    // 서버가 채움: 신경망 파일 크기
 	Updated      time.Time `json:"updated"` // 서버가 채움
 	By           string    `json:"by"`      // 서버가 채움: 올린 운영자 계정 id
+	// 선공 승률 (학습 마지막 구간의 자기대국). train.py가 씁니다. 이 기능 전에 내보낸 model.json에는 없습니다
+	Balance *site.AIBalance `json:"balance,omitempty"`
 }
 
 // NetSize는 신경망 크기입니다 (보여 주기만 합니다).
@@ -203,6 +205,8 @@ func (m *Meta) check(game string) error {
 		return bad("sims must be 1-%d", MaxSims)
 	case m.Iteration < 0:
 		return bad("iteration")
+	case m.Balance != nil && !validBalance(*m.Balance):
+		return bad("balance")
 	}
 	for _, list := range [][]string{m.ChannelNames, m.Specials} {
 		for _, s := range list {
@@ -215,6 +219,17 @@ func (m *Meta) check(game string) error {
 		m.Specials = []string{}
 	}
 	return nil
+}
+
+// validBalance는 model.json의 balance가 말이 되는지입니다 (training.go의 자기대국 통계 검사와 같은 규칙).
+func validBalance(b site.AIBalance) bool {
+	for _, n := range []int{b.Wins[0], b.Wins[1], b.Draws, b.Cut} {
+		if n < 0 {
+			return false
+		}
+	}
+	return b.Games >= 1 && b.Games <= 100_000_000 && b.Wins[0]+b.Wins[1]+b.Draws <= b.Games && b.Cut <= b.Draws &&
+		b.From >= 0 && b.From <= b.To
 }
 
 // Model은 /api/games에 붙일 게임 하나의 모델입니다. 없으면 nil.
@@ -240,6 +255,7 @@ func (m Meta) summary() *site.AIModel {
 		NActions:     m.NActions,
 		Sims:         m.Sims,
 		Updated:      m.Updated,
+		Balance:      m.Balance,
 	}
 }
 

@@ -92,6 +92,19 @@ type AIModel struct {
 	NActions     int       `json:"nActions"`
 	Sims         int       `json:"sims"` // 한 수마다 탐색 횟수
 	Updated      time.Time `json:"updated"`
+	// Balance는 학습 마지막 구간의 자기대국 결과입니다. 게임 창이 선공·후공 승률로 보여 줍니다. 이 기능 전에 내보낸 모델이면 없습니다
+	Balance *AIBalance `json:"balance,omitempty"`
+}
+
+// AIBalance는 학습의 마지막 5분의 1(반복 수 기준)에서 AI끼리 둔 자기대국의 합계입니다 (trainer/train.py의 balance_from_log).
+// 처음 몇 수를 뽑아 두는 학습용 대국이라 사람끼리 둘 때와 같지는 않지만, 한쪽이 크게 유리한 게임은 드러납니다.
+type AIBalance struct {
+	Games int    `json:"games"`
+	Wins  [2]int `json:"wins"`  // 선공, 후공이 이긴 판
+	Draws int    `json:"draws"` // Cut도 들어 있습니다
+	Cut   int    `json:"cut"`   // 학습용 무승부 규칙(같은 판 반복, --max-moves)으로 끊은 판
+	From  int    `json:"from"`  // 합친 반복의 처음과 끝
+	To    int    `json:"to"`
 }
 
 // Open은 dir(레포 루트)을 엽니다. dir/web/index.html이 없으면 에러입니다.

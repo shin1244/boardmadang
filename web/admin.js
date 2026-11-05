@@ -435,6 +435,13 @@ function renderModel(g) {
   const version = g.ai.version === null ? t('admin.ai.versionUnknown')
     : g.ai.version === g.version ? t('admin.ai.versionSame') : t('admin.ai.versionOld');
   info.append(el('small', 'room-meta', t('admin.ai.meta', { sims: g.ai.sims, version, date: when(g.ai.updated) })));
+  const b = g.ai.balance; // 선공 승률 (이 기능 전에 내보낸 모델이면 없음)
+  if (b?.games) {
+    const pct = (n) => Math.round((n / b.games) * 100);
+    info.append(el('small', 'room-sub', t('admin.ai.balance', {
+      games: b.games.toLocaleString(lang), first: pct(b.wins[0]), draw: pct(b.draws), second: pct(b.wins[1]),
+    })));
+  }
   const actions = el('div', 'mine-actions');
   const record = trainingLink(g.id);
   if (record) actions.append(record);
