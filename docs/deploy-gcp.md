@@ -76,6 +76,7 @@ GCP 프로젝트 `boardmadang`에 이렇게 놓았습니다. gcloud의 기본 �
 
    ```
    boardmadang.com {
+       encode zstd gzip
        reverse_proxy app:8080
    }
    www.boardmadang.com {
@@ -83,6 +84,8 @@ GCP 프로젝트 `boardmadang`에 이렇게 놓았습니다. gcloud의 기본 �
    }
    ```
 
+   `encode`는 브라우저가 받을 수 있으면 응답을 zstd나 gzip으로 압축합니다. 브라우저 AI의 onnxruntime-web WebAssembly가
+   14.8 MB에서 3.8 MB쯤으로, 화면의 JS와 CSS는 3~4분의 1로 줄어듭니다. 이미 압축된 그림 파일은 건드리지 않습니다.
    Caddy는 웹소켓을 그대로 넘기고, `X-Forwarded-Proto: https`를 붙여 줍니다. 서버는 이것을 보고 쿠키에 `Secure`를 붙입니다.
    Host도 그대로 넘기므로 웹소켓의 같은 출처 확인이 통과합니다 (`ALLOWED_ORIGINS`는 비워 둡니다).
 4. **서버 환경변수**: `startup.sh`가 `PUBLIC_URL=https://boardmadang.com`과 Secret Manager의 비밀값으로 만듭니다.

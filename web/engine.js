@@ -18,7 +18,7 @@
 //   const l = await g.look(look, at);      // { result, views: { 0: view, 1: view }, legal }
 //   const c = await g.check({ n, langs, thumbnail });  // 등록창의 자동 검사 { problems, warnings, stats, thumbnail }
 //   const shape = await g.ai(lang);        // AI 대국 준비. 관측과 행동의 모양 { rows, cols, channels, channelNames, specials, nActions }
-//   let r = await g.think(sims);           // AI의 탐색. 신경망이 필요하면 { need: { planes } }, 끝나면 { done: 행동 | null }
+//   let r = await g.think(sims, ms);       // AI의 탐색. 신경망이 필요하면 { need: { planes } }, 끝나면 { done: 행동 | null }
 //   r = await g.answer(logits, value);     // 신경망 결과를 넘기고 이어 갑니다 (web/ai.js)
 //   g.close();
 // look = { players: [0, 1], lang, legalFor: 0 | 1 | null }
@@ -301,9 +301,9 @@ class GameRunner {
     return this.shape;
   }
 
-  /** 지금 판에서 AI가 sims번 탐색합니다. 신경망 계산이 필요할 때마다 { need }로 돌아옵니다 */
-  async think(sims) {
-    return cleanThink(await this.call('think', { sims }), this.shape);
+  /** 지금 판에서 AI가 sims번 탐색합니다 (ms를 주면 그 시간이 지나면 멈춤). 신경망 계산이 필요할 때마다 { need }로 돌아옵니다 */
+  async think(sims, ms = 0) {
+    return cleanThink(await this.call('think', { sims, ms }), this.shape);
   }
 
   /** need에 대한 신경망 결과 (행동 점수 nActions개, 둘 차례인 쪽 기준 가치) */
