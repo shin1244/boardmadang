@@ -6,7 +6,7 @@ import { BoardView } from '/sdk/playground/board.js';
 import { loadGame, modelFits } from './engine.js';
 import { LANGS, LANG_NAMES, NO_TIMER, fullLangs, gameLang, isRtl, localize, timerOf } from '/sdk/playground/listing.js';
 import { applyStatic, byLangOrder, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
-import { displayName, isMember, loadMe, renderMe, suspendedText } from './me.js';
+import { displayName, isMember, loadMe, openLogin, renderMe, suspendedText } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -242,7 +242,7 @@ function renderCard(entry) {
 
   const name = nameOf(entry);
   card.innerHTML = `
-    <div class="thumb"><canvas></canvas></div>
+    <div class="thumb"><canvas></canvas><button type="button" class="star-btn" aria-pressed="false"></button></div>
     <div class="card-body">
       <h3><button type="button" class="card-open"></button></h3>
       <p class="desc"></p>
@@ -256,7 +256,112 @@ function renderCard(entry) {
   fillDescription(card.querySelector('.desc'), entry);
   fillTags(card.querySelector('.tags'), entry);
   if (!drawThumb(card.querySelector('canvas'), entry, 168)) card.querySelector('.thumb').classList.add('no-thumb');
+  const star = card.querySelector('.star-btn');
+  fillStar(star, entry);
+  star.addEventListener('click', (e) => toggleStar(entry, e));
   return card;
+}
+
+// ---- 즐겨찾기 (별) ----
+// 별은 계정만 답니다 (PUT·DELETE /api/games/<id>/star). 별 수는 /api/games의 stars, 내가 단 게임은 GET /api/stars.
+// 누르면 먼저 바꿔 보여주고, 서버가 거절하면 되돌립니다.
+
+let starred = new Set(); // 내가 별을 단 게임 id
+const starBusy = new Set(); // 서버에 보내는 중인 게임 id
+
+const STAR_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.9l2.8 5.7 6.3.9-4.55 4.43 1.07 6.27L12 17.25 6.38 20.2l1.07-6.27L2.9 9.5l6.3-.9z"/></svg>';
+
+const starCount = (n) => (n === 1 ? t('star.count.one') : t('star.count', { n: n.toLocaleString(lang) }));
+
+/** 별 버튼을 채웁니다. 카드는 별과 수만(수가 0이면 별만), 게임 창(wide)은 "즐겨찾기"라는 글자와 수까지 */
+function fillStar(btn, entry) {
+  const on = starred.has(entry.id);
+  const n = entry.stars ?? 0;
+  const wide = btn.classList.contains('wide');
+  if (!btn.firstChild) btn.innerHTML = `${STAR_SVG}${wide ? '<span class="star-label"></span>' : ''}<span class="star-count"></span>`;
+  btn.setAttribute('aria-pressed', String(on));
+  if (wide) btn.querySelector('.star-label').textContent = t(on ? 'star.button.on' : 'star.button');
+  const count = btn.querySelector('.star-count');
+  count.textContent = n.toLocaleString(lang);
+  count.hidden = !wide && n === 0;
+  const label = t(on ? 'star.remove' : 'star.add', { name: nameOf(entry) });
+  btn.setAttribute('aria-label', `${label} (${starCount(n)})`);
+  btn.title = label;
+}
+
+/** 한 게임의 별 버튼(카드와 열린 게임 창)을 다시 채웁니다 */
+function refreshStar(entry) {
+  const card = cards.get(entry)?.querySelector('.star-btn');
+  if (card) fillStar(card, entry);
+  if (current === entry) fillStar($('#gd-star'), entry);
+}
+
+function setStar(entry, on, n) {
+  if (on) starred.add(entry.id);
+  else starred.delete(entry.id);
+  entry.stars = Math.max(0, n);
+  refreshStar(entry);
+  // 별 단 게임만 보는 중이면 뺀 게임을 바로 감춥니다. 별 많은순은 누른 카드가 손 밑에서 움직이지 않게 다시 정렬하지 않습니다
+  if ($('#only-starred').checked) apply();
+}
+
+/** 게임 창 안의 별 안내 (로그인, 오류). 창이 닫혀 있으면 오류는 알림으로 */
+function starNote(kind, text = '') {
+  const inDialog = $('#game').open;
+  $('#gd-star-login').hidden = !(inDialog && kind === 'login');
+  showError('#gd-star-error', inDialog && kind === 'error' ? text : null);
+  if (!inDialog && kind === 'error') alert(text);
+}
+
+async function toggleStar(entry, e) {
+  // 게스트면 로그인을 권합니다. 게임 창이 떠 있으면 상단 메뉴가 가려지므로 창 안에 안내를 보입니다
+  e.stopPropagation(); // 이 클릭으로 연 로그인 메뉴가 바로 닫히지 않게
+  if (!isMember(me)) {
+    if ($('#game').open) starNote('login');
+    else if (!openLogin()) alert(t('star.needLogin')); // 로그인 방법이 없는 서버 (준비 중)
+    return;
+  }
+  if (starBusy.has(entry.id)) return;
+  starNote(null);
+  const on = !starred.has(entry.id);
+  const before = entry.stars ?? 0;
+  setStar(entry, on, before + (on ? 1 : -1));
+  if (on) popStar(entry);
+  starBusy.add(entry.id);
+  let res = null;
+  let body = {};
+  try {
+    res = await fetch(`/api/games/${encodeURIComponent(entry.id)}/star`, { method: on ? 'PUT' : 'DELETE' });
+    body = await res.json().catch(() => ({ error: String(res.status) }));
+  } catch (err) {
+    body = { error: err.message };
+  }
+  starBusy.delete(entry.id);
+  if (res?.ok) return setStar(entry, body.starred, body.stars);
+  setStar(entry, !on, before);
+  starNote('error', body.error === 'suspended' ? t('suspended') : t('star.error', { msg: body.error ?? '-' }));
+}
+
+/** 별을 달 때 별이 한 번 통통 튑니다 */
+function popStar(entry) {
+  for (const btn of [cards.get(entry)?.querySelector('.star-btn'), current === entry ? $('#gd-star') : null]) {
+    if (!btn) continue;
+    btn.classList.remove('pop');
+    void btn.offsetWidth; // 연달아 눌러도 다시 튀게
+    btn.classList.add('pop');
+  }
+}
+
+/** 내가 별을 단 게임. 게스트이거나 못 받으면 빈 목록 */
+async function loadStars() {
+  if (!isMember(me)) return new Set();
+  try {
+    const res = await fetch('/api/stars', { cache: 'no-store' });
+    const body = await res.json();
+    return new Set(res.ok && Array.isArray(body.games) ? body.games : []);
+  } catch {
+    return new Set();
+  }
 }
 
 // ---- 게임 창 ----
@@ -274,6 +379,7 @@ function openGame(entry, startTab = 'about') {
   if (tab === 'report') tab = 'comments'; // 무엇을 신고할지는 주소에 남기지 않습니다
   reportTarget = null;
   talkNote = '';
+  starNote(null);
   loadComments(entry);
   initCreate();
   for (const d of document.querySelectorAll('.gd-fold')) d.open = false;
@@ -318,6 +424,7 @@ function fillDialog() {
   const meta = [`${game.board.rows}×${game.board.cols}`, t('tag.players')];
   if (listing) meta.push(t('tag.difficulty', { d: t(`difficulty.${listing.difficulty}`) }));
   $('#gd-meta').textContent = meta.join(' · ');
+  fillStar($('#gd-star'), entry);
   $('#gd-match').href = `/web/match.html?game=${id}`;
   $('#gd-ai').hidden = !entry.aiReady;
   $('#gd-ai').href = `/web/ai.html?game=${id}`;
@@ -721,6 +828,7 @@ function setupDialog() {
   // 방 만들기를 다시 누르거나 ‹를 누르면 소개로 돌아갑니다
   $('#gd-create').addEventListener('click', () => setTab(tab === 'create' ? 'about' : 'create'));
   $('#gd-back').addEventListener('click', () => setTab(tab === 'report' ? 'comments' : 'about'));
+  $('#gd-star').addEventListener('click', (e) => current && toggleStar(current, e));
   // 창 바깥(어두운 곳)을 누르면 닫습니다
   dlg.addEventListener('click', (e) => {
     if (e.target === dlg) dlg.close();
@@ -761,6 +869,7 @@ let entries = null;
 let cards = new Map();
 let loadError = null;
 let me = null;
+let meReady = false; // loadMe를 마쳤는지 (게스트 안내를 그 뒤에만 보입니다)
 
 function checked(name) {
   return [...document.querySelectorAll(`input[name=${name}]:checked`)].map((x) => x.value);
@@ -773,11 +882,13 @@ function apply() {
   const sizes = checked('size');
   const diffs = checked('difficulty');
   const langs = checked('support-lang');
-  const anyFilter = q || places.length || sizes.length || diffs.length || langs.length;
+  const onlyStarred = $('#only-starred').checked;
+  const anyFilter = q || places.length || sizes.length || diffs.length || langs.length || onlyStarred;
   const sort = $('#sort').value;
 
   const shown = entries.filter((e) => {
     if (e.error) return !anyFilter;
+    if (onlyStarred && !starred.has(e.id)) return false;
     const g = e.game;
     const l = e.listing;
     if (q && !searchText(e).includes(q)) return false;
@@ -789,11 +900,13 @@ function apply() {
   });
 
   const plays = (e) => -(e.plays ?? 0); // 많이 둔 게임부터
+  const stars = (e) => -(e.stars ?? 0); // 별을 많이 받은 게임부터
   // 최근에 처음 등록한 게임부터. 출시일이 없는 레포 게임은 뒤로
   const released = (e) => (e.released ? -Date.parse(e.released) : Infinity);
-  const by = { plays, released }[sort] ?? plays;
-  // 같으면 이름순 (둘 다 Infinity면 NaN이라 이름으로 넘어갑니다)
-  shown.sort((a, b) => by(a) - by(b) || nameOf(a).localeCompare(nameOf(b), lang));
+  const by = { plays, stars, released }[sort] ?? plays;
+  const then = sort === 'stars' ? plays : () => 0; // 별 수가 같으면 많이 둔 게임부터
+  // 그래도 같으면 이름순 (둘 다 Infinity면 NaN이라 이름으로 넘어갑니다)
+  shown.sort((a, b) => by(a) - by(b) || then(a) - then(b) || nameOf(a).localeCompare(nameOf(b), lang));
 
   $('#grid').replaceChildren(...shown.map((e) => cards.get(e)));
   $('#count').textContent = `${shown.length}`;
@@ -835,6 +948,10 @@ function render() {
   applyStatic();
   renderMe(me);
   renderBanner();
+  // 별 단 게임만 보기는 계정만 (게스트는 별을 달 수 없음)
+  $('#only-starred').disabled = !isMember(me);
+  if (!isMember(me)) $('#only-starred').checked = false;
+  $('#starred-login').hidden = isMember(me) || !meReady; // 신원을 받기 전에는 안내를 띄우지 않습니다
   if (loadError) {
     $('#empty').hidden = false;
     $('#empty').textContent = t('load.failed', { msg: loadError });
@@ -852,11 +969,14 @@ setupTalk();
 setLang(await detectLang());
 render();
 me = await loadMe();
+meReady = true;
+const myStars = loadStars();
 try {
   entries = await loadGames();
 } catch (e) {
   loadError = e.message;
 }
+starred = await myStars;
 buildLangFilter();
 render();
 openFromUrl();

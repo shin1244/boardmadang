@@ -22,6 +22,7 @@ import (
 	"github.com/shin1244/boardmadang/server/internal/identity"
 	"github.com/shin1244/boardmadang/server/internal/record"
 	"github.com/shin1244/boardmadang/server/internal/site"
+	"github.com/shin1244/boardmadang/server/internal/star"
 	"github.com/shin1244/boardmadang/server/internal/stats"
 	"github.com/shin1244/boardmadang/server/internal/upload"
 )
@@ -53,11 +54,15 @@ func main() {
 	if len(cfg.AdminIDs) > 0 {
 		log.Printf("운영자 계정 %d개 (ADMIN_IDS)", len(cfg.AdminIDs))
 	}
+	stars, err := star.Open(cfg.DataDir)
+	if err != nil {
+		log.Fatalf("즐겨찾기 기록을 읽지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
+	}
 	comments.Names = accounts
 	uploads.Names = accounts
 	login := &auth.Handler{Providers: providers(cfg), IDs: ids, Accounts: accounts, Records: records, PublicURL: cfg.PublicURL}
-	// 탈퇴하면 계정을 지운 뒤 기보의 자리, 의견, 올린 게임에서 그 계정을 지웁니다
-	mine := account.Handler{Store: accounts, IDs: ids, Forget: []func(string) error{records.Forget, comments.Forget, uploads.Forget}}
+	// 탈퇴하면 계정을 지운 뒤 기보의 자리, 의견, 올린 게임, 즐겨찾기에서 그 계정을 지웁니다
+	mine := account.Handler{Store: accounts, IDs: ids, Forget: []func(string) error{records.Forget, comments.Forget, uploads.Forget, stars.Forget}}
 	ops, err := admin.Open(cfg.DataDir)
 	if err != nil {
 		log.Fatalf("운영 기록을 읽지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
@@ -73,11 +78,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("AI 모델 폴더를 열지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
 	}
-	// 모델은 있는 게임에만 올립니다 (레포 게임이나 올린 게임). AI 만들기 요청과 코드 받기는 올린 게임만입니다
-	bots := &ai.Handler{Store: models, IDs: ids, Games: uploads, Known: func(id string) bool {
+	// 있는 게임: 레포 게임이나 올린 게임
+	known := func(id string) bool {
 		_, ok := uploads.Admin(id)
 		return ok || (pages != nil && pages.Has(id))
-	}}
+	}
+	// 모델은 있는 게임에만 올립니다. AI 만들기 요청과 코드 받기는 올린 게임만입니다
+	bots := &ai.Handler{Store: models, IDs: ids, Games: uploads, Known: known}
+	favs := &star.Handler{Store: stars, IDs: ids, Known: known}
 	h := hub.New(cfg, ids, records)
 	ops.Records, ops.Visits, ops.Live = records, visits, h.Live
 	pages, err = site.Open(cfg.SiteDir)
@@ -88,12 +96,13 @@ func main() {
 		pages.Uploaded = uploads
 		pages.Played = records
 		pages.Models = models
+		pages.Starred = stars
 		uploads.Reserved = pages.Has
 	}
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           routes(h, ids, records, comments, uploads, login, mine, ops, pages, bots),
+		Handler:           routes(h, ids, records, comments, uploads, login, mine, ops, pages, bots, favs),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -156,8 +165,9 @@ func providers(cfg config.Config) []*auth.Provider {
 	return list
 }
 
-// pages가 nil이면 화면과 게임 목록 없이 API만 엽니다. ops가 nil이면 운영자 API를, bots가 nil이면 AI 모델을 열지 않습니다.
-func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *comment.Store, uploads *upload.Store, login *auth.Handler, mine account.Handler, ops *admin.Handler, pages *site.Site, bots *ai.Handler) http.Handler {
+// pages가 nil이면 화면과 게임 목록 없이 API만 엽니다. ops가 nil이면 운영자 API를, bots가 nil이면 AI 모델을,
+// favs가 nil이면 즐겨찾기를 열지 않습니다.
+func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *comment.Store, uploads *upload.Store, login *auth.Handler, mine account.Handler, ops *admin.Handler, pages *site.Site, bots *ai.Handler, favs *star.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
 	mux.HandleFunc("GET /api/locale", site.ServeLocale)
@@ -216,6 +226,11 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 		mux.HandleFunc("PUT /api/admin/ai/{game}", bots.ServePut)
 		mux.HandleFunc("DELETE /api/admin/ai/{game}", bots.ServeDelete)
 		mux.HandleFunc("PUT /api/admin/ai/{game}/training", bots.ServePutTraining)
+	}
+	if favs != nil {
+		mux.HandleFunc("GET /api/stars", favs.ServeMine)
+		mux.HandleFunc("PUT /api/games/{game}/star", favs.ServeStar)
+		mux.HandleFunc("DELETE /api/games/{game}/star", favs.ServeUnstar)
 	}
 	return mux
 }

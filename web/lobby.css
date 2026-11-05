@@ -19,6 +19,8 @@
   --good: #08916a;
   --bad: #de3d3b;
   --warn: #a8690a;
+  --star: #f6b80f;    /* 즐겨찾기 별을 채우는 노란색 */
+  --star-line: #c98f00;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -37,6 +39,8 @@
     --good: #addb67;
     --bad: #ef5350;
     --warn: #ecc48d;
+    --star: #ffcc4d;
+    --star-line: #e8ae1c;
   }
 }
 
@@ -311,6 +315,69 @@ fieldset label { display: flex; align-items: center; gap: 8px; padding: 4px 0; c
 fieldset small { color: var(--muted); }
 fieldset label.sub { margin-top: 2px; padding-left: 4px; font-size: 13px; color: var(--muted); }
 fieldset label:has(input:disabled) { opacity: 0.5; cursor: default; }
+.filter-note { display: block; padding-left: 24px; font-size: 12px; }
+.filter-note[hidden] { display: none; }
+
+/* ---- 즐겨찾기 별: 비어 있다가 누르면 노란색으로 찹니다 ---- */
+
+.star-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.star-btn:hover, .star-btn:focus-visible { border-color: var(--star-line); color: var(--text); }
+.star-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.star-btn svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: transparent;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+  transition: fill 0.15s, stroke 0.15s;
+}
+.star-btn[aria-pressed="true"] { color: var(--text); }
+.star-btn[aria-pressed="true"] svg { fill: var(--star); stroke: var(--star-line); }
+.star-btn.pop svg { animation: star-pop 0.35s ease-out; }
+@keyframes star-pop {
+  40% { transform: scale(1.35); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .star-btn.pop svg { animation: none; }
+}
+.star-count[hidden] { display: none; }
+/* 카드: 그림 오른쪽 위. 카드 전체를 덮는 이름 버튼(.card-open::after)보다 위에 둡니다 */
+.thumb { position: relative; }
+.thumb .star-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  padding: 4px 8px 4px 6px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.thumb .star-btn:has(.star-count[hidden]) { padding: 4px 6px; }
+/* 게임 창: "즐겨찾기 3"처럼 글자와 수까지. 수는 칸을 나눠 보입니다 */
+.star-btn.wide { flex: none; padding: 4px 4px 4px 9px; border-radius: 8px; }
+.star-btn.wide .star-count {
+  min-width: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--thumb);
+  text-align: center;
+}
 
 /* ---- 게임 창 ---- */
 
@@ -359,7 +426,10 @@ fieldset label:has(input:disabled) { opacity: 0.5; cursor: default; }
 }
 .gd-thumb.no-thumb canvas { display: none; }
 .gd-side h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 0; font-size: 19px; }
-.gd-meta { margin: -4px 0 4px; color: var(--muted); font-size: 13px; }
+.gd-meta { margin: 0; color: var(--muted); font-size: 13px; }
+.gd-meta-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 8px; margin: -4px 0 4px; }
+.gd-star-note { margin: -4px 0 0; font-size: 13px; }
+.gd-star-note p { margin: 0 0 6px; }
 .gd-side .btn { flex: none; padding: 11px 0; font-size: 15px; }
 .gd-side button.btn { cursor: pointer; }
 .gd-side .btn[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); }
