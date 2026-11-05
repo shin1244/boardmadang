@@ -13,7 +13,7 @@
 //   look  { at, look }                   지금(또는 at번째 행동 뒤) 판의 결과, 화면, 둘 수 있는 수
 //   check { n, langs, thumbnail }        등록창의 자동 검사 (sdk/check.js의 checkGame, checkThumbnail)
 //   ai    { lang }                       AI 대국 준비. 학습 도구의 게임 어댑터(trainer/env.js)를 만들고 관측과 행동의 모양을 돌려줍니다
-//   think { sims }                       지금 판에서 AI의 탐색(trainer/mcts.js)을 새로 시작합니다
+//   think { sims, ms }                   지금 판에서 AI의 탐색(trainer/mcts.js)을 새로 시작합니다. ms가 지나면 sims를 다 채우지 않고 멈춥니다
 //   answer { logits, value }             think나 answer가 부탁한 신경망 계산의 결과를 넘기고 탐색을 이어 갑니다
 // look = { players: [0, 1], lang, legalFor: 0 | 1 | null }
 //
@@ -153,8 +153,10 @@ export function createHost() {
       };
     },
 
-    think({ sims = 100 }) {
+    think({ sims = 100, ms = 0 }) {
       if (!ai) throw new Error('call ai first');
+      // ms가 지나면 그때까지 가장 많이 방문한 수를 둡니다. 신경망 계산(화면 쪽)을 기다린 시간도 셉니다
+      const deadline = Number.isFinite(ms) && ms > 0 ? performance.now() + ms : Infinity;
       const { env, mcts } = ai;
       const pos = { state, hash, moves, turnHashes: [...turnHashes] };
       const run = { reply: null, give: null };
@@ -166,7 +168,10 @@ export function createHost() {
       return new Promise((resolve, reject) => {
         run.reply = { resolve, reject };
         (async () => {
-          const root = await mcts.search(env, new mcts.Node(pos), evaluate, { sims: Math.max(1, Math.min(5000, sims | 0)) });
+          const root = await mcts.search(env, new mcts.Node(pos), evaluate, {
+            sims: Math.max(1, Math.min(5000, sims | 0)),
+            until: () => performance.now() >= deadline,
+          });
           const child = root.outcome ? null : mcts.pick(env, root, 0);
           return child && { action: plain(env.actionOf(child.action)) };
         })().then(

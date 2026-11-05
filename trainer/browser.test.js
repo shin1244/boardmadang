@@ -140,6 +140,23 @@ test('the browser AI knows the moves made and the positions already seen in this
   assert.equal(await hostThink(host, net, 5, []), null, 'three moves: a draw by maxActions');
 });
 
+test('think stops at its time limit before using up sims, and still picks a move', async () => {
+  const host = createHost();
+  await call(host, 'load', { module: new URL('index.js', TICTACTOE).href });
+  await call(host, 'start', { seed: 1, look: { players: [] } });
+  await call(host, 'ai', { lang: 'en' });
+  const net = fakeNet(9);
+  let asked = 0;
+  let r = await call(host, 'think', { sims: 1000, ms: 60 });
+  while (r.need) {
+    asked++;
+    await new Promise((ok) => setTimeout(ok, 10)); // 신경망 한 번에 10ms쯤
+    r = await call(host, 'answer', net(r.need.planes));
+  }
+  assert.ok(r.done?.action, 'picks a move');
+  assert.ok(asked >= 2 && asked < 30, `asked the network ${asked} times`);
+});
+
 test('a new think drops the search that was waiting, and answer needs a search', async () => {
   const host = createHost();
   await call(host, 'load', { module: new URL('index.js', TICTACTOE).href });

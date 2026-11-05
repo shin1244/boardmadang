@@ -47,8 +47,11 @@ chmod 600 "$CONF/env.new"
 mv "$CONF/env.new" "$CONF/env"
 
 # Caddy가 인증서를 받고 app으로 넘깁니다. Host와 X-Forwarded-Proto: https를 그대로 넘겨 쿠키의 Secure와 웹소켓 출처 확인이 맞습니다.
+# encode: 브라우저가 받을 수 있으면 압축해서 보냅니다. 브라우저 AI의 WebAssembly가 14.8MB에서 4MB 아래로,
+# 화면의 JS와 CSS는 3~4분의 1로 줄어듭니다. 웹소켓(대국)은 그대로 지나갑니다.
 cat >"$CONF/Caddyfile.new" <<EOF
 $DOMAIN {
+	encode zstd gzip
 	reverse_proxy app:8080
 }
 www.$DOMAIN {
