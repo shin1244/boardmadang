@@ -523,7 +523,7 @@ def main():
         help="only write model.onnx and model.json for the browser AI from model.pt in the output folder",
     )
     ap.add_argument(
-        "--play-sims", type=int, default=200, help="with --export-onnx: MCTS simulations per move of the browser AI"
+        "--play-sims", type=int, default=100, help="with --export-onnx: MCTS simulations per move of the browser AI"
     )
     ap.add_argument(
         "--snapshot-every",

@@ -150,10 +150,9 @@ export function rolloutEvaluator(env, random = Math.random, cap = 300) {
 
 /**
  * root에서 sims번 탐색합니다. root는 이전 탐색의 자식을 그대로 써도 됩니다 (트리 재사용).
- * until을 주면 탐색 한 번이 끝날 때마다 묻고, true면 sims를 다 채우기 전에 멈춥니다 (브라우저 AI의 생각 시간). 적어도 한 번은 탐색합니다.
- * @param {{ sims?: number, cPuct?: number, noise?: { alpha?: number, eps: number } | null, random?: () => number, until?: (() => boolean) | null }} [opts]
+ * @param {{ sims?: number, cPuct?: number, noise?: { alpha?: number, eps: number } | null, random?: () => number }} [opts]
  */
-export async function search(env, root, evaluate, { sims = 50, cPuct = 1.5, noise = null, random = Math.random, until = null } = {}) {
+export async function search(env, root, evaluate, { sims = 50, cPuct = 1.5, noise = null, random = Math.random } = {}) {
   if (!root.children) {
     root.w += await expand(env, root, evaluate);
     root.n += 1;
@@ -161,7 +160,6 @@ export async function search(env, root, evaluate, { sims = 50, cPuct = 1.5, nois
   if (root.outcome) return root;
   if (noise) addNoise(root, noise, random);
   for (let i = 0; i < sims; i++) {
-    if (i > 0 && until?.()) break;
     let node = root;
     const path = [root];
     while (node.children && !node.outcome) {
