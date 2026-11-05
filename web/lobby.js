@@ -2,7 +2,7 @@
 // 이름, 소개, 룰북, 난이도, 지원 언어, 타이머는 등록 정보(listing)에서, 보드 모양은 게임 모듈에서 읽어 옵니다.
 // 썸네일은 게임의 setup()이 만든 시작 화면을 플랫폼 렌더러로 그린 것입니다.
 
-import { BoardView } from '/sdk/playground/board.js';
+import { BoardView, PLAYER_COLORS } from '/sdk/playground/board.js';
 import { loadGame, modelFits } from './engine.js';
 import { LANGS, LANG_NAMES, NO_TIMER, fullLangs, gameLang, isRtl, localize, timerOf } from '/sdk/playground/listing.js';
 import { applyStatic, byLangOrder, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
@@ -446,6 +446,50 @@ function fillDialog() {
   fillReport();
 }
 
+/**
+ * 선공·후공 승률: 학습 마지막 구간에 AI끼리 둔 판의 결과 (entry.ai.balance, trainer/train.py의 balance_from_log).
+ * 막대(선공 승, 무승부, 후공 승), 범례, 몇 판에서 쟀는지와 한 줄 풀이. 이 기능 전에 내보낸 모델이면 줄을 숨깁니다.
+ */
+function fillBalance(entry) {
+  const b = entry.ai?.balance;
+  $('#gd-balance-row').hidden = !b?.games;
+  if (!b?.games) return;
+  const pct = (n) => Math.round((n / b.games) * 100);
+  const parts = [
+    { kind: 'first', n: b.wins[0], color: PLAYER_COLORS[0] },
+    { kind: 'draw', n: b.draws },
+    { kind: 'second', n: b.wins[1], color: PLAYER_COLORS[1] },
+  ];
+  const bar = $('#gd-balance-bar');
+  bar.setAttribute('aria-label', t('balance.label', { first: pct(b.wins[0]), draw: pct(b.draws), second: pct(b.wins[1]) }));
+  bar.replaceChildren();
+  const legend = $('#gd-balance-legend');
+  legend.replaceChildren();
+  for (const { kind, n, color } of parts) {
+    if (kind === 'draw' && !n) continue; // 무승부가 없는 게임은 범례에서도 뺍니다
+    const seg = document.createElement('span');
+    seg.className = kind;
+    seg.style.flexGrow = String(n);
+    if (color) seg.style.background = color;
+    if (n) bar.append(seg);
+    const li = document.createElement('li');
+    const swatch = document.createElement('i');
+    swatch.className = `swatch ${kind}`;
+    if (color) swatch.style.background = color;
+    li.append(swatch, `${t(`balance.${kind}`)} ${pct(n)}%`);
+    legend.append(li);
+  }
+  // 풀이: 무승부가 반 넘으면 그것을, 아니면 선공과 후공 승률의 차이로
+  const diff = (b.wins[0] - b.wins[1]) / b.games;
+  const side = diff > 0 ? 'first' : 'second';
+  const verdict = b.draws * 2 > b.games ? t('balance.drawish')
+    : Math.abs(diff) < 0.1 ? t('balance.even')
+      : t(`balance.${Math.abs(diff) < 0.25 ? 'slight' : 'strong'}.${side}`);
+  const note = [t('balance.note', { games: b.games.toLocaleString(lang) }), verdict];
+  if (entry.ai.version && entry.version && entry.ai.version !== entry.version) note.push(t('balance.oldVersion'));
+  $('#gd-balance-note').textContent = note.join(' ');
+}
+
 function fillAbout(entry) {
   const { listing } = entry;
   fillDescription($('#gd-desc'), entry);
@@ -456,6 +500,7 @@ function fillAbout(entry) {
   $('#gd-timer').textContent = timer.custom
     ? `${timerText(timer.minutes)} · ${t('detail.timer.custom')}`
     : timerText(timer.minutes);
+  fillBalance(entry);
   // 제작자: 올린 게임만 이름(서버가 지금 계정 이름으로 줌)과 직접 이긴 판이 있습니다. 레포 게임은 둘 다 없어서 줄을 숨깁니다
   $('#gd-author-row').hidden = !entry.author && !entry.clear;
   $('#gd-author').hidden = !entry.author;

@@ -522,6 +522,13 @@ fieldset label:has(input:disabled) { opacity: 0.5; cursor: default; }
 .gd-fold[open] summary { margin-bottom: 10px; }
 .gd-desc { margin: 0; line-height: 1.6; }
 .gd-desc.muted { color: var(--muted); font-size: 14px; }
+/* 선공·후공 승률: 선공 승, 무승부, 후공 승의 막대 (색은 판의 플레이어 색, lobby.js의 fillBalance) */
+.balance-bar { display: flex; gap: 2px; height: 10px; margin-bottom: 8px; }
+.balance-bar span { flex-basis: 0; min-width: 3px; border-radius: 3px; }
+.balance-bar .draw, .balance-legend .draw { background: #9aa5ae; }
+.balance-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 6px; padding: 0; list-style: none; font-size: 14px; }
+.balance-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.balance-legend .swatch { width: 10px; height: 10px; border-radius: 3px; }
 .btn.gd-register { display: inline-block; margin-top: 12px; padding: 8px 18px; text-decoration: none; }
 /* 위의 display가 hidden 속성을 덮어쓰지 않게. 등록 정보가 있는 게임에는 "등록하기"가 없습니다 (lobby.js) */
 .btn.gd-register[hidden] { display: none; }

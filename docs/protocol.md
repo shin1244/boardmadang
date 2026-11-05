@@ -62,6 +62,8 @@ AI 모델을 올리면(`PUT /api/admin/ai/{game}`) 그 게임의 열린 요청�
   `{"model":"/ai/tictactoe/<해시 16글자>.onnx","version":"3f1c…","lang":"en","rows":3,"cols":3,"channelNames":["piece:x","piece:o","mark:dot",…,"toPlay"],"specials":[],"nActions":9,"sims":200,"updated":"…"}`.
   `version`은 학습한 게임 코드 버전(모르면 `null`)이고, 관측과 행동의 모양(`rows`, `cols`, `channelNames`, `specials`, `nActions`)이
   지금 게임 코드와 같아야 화면이 "AI와 두기"를 보여 줍니다. `lang`은 학습할 때 `view()`에 준 언어, `sims`는 한 수마다 탐색 횟수입니다.
+  `balance`는 학습 마지막 구간에 AI끼리 둔 판의 합계 `{"games":3072,"wins":[선공 승,후공 승],"draws":39,"cut":0,"from":49,"to":60}`이고,
+  게임 창이 선공·후공 승률로 보여 줍니다. 이 기능 전에 내보낸 모델이면 빠집니다.
   모델 파일은 서버의 `DATA_DIR/ai/<게임>/`에 `model.json`과 함께 있습니다. 개발 서버도 같은 폴더에서 읽습니다.
 - `PUT /api/games/<id>/thumbnail`: 개발 서버 전용. 플레이그라운드의 "Use as thumbnail"이 찍은 판을 `thumbnail.json`에 저장합니다.
   내 컴퓨터에서 온 JSON만 받고, 모양이 틀리면 `422 {"problems":[...]}`입니다.
