@@ -106,6 +106,18 @@ function openMenu(open) {
   if (!open) loginError = null;
 }
 
+/**
+ * 상단 로그인 메뉴를 엽니다. 게스트가 계정만 되는 것(즐겨찾기 별)을 눌렀을 때 씁니다.
+ * 부른 클릭이 document까지 올라가면 메뉴가 바로 닫히므로, 부르는 쪽에서 stopPropagation 합니다.
+ * 로그인 방법이 하나도 없으면(준비 중) 열지 않고 false
+ */
+export function openLogin() {
+  if (!providers?.length) return false;
+  document.querySelector('.topbar').scrollIntoView({ block: 'start' }); // 좁은 화면은 페이지 전체가 스크롤됩니다
+  openMenu(true);
+  return true;
+}
+
 /** 로그인 방법마다 링크 하나. 주소는 누를 때 정합니다 (setup). */
 function loginLinks() {
   return (providers ?? []).map((name) => {

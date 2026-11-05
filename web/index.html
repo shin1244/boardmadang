@@ -53,6 +53,13 @@
       <aside class="filters" data-i18n-attr="aria-label:filters.label" aria-label="필터">
         <input id="q" class="search" type="search" data-i18n-attr="placeholder:search aria-label:search" placeholder="게임 이름 검색" aria-label="게임 이름 검색">
 
+        <!-- 별을 단 게임만. 별은 계정만 달 수 있어서 게스트에게는 꺼 두고 안내를 보입니다 -->
+        <fieldset>
+          <legend data-i18n="filter.star">즐겨찾기</legend>
+          <label><input id="only-starred" type="checkbox" name="starred" value="1" disabled> <span data-i18n="filter.starred">즐겨찾기한 게임만</span></label>
+          <small id="starred-login" class="filter-note" data-i18n="filter.starred.login" hidden>로그인하면 쓸 수 있습니다</small>
+        </fieldset>
+
         <fieldset>
           <legend data-i18n="filter.places">놓는 자리</legend>
           <label><input type="checkbox" name="places" value="cells"> <span data-i18n="places.cells">칸 안</span></label>
@@ -87,6 +94,7 @@
           <label class="sort"><span data-i18n="sort">정렬</span>
             <select id="sort">
               <option value="plays" data-i18n="sort.plays">인기순</option>
+              <option value="stars" data-i18n="sort.stars">별 많은순</option>
               <option value="released" data-i18n="sort.released">출시일순</option>
             </select>
           </label>
@@ -108,7 +116,16 @@
     <aside class="gd-side">
       <div id="gd-thumb" class="gd-thumb"><canvas></canvas></div>
       <h2 id="gd-name"></h2>
-      <p id="gd-meta" class="gd-meta"></p>
+      <!-- 판 정보와 즐겨찾기 별. 게스트가 별을 누르면 아래에 로그인 안내가 뜹니다 -->
+      <div class="gd-meta-row">
+        <p id="gd-meta" class="gd-meta"></p>
+        <button id="gd-star" class="star-btn wide" type="button" aria-pressed="false"></button>
+      </div>
+      <div id="gd-star-login" class="need-login gd-star-note" hidden>
+        <p data-i18n="star.needLogin">즐겨찾기는 로그인한 계정만 할 수 있습니다.</p>
+        <div class="login-links"></div>
+      </div>
+      <p id="gd-star-error" class="comment-error gd-star-note" role="alert" hidden></p>
       <a id="gd-match" class="btn" data-i18n="card.match">대전 찾기</a>
       <button id="gd-create" class="btn ghost" type="button" aria-controls="create-form" aria-pressed="false" data-i18n="card.createRoom">방 만들기</button>
       <!-- 학습한 AI가 있는 게임만 (web/ai.html). 서버 없이 이 브라우저에서 둡니다 -->

@@ -75,6 +75,8 @@ type Site struct {
 	Played interface{ Plays(game string) int }
 	// Models는 게임마다 AI 모델입니다 (internal/ai). 있으면 /api/games의 ai에 넣습니다.
 	Models interface{ Model(game string) *AIModel }
+	// Starred는 게임마다 별(즐겨찾기) 수입니다 (internal/star). 있으면 /api/games의 stars에 넣습니다.
+	Starred interface{ Stars(game string) int }
 }
 
 // AIModel은 브라우저에서 AI와 둘 때 쓰는 학습한 신경망입니다 (internal/ai, trainer/train.py --export-onnx).
@@ -226,6 +228,8 @@ type Game struct {
 	Author string `json:"author,omitempty"`
 	// 둔 판 수 (/api/games에만). 로비의 인기순에 씁니다. 0이거나 개발 서버면 없습니다
 	Plays int `json:"plays,omitempty"`
+	// 별(즐겨찾기)을 단 계정 수 (/api/games에만, internal/star). 0이거나 개발 서버면 없습니다
+	Stars int `json:"stars,omitempty"`
 	// 브라우저에서 AI와 둘 때 쓰는 학습한 신경망 (/api/games에만, internal/ai). 없으면 안 나옵니다
 	AI *AIModel `json:"ai,omitempty"`
 	// 처음 등록한 때 (올린 게임만). 로비의 출시일순에 씁니다. 레포 게임은 없어서 출시일순에서 맨 뒤로 갑니다
@@ -360,6 +364,9 @@ func (s *Site) ServeGames(w http.ResponseWriter, r *http.Request) {
 		}
 		if s.Models != nil {
 			list[i].AI = s.Models.Model(list[i].ID)
+		}
+		if s.Starred != nil {
+			list[i].Stars = s.Starred.Stars(list[i].ID)
 		}
 	}
 	writeJSON(w, http.StatusOK, list)
