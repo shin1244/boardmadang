@@ -59,7 +59,7 @@
 1. 이 동의서는 저작권을 넘기는 것이 아닙니다. 기여물의 저작권은 기여자에게 남고, 기여자는 기여물을 다른 곳에서 자유롭게 쓸 수 있습니다.
 2. 관리자는 기여물을 프로젝트에 넣을 의무가 없습니다.
 3. 기여물은 "있는 그대로" 제공됩니다. 기여자는 5조 말고는 어떤 보증도 하지 않고, 지원할 의무도 없습니다.
-4. 관리자가 기여물을 프로젝트의 공개 버전에 넣으면, 그 기여물은 들어간 폴더의 라이선스(`sdk/`, `games/`는 MIT, 그 밖은 AGPL-3.0)로도 공개됩니다.
+4. 관리자가 기여물을 프로젝트의 공개 버전에 넣으면, 그 기여물은 들어간 폴더의 라이선스(`sdk/`, `games/`, `trainer/`는 MIT, 그 밖은 AGPL-3.0)로도 공개됩니다.
 5. 이 동의서는 기여자가 서명하기 전과 뒤에 프로젝트에 제출한 모든 기여물에 적용됩니다.
 6. 이 동의서는 대한민국 법을 따릅니다. 한국어본과 영어본의 뜻이 다르면 한국어본을 따릅니다.
 
@@ -136,7 +136,7 @@ a company that acquires the Project or a company the Maintainer founds), without
 2. The Maintainer is not obligated to include your Contribution in the Project.
 3. Contributions are provided "as is". Apart from section 5 you give no warranty and have no obligation to provide support.
 4. When the Maintainer includes your Contribution in a public version of the Project, it is also published under the license of the folder
-   it goes into (MIT for `sdk/` and `games/`, AGPL-3.0 for everything else).
+   it goes into (MIT for `sdk/`, `games/` and `trainer/`, AGPL-3.0 for everything else).
 5. This agreement applies to all Contributions you submitted to the Project before and after signing.
 6. This agreement is governed by the laws of the Republic of Korea.
 

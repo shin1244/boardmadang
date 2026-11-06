@@ -44,7 +44,7 @@ npx boardmadang new my-game
 server/    Go 백엔드: 매칭, 클릭 중계, 결과 기록          (AGPL-3.0)
 sdk/       게임 제작 도구 (npm 패키지 boardmadang): API 타입, 플레이그라운드, 검사, 묶기   (MIT)
 games/     예제 게임: 틱택토, 바둑, 체스                    (MIT)
-trainer/   AlphaZero 방식 AI 학습 (지금은 내 컴퓨터에서 게임 폴더 하나를 학습)   (AGPL-3.0)
+trainer/   AlphaZero 방식 AI 학습 (지금은 내 컴퓨터에서 게임 폴더 하나를 학습)   (MIT)
 docs/      설계 문서
 web/       프론트엔드: 로비(게임 목록), 게임 등록창, 대전 화면         (AGPL-3.0)
 ```
@@ -105,7 +105,8 @@ GO_SERVER=http://localhost:8081 node sdk/playground/serve.js
 ## 라이선스
 
 - `sdk/`, `games/`: **MIT** — 게임 제작자가 제약 없이 씁니다.
-- 그 외 전부(`server/`, `web/`, 앞으로의 `trainer/`): **AGPL-3.0** — 수정해서 서비스로 운영하면 수정본도 공개해야 합니다.
+- `trainer/`: **MIT** — AI 학습 코드. 상업적으로도 자유롭게 쓰고, 저작권 표시만 남기면 됩니다.
+- 그 외 전부(`server/`, `web/`): **AGPL-3.0** — 수정해서 서비스로 운영하면 수정본도 공개해야 합니다.
 
 **올린 게임은 AGPL이 되지 않습니다.** 게임의 라이선스는 제작자가 정하며, 이를 AGPL 7조의
 추가 허가로 명시해 두었습니다. 자세한 내용은 [LICENSING.md](LICENSING.md)를 보세요.
