@@ -6,7 +6,8 @@
 |---|---|---|
 | `sdk/` | MIT | 게임 API 규격. 누구나 제약 없이 씁니다 |
 | `games/` | MIT | 예제 게임. 복사해서 내 게임의 출발점으로 써도 됩니다 |
-| 그 외 전부 (`server/`, 앞으로의 `web/`, `trainer/`) | AGPL-3.0 ([LICENSE](LICENSE)) | 플랫폼을 수정해서 서비스로 운영하면 수정본도 공개해야 합니다 |
+| `trainer/` | MIT ([trainer/LICENSE](trainer/LICENSE)) | AI 학습 코드 (관측 인코딩, 탐색, 학습기). 상업적으로도 자유롭게 쓰고, 저작권 표시만 남기면 됩니다 |
+| 그 외 전부 (`server/`, `web/`) | AGPL-3.0 ([LICENSE](LICENSE)) | 플랫폼을 수정해서 서비스로 운영하면 수정본도 공개해야 합니다 |
 
 ## 내가 올린 게임도 AGPL이 되나요?
 
@@ -18,7 +19,7 @@
   게임을 올리는 사람과 게임을 하는 사람은 아무 의무가 없습니다.
 
 플러그인 형태의 코드는 해석의 여지가 있을 수 있어서, 저작권자로서 아래 추가 허가(AGPL 7조)를
-명시합니다. 이 허가는 `server/`, `web/`, `trainer/` 등 AGPL이 적용되는 모든 코드에 함께 적용됩니다.
+명시합니다. 이 허가는 `server/`, `web/` 등 AGPL이 적용되는 모든 코드에 함께 적용됩니다.
 
 ```
 Additional permission under GNU AGPL version 3 section 7

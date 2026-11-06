@@ -8,8 +8,8 @@
 //   train.py → 워커   C 명령 · R 신경망 결과 (float32 행동 점수 n × nActions, 그다음 가치 n개)
 //
 // 명령 (C)
-//   selfplay { games, parallel, sims, cPuct, tempMoves, maxMoves, noise, seed, teacher, method, valueMix }
-//            자기대국. 판마다 G를 보냅니다
+//   selfplay { games, parallel, sims, cPuct, tempMoves, maxMoves, noise, seed, teacher, method, valueMix, fastSims, fullProb }
+//            자기대국. 판마다 G를 보냅니다 (학습 데이터로 남긴 국면만. fastSims를 주면 일부 수만 남깁니다)
 //            teacher가 'rollout'이면 신경망 대신 학습 없는 롤아웃 탐색으로 둡니다 (학습 초반에 신경망을 먼저 가르칠 때)
 //            method가 'gumbel'이면 Gumbel 탐색으로 둡니다 (mcts.js). 'puct'(기본)는 AlphaZero의 탐색입니다
 //            valueMix(0~1)만큼 가치 정답에 탐색이 낸 그 국면의 평가를 섞습니다 (0이면 최종 승패만)
@@ -133,11 +133,17 @@ function getSolved(limit = 200_000) {
   return solved;
 }
 
+/**
+ * 자기대국. fastSims가 0보다 크면 KataGo의 playout cap randomization을 씁니다 (Wu, "Accelerating Self-Play Learning in Go", 2019):
+ * 수마다 fullProb의 확률로만 sims번 탐색해서 그 수를 학습 데이터로 남기고, 나머지 수는 fastSims번만 탐색해 판을 진행합니다.
+ * 한 판에서 남기는 국면이 줄고 판 수가 늘어서, 서로 닮은 국면이 덜 쌓여 가치(승패) 학습이 덜 외우게 됩니다.
+ * 정책의 정답은 깊게 탐색한 수에서만 나오므로 질은 그대로입니다. 얕은 탐색은 디리클레 잡음 없이 합니다 (KataGo와 같음).
+ */
 async function selfplay(
-  { games, parallel = 64, sims = 50, cPuct = 1.5, tempMoves = 4, maxMoves = 512, noise = { eps: 0.25 }, seed = 1, teacher = null, method = 'puct', valueMix = 0 },
+  { games, parallel = 64, sims = 50, cPuct = 1.5, tempMoves = 4, maxMoves = 512, noise = { eps: 0.25 }, seed = 1, teacher = null, method = 'puct', valueMix = 0, fastSims = 0, fullProb = 0.25 },
   evaluate,
 ) {
-  const stats = { games, wins: [0, 0], draws: 0, cut: 0, moves: 0 };
+  const stats = { games, wins: [0, 0], draws: 0, cut: 0, moves: 0, positions: 0 };
   await lanes(games, parallel, async (i) => {
     const random = makeRng(seed * 1000003 + i).next;
     const ev = teacher === 'rollout' ? rolloutEvaluator(env, random) : evaluate;
@@ -146,8 +152,11 @@ async function selfplay(
     const cut = drawRule(maxMoves);
     let outcome;
     for (;;) {
-      const g = method === 'gumbel' ? await gumbelSearch(env, root, ev, { sims, random }) : null;
-      if (method !== 'gumbel') await search(env, root, ev, { sims, cPuct, noise, random });
+      // 끄면(fastSims 0) random()을 부르지 않아서, 같은 시드면 예전과 같은 판이 나옵니다
+      const full = !(fastSims > 0) || random() < fullProb;
+      const n = full ? sims : fastSims;
+      const g = method === 'gumbel' ? await gumbelSearch(env, root, ev, { sims: n, random }) : null;
+      if (method !== 'gumbel') await search(env, root, ev, { sims: n, cPuct, noise: full ? noise : null, random });
       outcome = root.outcome;
       if (outcome) break;
       if (cut(root.pos)) {
@@ -155,9 +164,11 @@ async function selfplay(
         stats.cut++;
         break;
       }
-      const pi = g ? g.policy : visitPolicy(env, root);
-      const q = root.toPlay === 0 ? root.q : -root.q; // 탐색이 본 이 국면의 가치 (둘 차례인 쪽 기준)
-      history.push({ planes: env.encode(root.pos), pi, toPlay: root.toPlay, q });
+      if (full) {
+        const pi = g ? g.policy : visitPolicy(env, root);
+        const q = root.toPlay === 0 ? root.q : -root.q; // 탐색이 본 이 국면의 가치 (둘 차례인 쪽 기준)
+        history.push({ planes: env.encode(root.pos), pi, toPlay: root.toPlay, q });
+      }
       // 고른 수의 트리를 그대로 이어서 씁니다. 둘 수가 하나도 없었으면 root가 끝난 판이 되어 다음 탐색에서 멈춥니다
       root = (g ? g.chosen : pick(env, root, root.pos.moves < tempMoves ? 1 : 0, random)) ?? root;
     }
@@ -165,6 +176,7 @@ async function selfplay(
     if (winner === null) stats.draws++;
     else stats.wins[winner]++;
     stats.moves += root.pos.moves;
+    stats.positions += history.length;
     // 가치의 정답은 그 국면에서 둘 차례였던 쪽 기준입니다. 최종 승패는 운이 섞여 있어 탐색의 평가를 섞을 수 있습니다
     const z = Float32Array.from(history, (h) => {
       const result = winner === null ? 0 : winner === h.toPlay ? 1 : -1;

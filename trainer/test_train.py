@@ -111,6 +111,32 @@ class PoolTest(unittest.TestCase):
         self.assertEqual(stats["games"], 7)
         self.assertEqual(sum(stats["wins"]) + stats["draws"], 7)
         self.assertEqual(stats["moves"], sum(len(g[2]) for g in games))
+        self.assertEqual(stats["positions"], stats["moves"], "without fastSims every move is kept")
+
+    def test_selfplay_with_playout_cap(self):
+        def run(full_prob, method="puct"):
+            games = []
+            stats = self.pool.split(
+                {"cmd": "selfplay", "games": 6, "sims": 8, "tempMoves": 9, "method": method, "fastSims": 2, "fullProb": full_prob},
+                uniform,
+                on_game=lambda obj, data: games.append(unpack_game(self.pool.info, obj, data)),
+            )
+            self.assertEqual(len(games), 6)
+            self.assertEqual(stats["positions"], sum(len(g[2]) for g in games))
+            pi = np.concatenate([g[1] for g in games])
+            if len(pi):
+                np.testing.assert_allclose(pi.sum(1), 1, rtol=1e-5)
+            return stats
+
+        # 모두 깊게 탐색하면 모든 수가 남고, 모두 얕게 탐색하면 아무 수도 남지 않습니다 (판은 끝까지 둡니다)
+        for method in ("puct", "gumbel"):
+            every = run(1, method)
+            self.assertEqual(every["positions"], every["moves"])
+            none = run(0, method)
+            self.assertEqual(none["positions"], 0)
+            self.assertGreater(none["moves"], 0)
+        some = run(0.5)
+        self.assertLess(some["positions"], some["moves"])
 
     def test_selfplay_with_rollout_teacher(self):
         # 롤아웃 AI가 두므로 신경망은 부르지 않습니다 (infer가 None이면 부를 때 오류)
