@@ -19,6 +19,7 @@ import (
 // 학습할 수 없는 게임이면 이유를 적어 반려합니다(declined). 제작자는 기다리는 동안 취소할 수 있습니다 (요청이 지워짐).
 // 운영자의 학습 시간을 지키려고 계정마다 요청은 한 번에 하나, 그리고 일주일(AskEvery)에 한 번입니다.
 // 끝나거나 반려된 요청도 요청한 때부터 일주일을 셉니다. 거둔 요청은 지워져서 세지 않습니다.
+// 운영자는 자기 게임에 이 두 제한 없이 요청합니다 (학습하는 사람이 자기라서). 게임마다 요청 하나와 이미 학습한 버전은 똑같이 봅니다.
 //
 //	ai/<게임 id>/request.json   게임마다 마지막 요청 하나
 
@@ -58,7 +59,8 @@ type Request struct {
 func (r Request) open() bool { return r.Status == StatusWaiting || r.Status == StatusTraining }
 
 // Ask는 제작자 by가 게임의 지금 버전으로 AI를 요청합니다. 게임 주인인지는 부르는 쪽(http.go)이 봅니다.
-func (s *Store) Ask(by, game, version string) (Request, error) {
+// unlimited(운영자)면 계정마다의 제한(안 끝난 요청 하나, 일주일에 한 번)을 보지 않습니다.
+func (s *Store) Ask(by, game, version string, unlimited bool) (Request, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if r, ok := s.requests[game]; ok && r.open() {
@@ -67,18 +69,20 @@ func (s *Store) Ask(by, game, version string) (Request, error) {
 	if m, ok := s.models[game]; ok && m.Version != nil && *m.Version == version {
 		return Request{}, ErrTrained
 	}
-	open := 0
-	for _, r := range s.requests {
-		if r.By == by && r.open() {
-			open++
-		}
-	}
-	if open >= OpenPerMember {
-		return Request{}, ErrBusy
-	}
 	now := s.now().UTC()
-	if now.Before(s.nextAsk(by)) {
-		return Request{}, ErrTooSoon
+	if !unlimited {
+		open := 0
+		for _, r := range s.requests {
+			if r.By == by && r.open() {
+				open++
+			}
+		}
+		if open >= OpenPerMember {
+			return Request{}, ErrBusy
+		}
+		if now.Before(s.nextAsk(by)) {
+			return Request{}, ErrTooSoon
+		}
 	}
 	r := Request{Game: game, Version: version, By: by, At: now, Status: StatusWaiting, Updated: now}
 	return r, s.saveRequest(r)
