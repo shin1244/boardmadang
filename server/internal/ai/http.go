@@ -152,14 +152,15 @@ func (h Handler) ServeMine(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	resp := map[string]any{"games": out}
-	// 일주일에 한 번이라 다음 요청을 할 수 있는 때. 지금 할 수 있으면 빠집니다
-	if next := h.Store.NextAsk(u.ID); !next.IsZero() {
+	// 일주일에 한 번이라 다음 요청을 할 수 있는 때. 지금 할 수 있거나 운영자(제한 없음)면 빠집니다
+	if next := h.Store.NextAsk(u.ID); !next.IsZero() && !u.Admin {
 		resp["next"] = next
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
 // ServeAsk는 내가 올린 게임의 지금 버전으로 AI를 요청합니다. 내린 게임은 안 됩니다.
+// 운영자는 계정마다의 제한(안 끝난 요청 하나, 일주일에 한 번) 없이 요청합니다.
 func (h Handler) ServeAsk(w http.ResponseWriter, r *http.Request) {
 	u, ok := h.writer(w, r)
 	if !ok || !h.jsonOnly(w, r) {
@@ -175,7 +176,7 @@ func (h Handler) ServeAsk(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "hidden"})
 		return
 	}
-	req, err := h.Store.Ask(u.ID, game, g.Version)
+	req, err := h.Store.Ask(u.ID, game, g.Version, u.Admin)
 	switch {
 	case errors.Is(err, ErrOpen), errors.Is(err, ErrTrained):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})

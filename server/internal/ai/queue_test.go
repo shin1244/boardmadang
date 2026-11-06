@@ -294,3 +294,34 @@ func TestTrainingChecks(t *testing.T) {
 		t.Error("a bad upload was saved")
 	}
 }
+
+// 운영자는 계정마다의 제한 없이 요청합니다: 안 끝난 요청이 여럿이어도, 일주일 안에 다시 해도 됩니다.
+// 게임마다 요청 하나와 이미 학습한 버전은 제작자와 똑같이 봅니다
+func TestAdminAsksWithoutLimits(t *testing.T) {
+	f := setup(t)
+	admin := &f.boss
+	for i, game := range []string{"dots", "dots2", "dots3"} {
+		f.games.add(game, admin.ID, strings.Repeat(string(rune('a'+i)), 16))
+	}
+	ask := func(game string) int {
+		return f.do("POST", "/api/ai/"+game+"/request", "application/json", "{}", admin).Code
+	}
+	for _, game := range []string{"dots", "dots2"} {
+		if c := ask(game); c != http.StatusOK {
+			t.Fatalf("admin ask %s = %d, want 200 (no open-request limit)", game, c)
+		}
+	}
+	if c := ask("dots"); c != http.StatusConflict {
+		t.Errorf("admin ask dots again = %d, want 409 (one request per game)", c)
+	}
+	f.store.now = func() time.Time { return at.Add(time.Hour) }
+	if c := ask("dots3"); c != http.StatusOK {
+		t.Errorf("admin ask within a week = %d, want 200", c)
+	}
+	if rec := f.do("GET", "/api/ai/mine", "", "", admin); strings.Contains(rec.Body.String(), `"next"`) {
+		t.Errorf("admin mine shows a next request time: %s", rec.Body)
+	}
+	if n := len(f.store.Requests()); n != 3 {
+		t.Errorf("requests = %d, want 3", n)
+	}
+}
