@@ -4,6 +4,8 @@
 """
 
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,7 +15,18 @@ import numpy as np
 import torch
 
 from net import Net
-from train import Pool, Snapshots, Worker, balance_from_log, eval_summary, export_onnx, fresh_loss, unpack_game
+from train import (
+    Pool,
+    Snapshots,
+    Worker,
+    balance_from_log,
+    eval_summary,
+    export_onnx,
+    fresh_loss,
+    init_from,
+    unpack_game,
+    versus_summary,
+)
 
 TICTACTOE = Path(__file__).resolve().parent.parent / "games" / "tictactoe"
 
@@ -163,6 +176,24 @@ class PoolTest(unittest.TestCase):
         self.assertTrue(np.all(np.abs(z) <= 1))
         self.assertFalse(set(np.unique(z)) <= {-1.0, 0.0, 1.0}, "the search value is mixed in")
 
+    def test_versus_asks_both_networks(self):
+        calls = [0, 0]
+
+        def counted(k):
+            def infer(x):
+                calls[k] += len(x)
+                return uniform(x)
+
+            return infer
+
+        cmd = {"cmd": "match", "opponent": "network", "games": 8, "sims": 4, "openingMoves": 1}
+        r = self.pool.split(cmd, [counted(0), counted(1)], unit=2)
+        self.assertEqual(sum(r["first"]) + sum(r["second"]), 8)
+        self.assertEqual((sum(r["first"]), sum(r["second"])), (4, 4))
+        self.assertEqual(len(r["hashes"]), 8)
+        self.assertGreater(calls[0], 0)
+        self.assertGreater(calls[1], 0)
+
     def test_match_against_rollout(self):
         r = self.pool.split({"cmd": "match", "opponent": "rollout", "oppSims": 20, "games": 6, "sims": 8}, uniform)
         self.assertEqual(sum(r["first"]) + sum(r["second"]), 6)
@@ -231,6 +262,101 @@ class PoolTest(unittest.TestCase):
             eval_summary(res),
             {"random": {"first": [1, 2, 3], "second": [4, 5, 6]}, "accuracy": {"policy": 0.5, "search": 0.9}},
         )
+
+
+class InitFromTest(unittest.TestCase):
+    """--init-from: 다른 모델의 가중치로 시작"""
+
+    MARKS = ["mark:dot", "mark:ring", "mark:last-move", "mark:danger", "mark:ghost", "mark:blocked", "mark:frame"]
+    COMMON = [*MARKS, "tint:0", "tint:1", "tint:other", "text", "toPlay"]
+
+    def model(self, pieces, specials, observe=0, seed=0):
+        names = [f"piece:{p}" for p in pieces] + self.COMMON + [f"observe:{i}" for i in range(observe)]
+        torch.manual_seed(seed)
+        net = Net(len(names), len(specials), blocks=1, filters=8)
+        info = {"id": "g", "channelNames": names, "specials": specials}
+        return net, info
+
+    def test_same_game_copies_everything(self):
+        src, info = self.model(["x", "o"], [])
+        dst, _ = self.model(["x", "o"], [], seed=1)
+        r = init_from(dst, {"state": src.state_dict(), "info": info}, info)
+        self.assertEqual(r["fresh"], [])
+        self.assertEqual((r["channels"], r["of"]), (14, 14))
+        for k, v in src.state_dict().items():
+            self.assertTrue(torch.equal(v, dst.state_dict()[k]), k)
+
+    def test_other_game_matches_channels_and_specials_by_name(self):
+        src, src_info = self.model(["x", "o"], ["pass", "swap"])
+        # 기물 이름이 하나 겹치고(o), 기물 수와 observe() 채널 수가 달라 공통 채널의 자리가 밀립니다
+        dst, info = self.model(["o", "red", "blue"], ["swap"], observe=1, seed=1)
+        before = {k: v.clone() for k, v in dst.state_dict().items()}
+        r = init_from(dst, {"state": src.state_dict(), "info": src_info}, info)
+        self.assertEqual((r["channels"], r["of"]), (13, 16))  # o와 공통 12개
+        self.assertEqual(r["fresh"], [])
+        old, new = src.state_dict()["stem.0.weight"], dst.state_dict()["stem.0.weight"]
+        for i, name in enumerate([*info["channelNames"], "onBoard"]):
+            theirs = [*src_info["channelNames"], "onBoard"]
+            if name in theirs:
+                self.assertTrue(torch.equal(new[:, i], old[:, theirs.index(name)]), name)
+            else:
+                self.assertTrue(torch.equal(new[:, i], before["stem.0.weight"][:, i]), name)  # 새로 시작
+        # 특수 행동 swap은 원래 모델의 두 번째 줄에서
+        self.assertTrue(torch.equal(dst.state_dict()["special.weight"][0], src.state_dict()["special.weight"][1]))
+        self.assertTrue(torch.equal(dst.state_dict()["trunk.0.c1.weight"], src.state_dict()["trunk.0.c1.weight"]))
+
+    def test_other_size_starts_fresh(self):
+        src, info = self.model(["x", "o"], ["pass"])
+        torch.manual_seed(1)
+        dst = Net(14, 0, blocks=1, filters=16)  # 채널 수가 달라 몸통은 옮길 수 없음
+        r = init_from(dst, {"state": src.state_dict(), "info": info}, {**info, "specials": []})
+        for key in ("stem.0.weight", "trunk.0.c1.weight", "policy.0.weight", "value.0.weight"):
+            self.assertIn(key, r["fresh"])
+        self.assertEqual(r["channels"], 0)
+
+    def test_more_blocks_keeps_the_first_ones(self):
+        src, info = self.model(["x", "o"], [])
+        torch.manual_seed(1)
+        dst = Net(14, 0, blocks=2, filters=8)
+        r = init_from(dst, {"state": src.state_dict(), "info": info}, info)
+        self.assertTrue(torch.equal(dst.state_dict()["trunk.0.c1.weight"], src.state_dict()["trunk.0.c1.weight"]))
+        self.assertIn("trunk.1.c1.weight", r["fresh"])
+
+
+class VersusTest(unittest.TestCase):
+    def test_summary(self):
+        v = versus_summary({"first": [6, 2, 2], "second": [2, 2, 6], "hashes": ["a", "b", "b"]})
+        self.assertEqual((v["wins"], v["draws"], v["losses"], v["games"], v["distinct"]), (8, 4, 8, 20, 2))
+        self.assertAlmostEqual(v["score"], 0.5)
+        self.assertAlmostEqual(v["elo"], 0, places=6)
+        self.assertLess(v["low"], 0.5)
+        self.assertGreater(v["high"], 0.5)
+        strong = versus_summary({"first": [9, 1, 0], "second": [8, 1, 1]})
+        self.assertGreater(strong["elo"], 200)
+        self.assertIsNone(strong["distinct"])
+
+    def test_cli(self):
+        # 중간 모델 남기기 → 그 모델에서 이어 학습 → 둘을 서로 두게 하기
+        script = Path(__file__).resolve().parent / "train.py"
+        small = ["--blocks", "1", "--filters", "8", "--games", "4", "--sims", "4", "--steps", "2", "--workers", "1"]
+        quiet = ["--solve-limit", "0", "--rollout-sims", "0", "--snapshot-every", "0", "--eval-games", "4"]
+
+        def run(*args):
+            out = subprocess.run([sys.executable, str(script), str(TICTACTOE), *args], capture_output=True, text=True)
+            self.assertEqual(out.returncode, 0, out.stderr)
+            return out.stdout
+
+        with tempfile.TemporaryDirectory() as d:
+            a, b = Path(d) / "a", Path(d) / "b"
+            run("--iterations", "2", "--save-every", "1e-9", "--out", str(a), *small, *quiet)
+            ckpts = sorted((a / "checkpoints").iterdir())
+            self.assertEqual(len(ckpts), 2)
+            self.assertEqual(torch.load(ckpts[0])["iteration"], 1)
+            got = run("--iterations", "1", "--init-from", str(ckpts[0]), "--out", str(b), *small, *quiet)
+            self.assertIn("14/14 input channels matched by name", got)
+            got = run("--versus", str(ckpts[0]), str(b / "model.pt"), "--eval-games", "6", "--sims", "2", "--workers", "2")
+            self.assertIn("6 games", got)
+            self.assertIn("A scores", got)
 
 
 class ExportTest(unittest.TestCase):

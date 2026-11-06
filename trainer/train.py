@@ -12,6 +12,10 @@
     snapshots.json  학습 기록: 학습 전과 몇 분마다(--snapshot-every) 그때의 AI끼리 둔 판과 자기대국 통계.
                     운영자 화면에서 모델과 같이 올리면 제작자가 판마다 다시보기로 봅니다 (server/internal/ai/training.go)
 
+다른 모델에서 시작하기와 두 모델 비교하기 (trainer/README.md의 "이어 학습", "모델 대 모델")
+    python trainer/train.py games/tictactoe --init-from trainer/runs/old/model.pt --out trainer/runs/new
+    python trainer/train.py games/tictactoe --versus trainer/runs/old/model.pt trainer/runs/new/model.pt
+
 브라우저에서 AI와 두려면 학습한 신경망을 ONNX로 내보내 사이트에 올립니다 (trainer/README.md의 "브라우저에서 AI와 두기").
     python trainer/train.py games/tictactoe --export-onnx
     model.onnx  신경망 (입력 x [n, 채널, rows, cols] → logits [n, 행동 수], value [n])
@@ -72,7 +76,10 @@ class Worker:
             kind, obj, data = self.read()
             if kind == "E":
                 x = np.frombuffer(data, dtype=np.float32).copy()
-                logits, values = infer(x.reshape(obj["n"], self.info["channels"], self.info["rows"], self.info["cols"]))
+                x = x.reshape(obj["n"], self.info["channels"], self.info["rows"], self.info["cols"])
+                # net은 몇 번째 신경망으로 계산할지입니다 (모델 대 모델 대국). 없으면 첫 번째
+                net = obj.get("net", 0)
+                logits, values = infer(x, net) if net else infer(x)
                 self.write("R", data=np.concatenate([logits.ravel(), values.ravel()]).astype(np.float32).tobytes())
             elif kind == "G":
                 on_game(obj, data)
@@ -99,13 +106,15 @@ class Pool:
         self.wait = wait
 
     def run(self, jobs, infer=None, on_game=None):
-        """jobs는 [(워커 번호, 명령)]. 모두 끝나면 결과를 같은 순서로 돌려줍니다"""
+        """jobs는 [(워커 번호, 명령)]. 모두 끝나면 결과를 같은 순서로 돌려줍니다.
+        infer는 신경망 계산 함수 하나, 또는 여러 개의 목록입니다 (모델 대 모델 대국. 워커가 몇 번째인지 알려 줌)"""
+        nets = list(infer) if isinstance(infer, (list, tuple)) else [infer]
         requests = queue.Queue()
         results = [None] * len(jobs)
         errors = []
 
-        def ask(x):
-            slot = {"x": x, "done": threading.Event()}
+        def ask(x, net=0):
+            slot = {"x": x, "net": net, "done": threading.Event()}
             requests.put(slot)
             slot["done"].wait()
             if "error" in slot:
@@ -133,16 +142,20 @@ class Pool:
                         batch.append(requests.get(timeout=max(0, deadline - time.monotonic())))
                     except queue.Empty:
                         break
-                try:
-                    logits, values = infer(np.concatenate([b["x"] for b in batch]))
-                    at = 0
-                    for b in batch:
-                        n = len(b["x"])
-                        b["out"] = (logits[at : at + n], values[at : at + n])
-                        at += n
-                except Exception as e:
-                    for b in batch:
-                        b["error"] = e
+                groups = {}
+                for b in batch:
+                    groups.setdefault(b["net"], []).append(b)
+                for k, group in groups.items():
+                    try:
+                        logits, values = nets[k](np.concatenate([b["x"] for b in group]))
+                        at = 0
+                        for b in group:
+                            n = len(b["x"])
+                            b["out"] = (logits[at : at + n], values[at : at + n])
+                            at += n
+                    except Exception as e:
+                        for b in group:
+                            b["error"] = e
                 for b in batch:
                     b["done"].set()
 
@@ -157,13 +170,15 @@ class Pool:
         """첫 워커에서만 돌립니다 (완전 탐색처럼 나눌 수 없는 명령)"""
         return self.run([(0, cmd)], infer)[0]
 
-    def split(self, cmd, infer, on_game=None):
-        """판 수(games)를 워커마다 나눠 돌리고 결과를 합칩니다. 시드는 판이 겹치지 않게 워커마다 밉니다"""
+    def split(self, cmd, infer, on_game=None, unit=1):
+        """판 수(games)를 워커마다 나눠 돌리고 결과를 합칩니다. 시드는 판이 겹치지 않게 워커마다 밉니다.
+        unit판씩 묶어서 나눕니다 (모델 대 모델의 한 쌍이 두 워커로 갈라지지 않게)"""
         n = len(self.workers)
         jobs = []
         start = 0
+        units = cmd["games"] // unit
         for w in range(n):
-            g = cmd["games"] // n + (w < cmd["games"] % n)
+            g = (units // n + (w < units % n)) * unit
             if g or w == 0:  # 0판이어도 결과 모양은 있어야 합니다
                 jobs.append((w, {**cmd, "games": g, "seed": cmd.get("seed", 1) + start}))
             start += g
@@ -186,6 +201,8 @@ def merge(results):
                 out[k] = [a + b for a, b in zip(out[k], r[k])]
         if "lost" in r:
             out["lost"] = (out["lost"] + r["lost"])[:5]
+        if "hashes" in r:
+            out["hashes"] = out.get("hashes", []) + r["hashes"]
     return out
 
 
@@ -264,6 +281,94 @@ BALANCE_SHARE = 0.2
 
 def same_shape(a, b):
     return all(a.get(k) == b.get(k) for k in SHAPE)
+
+
+def load_net(saved, device="cpu"):
+    """torch.load한 model.pt → 평가 모드의 신경망"""
+    net = Net(**saved["config"]).to(device)
+    net.load_state_dict(saved["state"])
+    return net.eval()
+
+
+def init_from(net, saved, info):
+    """다른 model.pt(같은 게임의 옛 버전, 비슷한 게임)의 가중치로 net을 시작합니다. 처음부터 배우는 것보다 빨리 배우려는 것입니다.
+
+    모양이 같은 층은 그대로 옮깁니다. 첫 층의 입력 채널과 특수 행동 점수는 이름으로 맞춰 옮깁니다:
+    관측 채널은 게임마다 기물 이름(piece:…)과 observe() 채널 수가 달라 자리가 밀리지만, 표시·칠한 칸·두는 쪽 같은
+    채널은 이름과 뜻이 모든 게임에서 같습니다 (env.js의 channelNames). 맞는 이름이 없는 채널과 층은 새로 시작합니다.
+    옮긴 것을 {"copied": 층 수, "fresh": 새로 시작한 층 이름들, "channels": 이름으로 맞춘 채널 수, "of": 채널 수}로 돌려줍니다."""
+    src = saved["state"]
+    src_info = saved.get("info") or {}
+    state = net.state_dict()
+    out = {"copied": 0, "fresh": [], "channels": 0, "of": len(info["channelNames"])}
+    # 이름으로 맞출 축: 첫 층은 입력 채널(1축), 특수 행동 점수는 행동(0축).
+    # 첫 층의 마지막 입력 채널은 신경망이 붙이는 "판 안"(전부 1)이라 이름을 따로 붙입니다
+    named = {
+        "stem.0.weight": (1, "channelNames", ["onBoard"]),
+        "special.weight": (0, "specials", []),
+        "special.bias": (0, "specials", []),
+    }
+
+    for key, value in state.items():
+        old = src.get(key)
+        if old is None:
+            out["fresh"].append(key)
+            continue
+        axis, field, extra = named.get(key, (None, None, None))
+        if axis is not None and field in src_info and src_info[field] != info[field]:
+            mine, theirs = [*info[field], *extra], [*src_info[field], *extra]
+            rest = [s for i, s in enumerate(value.shape) if i != axis]
+            if rest == [s for i, s in enumerate(old.shape) if i != axis]:
+                new = value.clone()
+                hits = 0
+                for i, name in enumerate(mine):
+                    if name in theirs:
+                        new.select(axis, i).copy_(old.select(axis, theirs.index(name)))
+                        hits += 1
+                if key == "stem.0.weight":
+                    out["channels"] = hits - len(extra)
+                if hits > len(extra):
+                    state[key] = new
+                    out["copied"] += 1
+                    continue
+            out["fresh"].append(key)
+            continue
+        if old.shape != value.shape:
+            out["fresh"].append(key)
+            continue
+        state[key] = old.clone()
+        out["copied"] += 1
+        if key == "stem.0.weight":
+            out["channels"] = out["of"]
+    net.load_state_dict(state)
+    return out
+
+
+def versus_summary(res):
+    """모델 대 모델 결과 → 첫 모델(A) 기준 승·무·패, 점수(승 1, 무 0.5)와 95% 구간, Elo 차이, 서로 다른 판 수.
+    구간은 판끼리 독립이라고 보고 셉니다. 같은 판이 되풀이되면(distinct가 games보다 한참 적으면) 실제보다 좁게 나옵니다"""
+    w, d, l = (res["first"][k] + res["second"][k] for k in range(3))
+    n = w + d + l
+    s = (w + d / 2) / n
+    se = ((w * (1 - s) ** 2 + d * (0.5 - s) ** 2 + l * s**2) / n / n) ** 0.5
+
+    def elo(p):
+        p = min(max(p, 1e-3), 1 - 1e-3)
+        return -400 * np.log10(1 / p - 1)
+
+    return {
+        "wins": w,
+        "draws": d,
+        "losses": l,
+        "games": n,
+        "distinct": len(set(res["hashes"])) if "hashes" in res else None,
+        "score": s,
+        "low": max(0.0, s - 1.96 * se),
+        "high": min(1.0, s + 1.96 * se),
+        "elo": float(elo(s)),
+        "eloLow": float(elo(s - 1.96 * se)),
+        "eloHigh": float(elo(s + 1.96 * se)),
+    }
 
 
 def export_onnx(saved, info, out, play_sims):
@@ -509,6 +614,54 @@ def evaluate(pool, infer, args, solvable, rollout=False):
     return res
 
 
+def play_versus(args):
+    """--versus A B: 두 모델을 서로 두게 하고 A 기준 결과를 찍습니다. 정답을 모르는 게임에서 두 모델을 비교할 때 씁니다
+    (학습 시간별 중간 모델, 이어 학습과 처음부터 학습, 탐색 횟수). 판 둘이 한 쌍이라 판 수는 짝수로 맞춥니다"""
+    pool = Pool(args.game, args.workers)
+    try:
+        info = pool.info
+        nets = []
+        for path in args.versus:
+            saved = torch.load(path, map_location=args.device)
+            trained = saved.get("info") or info
+            if not same_shape(trained, info):
+                diff = [k for k in SHAPE if trained.get(k) != info.get(k)]
+                raise SystemExit(f"{path} does not fit this game's code ({', '.join(diff)} differ)")
+            nets.append(make_infer(load_net(saved, args.device), args.device))
+        games = max(2, args.eval_games + args.eval_games % 2)
+        cmd = {
+            "cmd": "match",
+            "opponent": "network",
+            "games": games,
+            "parallel": args.parallel,
+            "sims": args.sims,
+            "maxMoves": args.max_moves,
+            "seed": args.seed,
+            "openingMoves": args.opening_moves,
+        }
+        res = pool.split(cmd, nets, unit=2)
+    finally:
+        pool.close()
+    v = versus_summary(res)
+    a, b = args.versus
+    cut = f", {res['cut']} cut by the training draw rule" if res["cut"] else ""
+    print(
+        f"{a} vs {b}: {v['games']} games ({v['distinct']} distinct), {args.sims} sims, "
+        f"first {args.opening_moves} moves random{cut}\n"
+        f"  A as first W/D/L {wdl(res['first'])}  second {wdl(res['second'])}\n"
+        f"  A scores {v['score']:.1%} ({v['low']:.1%}-{v['high']:.1%}), "
+        f"Elo {v['elo']:+.0f} ({v['eloLow']:+.0f} to {v['eloHigh']:+.0f}, 95%)",
+        flush=True,
+    )
+    if v["distinct"] is not None and v["distinct"] < v["games"] / 2:
+        print(
+            "  many games repeat, so the range above is too narrow: "
+            "raise --opening-moves for more varied games (each extra random move multiplies the openings)",
+            flush=True,
+        )
+    return v
+
+
 def main():
     ap = argparse.ArgumentParser(description="Train an AlphaZero AI for a boardmadang game.")
     ap.add_argument("game", help="game folder with index.js (and listing.json)")
@@ -527,8 +680,35 @@ def main():
         "--max-moves", type=int, default=512, help="end a training game as a draw after this many moves (default 512)"
     )
     ap.add_argument("--solve-limit", type=int, default=50_000, help="solve exactly if the game has fewer positions")
-    ap.add_argument("--blocks", type=int, default=4)
-    ap.add_argument("--filters", type=int, default=64)
+    ap.add_argument("--blocks", type=int, default=None, help="residual blocks (default 4, or the --init-from model's)")
+    ap.add_argument("--filters", type=int, default=None, help="channels per layer (default 64, or the --init-from model's)")
+    ap.add_argument(
+        "--init-from",
+        default=None,
+        help="start from another model.pt (an older version of this game, or a similar game): layers of the same shape "
+        "are copied, input channels and special actions are matched by name, the rest start fresh",
+    )
+    ap.add_argument(
+        "--save-every",
+        type=float,
+        default=0,
+        help="also keep the network every N minutes in checkpoints/ (for learning curves; 0 = off)",
+    )
+    ap.add_argument(
+        "--versus",
+        nargs=2,
+        metavar=("A", "B"),
+        default=None,
+        help="only play model A against model B (two model.pt files): each pair of games starts the same and swaps "
+        "sides; --eval-games games, --sims simulations per move for both. Prints A's result",
+    )
+    ap.add_argument(
+        "--opening-moves",
+        type=int,
+        default=2,
+        help="with --versus: the first N moves of each pair of games are random, so the games differ. "
+        "Too many hide the difference on small boards (default 2)",
+    )
     ap.add_argument("--steps", type=int, default=100, help="training steps per iteration")
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--lr", type=float, default=1e-3)
@@ -612,6 +792,12 @@ def main():
             )
         return
 
+    if args.versus:
+        play_versus(args)
+        return
+    if args.init_from and (args.resume or args.eval_only):
+        raise SystemExit("--init-from starts a new run, so it cannot go with --resume or --eval-only")
+
     t0 = time.monotonic()
     torch.manual_seed(args.seed)
     rng = np.random.default_rng(args.seed)
@@ -641,7 +827,21 @@ def main():
     else:
         print("too big to solve exactly, so only the random opponent is used for evaluation")
 
-    net = Net(info["channels"], len(info["specials"]), args.blocks, args.filters).to(args.device)
+    init = torch.load(args.init_from, map_location="cpu") if args.init_from else None
+    size = init["config"] if init else {}
+    blocks = args.blocks or size.get("blocks", 4)
+    filters = args.filters or size.get("filters", 64)
+    net = Net(info["channels"], len(info["specials"]), blocks, filters)
+    if init:
+        r = init_from(net, init, info)
+        same = "same game" if (init.get("info") or {}).get("id") == info["id"] else (init.get("info") or {}).get("id", "?")
+        print(
+            f"started from {args.init_from} ({same}, iteration {init.get('iteration')}): {r['copied']} layers copied, "
+            f"{r['channels']}/{r['of']} input channels matched by name"
+            + (f", fresh: {', '.join(r['fresh'])}" if r["fresh"] else ""),
+            flush=True,
+        )
+    net = net.to(args.device)
     opt = torch.optim.Adam(net.parameters(), lr=args.lr, weight_decay=1e-4)
     first = 1
     if args.eval_only and not (out / "model.pt").exists():
@@ -664,6 +864,9 @@ def main():
 
     buffer = []
     log = open(out / "log.jsonl", "a", encoding="utf-8")
+    if init:
+        log.write(json.dumps({"initFrom": str(args.init_from), "init": r}) + "\n")
+    next_save = args.save_every  # 다음에 중간 모델을 남길 때 (분)
     last = first - 1  # 마지막으로 끝낸 반복
     evaluated = None
     snaps = Snapshots(out / "snapshots.json", info, args)
@@ -735,6 +938,15 @@ def main():
             log.write(json.dumps(entry) + "\n")
             log.flush()
             torch.save({"config": net.config, "state": net.state_dict(), "iteration": it, "info": info}, out / "model.pt")
+            if args.save_every > 0 and minutes() >= next_save:
+                # 학습 곡선용 중간 모델. 이름이 분 순서로 정렬됩니다
+                m = minutes()
+                (out / "checkpoints").mkdir(exist_ok=True)
+                torch.save(
+                    {"config": net.config, "state": net.state_dict(), "iteration": it, "info": info, "minutes": m},
+                    out / "checkpoints" / f"{m:06.1f}min-iter{it}.pt",
+                )
+                next_save = (int(m / args.save_every) + 1) * args.save_every
             last = it
             snaps.add_selfplay(stats)
             if snaps.due(minutes()):

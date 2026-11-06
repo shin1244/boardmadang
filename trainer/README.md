@@ -111,7 +111,7 @@ final evaluation
 | `--parallel` | 64 | 워커마다 동시에 두는 판 수 |
 | `--temp-moves` | 판의 자리 수 (30까지) | 자기대국에서 처음 몇 수를 방문 수에 비례해 뽑을지. 나머지는 가장 좋은 수 |
 | `--max-moves` | 512 | 학습할 때 한 판의 최대 수(차례가 넘어간 횟수). 넘으면 무승부 (아래 "대국 화면과 같은 규칙") |
-| `--blocks`, `--filters` | 4, 64 | 신경망 크기 (잔차 블록 수, 채널 수) |
+| `--blocks`, `--filters` | 4, 64 | 신경망 크기 (잔차 블록 수, 채널 수). `--init-from`이면 그 모델의 크기 |
 | `--steps` | 100 | 반복마다 학습 걸음 수 (한 걸음에 `--batch`개 국면). 많으면 판을 외웁니다 (위 "손실") |
 | `--window` | 20 | 최근 몇 반복의 판으로 학습할지 |
 | `--rollout-sims` | 200 | 마지막 평가에서 둘 롤아웃 AI의 탐색 횟수. 0이면 안 둠 |
@@ -123,6 +123,10 @@ final evaluation
 | `--full-prob` | 0.25 | `--fast-sims`를 쓸 때 깊게 탐색해서 남기는 수의 비율 |
 | `--snapshot-every` | 10 | 학습 기록: 몇 분마다 그때의 AI끼리 둔 판을 남길지. 0이면 남기지 않음 (아래 "학습 기록") |
 | `--snapshot-games` | 2 | 스냅샷마다 AI끼리 둘 판 수 (8판까지) |
+| `--init-from` | | 다른 `model.pt`에서 시작합니다 (아래 "이어 학습") |
+| `--save-every` | 0 | 몇 분마다 그때의 신경망을 `checkpoints/`에 남길지. 학습 곡선을 그릴 때 씁니다. 0이면 남기지 않음 |
+| `--versus A B` | | 학습하지 않고 두 `model.pt`를 서로 두게 합니다 (아래 "모델 대 모델") |
+| `--opening-moves` | 2 | `--versus`에서 판마다 처음 몇 수를 무작위로 둘지 |
 | `--device` | GPU가 있으면 `cuda` | |
 
 **탐색 횟수 섞기** (`--fast-sims`, KataGo의 playout cap randomization. [Wu, 2019](https://arxiv.org/abs/1902.10565))
@@ -147,6 +151,42 @@ final evaluation
 - 이 게임은 한 판이 16수쯤이라 한 판의 국면끼리 닮아서 생기는 문제가 작습니다. KataGo는 한 판이 수백 수인 바둑에서 효과를 봤습니다.
   판이 길고 가치 학습이 약했던 게임(위 "더 큰 게임")에서 다시 잴 만합니다.
 - 같은 5분이면 이 게임에서는 PUCT 50번이 Gumbel 16번보다 정책도 가치도 낫습니다 (CPU, 작은 판). Gumbel은 판과 국면을 더 많이 만들고도 뒤집니다.
+
+**이어 학습** (`--init-from`)
+
+다른 `model.pt`의 가중치로 시작합니다. 게임의 새 버전을 다시 학습하거나, 비슷한 게임에서 배운 것을 옮겨 처음부터보다 빨리 배우려는 것입니다.
+
+```bash
+python trainer/train.py games/my-game --minutes 20 --init-from trainer/runs/my-game-old/model.pt --out trainer/runs/my-game
+```
+
+- 모양이 같은 층은 그대로 옮깁니다. 신경망 크기(`--blocks`, `--filters`)는 따로 주지 않으면 그 모델의 크기를 씁니다.
+- 첫 층의 입력 채널과 특수 행동 점수는 **이름으로** 맞춥니다. 게임마다 기물 이름(`piece:…`)과 `observe()` 채널 수가 달라 채널 자리가 밀리지만,
+  표시(`mark:…`), 칠한 칸(`tint:…`), 숫자, 두는 쪽은 모든 게임에서 이름과 뜻이 같기 때문입니다. 맞는 이름이 없는 채널은 새로 시작합니다.
+- 무엇을 옮겼는지 처음에 찍고 `log.jsonl`의 첫 줄에 남깁니다 (`started from …: 72 layers copied, 12/14 input channels matched by name`).
+- 새 실행이라 `--resume`, `--eval-only`와 같이 쓸 수 없습니다.
+
+**모델 대 모델** (`--versus`)
+
+학습하지 않고 두 모델을 서로 두게 해서 첫 모델(A) 기준 결과를 찍습니다. 정답을 모르는 큰 게임에서 두 모델을 비교할 때 씁니다
+(학습 시간별 중간 모델, 이어 학습과 처음부터 학습, 탐색 횟수에 따른 차이).
+
+```bash
+python trainer/train.py games/my-game --versus runs/a/model.pt runs/b/model.pt --eval-games 200 --sims 50
+```
+
+```
+runs/a/model.pt vs runs/b/model.pt: 200 games (118 distinct), 16 sims, first 2 moves random
+  A as first W/D/L 25/48/27  second 3/25/72
+  A scores 32.2% (27.3%-37.2%), Elo -129 (-170 to -91, 95%)
+```
+
+- 판 둘이 한 쌍입니다. 같은 시작 판과 같은 무작위 첫 수로, 차례만 바꿔 둡니다. 선공이 유리한 게임에서도 공평합니다.
+- 두 모델 모두 잡음 없이 가장 좋은 수만 두므로, 첫 수를 섞지 않으면(`--opening-moves 0`) 모든 판이 같아집니다.
+  반대로 너무 많이 섞으면 작은 판에서는 무작위 수가 승패를 정해 차이가 가려집니다. 틱택토에서 막 학습을 시작한 모델과 다 배운 모델을 200판 두게 했더니
+  첫 수를 1수 섞으면 17.8%, 2수 32.2%, 4수 45.0%였습니다 (탐색 16번).
+- 구간은 판끼리 독립이라고 보고 셉니다. 같은 판이 되풀이되면(`distinct`가 판 수보다 한참 적으면) 실제보다 좁게 나와서 경고를 찍습니다.
+- 두 모델은 지금 게임 코드와 모양(채널, 판 크기, 특수 행동)이 같아야 합니다. 신경망 크기는 달라도 됩니다.
 
 ## 브라우저에서 AI와 두기
 
