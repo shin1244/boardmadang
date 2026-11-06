@@ -87,6 +87,11 @@ function concat(arrays) {
 
 // ---- 신경망 ----
 
+// 신경망 요청은 프로세스 전체에서 한 번에 하나만 보냅니다. 모델 대 모델처럼 evaluate가 둘이면 요청 둘을 연달아 보내게 되는데,
+// 그러면 train.py가 첫 답을 이쪽 stdin에 쓰는 동안 이쪽은 둘째 요청을 stdout에 쓰느라 서로 기다릴 수 있습니다
+// (Windows 파이프 버퍼는 4KB라 답 하나도 넘칩니다).
+let line = Promise.resolve();
+
 /**
  * train.py의 신경망으로 계산하는 evaluate. 같은 틱에 들어온 요청을 모아 한 번에 보냅니다.
  * 행동 점수는 둘 수 있는 행동만 골라 softmax합니다.
@@ -100,14 +105,18 @@ function networkEvaluator(env, net = 0) {
     scheduled = false;
     const batch = queue;
     queue = [];
-    const planes = new Float32Array(batch.length * size);
-    batch.forEach((r, i) => env.encode(r.pos, planes.subarray(i * size, (i + 1) * size)));
-    send('E', net ? { n: batch.length, net } : { n: batch.length }, planes);
-    const out = await receive('R');
-    const A = env.nActions;
-    batch.forEach((r, i) => {
-      r.resolve({ policy: networkPolicy(out, r.actions, i * A), value: out[batch.length * A + i] });
+    const turn = line.then(async () => {
+      const planes = new Float32Array(batch.length * size);
+      batch.forEach((r, i) => env.encode(r.pos, planes.subarray(i * size, (i + 1) * size)));
+      send('E', net ? { n: batch.length, net } : { n: batch.length }, planes);
+      const out = await receive('R');
+      const A = env.nActions;
+      batch.forEach((r, i) => {
+        r.resolve({ policy: networkPolicy(out, r.actions, i * A), value: out[batch.length * A + i] });
+      });
     });
+    line = turn.catch(() => {});
+    await turn;
   }
   return (pos, actions) => new Promise((resolve) => {
     queue.push({ pos, actions, resolve });
