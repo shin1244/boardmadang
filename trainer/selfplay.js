@@ -13,8 +13,9 @@
 //            teacher가 'rollout'이면 신경망 대신 학습 없는 롤아웃 탐색으로 둡니다 (학습 초반에 신경망을 먼저 가르칠 때)
 //            method가 'gumbel'이면 Gumbel 탐색으로 둡니다 (mcts.js). 'puct'(기본)는 AlphaZero의 탐색입니다
 //            valueMix(0~1)만큼 가치 정답에 탐색이 낸 그 국면의 평가를 섞습니다 (0이면 최종 승패만)
-//   match    { opponent: 'random' | 'perfect' | 'rollout', oppSims, games, parallel, sims, maxMoves, seed }
+//   match    { opponent: 'random' | 'perfect' | 'rollout' | 'network', oppSims, games, parallel, sims, maxMoves, seed, openingMoves }
 //            AI 대 상대. 절반은 AI가 선공. rollout은 학습 없는 롤아웃 탐색(oppSims번)입니다
+//            network는 train.py의 두 번째 신경망입니다 (E 메시지의 net이 1). 판 둘을 한 쌍으로, 무작위 첫 수를 같게 둡니다
 //   accuracy { sims, parallel }   완전 탐색한 판마다 AI가 가장 좋은 수를 고르는 비율
 //   solve    { limit }   완전 탐색. 판 수가 limit을 넘으면 { tooBig: true }
 //   showcase { games, sims, maxMoves, seed, tempMoves }
@@ -23,7 +24,7 @@
 //   quit
 
 import { codeVersion } from '../sdk/lib/games.js';
-import { makeRng } from '../sdk/playground/platform.js';
+import { hashOf, makeRng } from '../sdk/playground/platform.js';
 import { drawRule } from './env.js';
 import { loadEnv } from './load.js';
 import { Node, gumbelSearch, networkPolicy, pick, rolloutEvaluator, search, visitPolicy } from './mcts.js';
@@ -89,8 +90,9 @@ function concat(arrays) {
 /**
  * train.py의 신경망으로 계산하는 evaluate. 같은 틱에 들어온 요청을 모아 한 번에 보냅니다.
  * 행동 점수는 둘 수 있는 행동만 골라 softmax합니다.
+ * net은 train.py가 신경망을 여러 개 쥐고 있을 때 몇 번째로 계산할지입니다 (모델 대 모델 대국. 0이면 표시하지 않음).
  */
-function networkEvaluator(env) {
+function networkEvaluator(env, net = 0) {
   const size = env.channels * env.rows * env.cols;
   let queue = [];
   let scheduled = false;
@@ -100,7 +102,7 @@ function networkEvaluator(env) {
     queue = [];
     const planes = new Float32Array(batch.length * size);
     batch.forEach((r, i) => env.encode(r.pos, planes.subarray(i * size, (i + 1) * size)));
-    send('E', { n: batch.length }, planes);
+    send('E', net ? { n: batch.length, net } : { n: batch.length }, planes);
     const out = await receive('R');
     const A = env.nActions;
     batch.forEach((r, i) => {
@@ -193,19 +195,30 @@ async function aiMove(pos, evaluate, sims) {
   return pick(env, root, 0);
 }
 
-async function match({ opponent, oppSims = 200, games, parallel = 64, sims = 50, maxMoves = 512, seed = 1 }, evaluate) {
+/**
+ * AI 대 상대. 절반은 AI가 선공입니다.
+ * opponent가 'network'면 train.py의 두 번째 신경망(net 1)이 같은 sims로 둡니다 (모델 대 모델).
+ * 이때는 판 둘이 한 쌍입니다: 같은 시작 판과 같은 무작위 첫 수(openingMoves수)로, 차례만 바꿔 둡니다.
+ * 둘 다 잡음 없이 가장 좋은 수만 두므로, 첫 수를 섞지 않으면 모든 판이 같아지기 때문입니다.
+ */
+async function match({ opponent, oppSims = 200, games, parallel = 64, sims = 50, maxMoves = 512, seed = 1, openingMoves = 0 }, evaluate) {
   let table = null;
   if (opponent === 'perfect') {
     table = getSolved()?.table;
     if (!table) return { error: 'this game is too big to solve, so there is no perfect opponent' };
   }
+  const versus = opponent === 'network';
+  const other = versus ? networkEvaluator(env, 1) : null;
   // AI가 선공일 때와 후공일 때의 [승, 무, 패]. cut은 학습용 무승부 규칙으로 끝난 판 수,
   // lost는 AI가 진 판의 행동 번호들 (몇 판만)
   const result = { opponent, games, sims, first: [0, 0, 0], second: [0, 0, 0], cut: 0, lost: [] };
+  // 모델 대 모델은 판마다 짧은 해시를 남깁니다. 같은 판이 되풀이되면 판 수만큼 믿을 수 없어서, train.py가 서로 다른 판을 셉니다
+  if (versus) result.hashes = [];
   await lanes(games, parallel, async (i) => {
     const ai = i % 2;
-    const random = makeRng(seed * 1000003 + i).next;
-    let pos = env.start(seed + i);
+    const pair = versus ? Math.floor(i / 2) : i;
+    const random = makeRng(seed * 1000003 + pair).next;
+    let pos = env.start(seed + pair);
     const actions = [];
     const cut = drawRule(maxMoves);
     for (;;) {
@@ -219,11 +232,16 @@ async function match({ opponent, oppSims = 200, games, parallel = 64, sims = 50,
         const k = out.winner === null ? 1 : out.winner === ai ? 0 : 2;
         result[ai === 0 ? 'first' : 'second'][k]++;
         if (k === 2 && result.lost.length < 5) result.lost.push({ ai, actions });
+        result.hashes?.push(hashOf([ai, actions]));
         return;
       }
       let move;
-      if (env.toPlay(pos) === ai) {
+      if (pos.moves < openingMoves) {
+        move = moves[Math.floor(random() * moves.length)];
+      } else if (env.toPlay(pos) === ai) {
         move = (await aiMove(pos, evaluate, sims)) ?? moves[0];
+      } else if (other) {
+        move = (await aiMove(pos, other, sims)) ?? moves[0];
       } else if (table) {
         const best = table.get(keyOf(pos)).best;
         const a = best[Math.floor(random() * best.length)];
