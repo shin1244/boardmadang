@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -321,6 +322,60 @@ class InitFromTest(unittest.TestCase):
         r = init_from(dst, {"state": src.state_dict(), "info": info}, info)
         self.assertTrue(torch.equal(dst.state_dict()["trunk.0.c1.weight"], src.state_dict()["trunk.0.c1.weight"]))
         self.assertIn("trunk.1.c1.weight", r["fresh"])
+
+
+# 판이 커서 신경망 답 하나가 파이프 버퍼(Linux 64KB, Windows 4KB)보다 큰 게임. 네 수를 두면 끝납니다
+BIG_GAME = """
+const N = 32;
+const at = (i) => ({ row: Math.floor(i / N), col: i % N });
+export default {
+  id: 'big-board',
+  board: { places: 'cells', rows: N, cols: N },
+  pieces: 'xo',
+  maxActions: 8,
+  setup: () => ({ cells: [], turn: 0 }),
+  play(s, p, a) {
+    const i = a.row * N + a.col;
+    if (s.cells.length >= 4 || p !== s.turn || a.kind !== 'click' || s.cells.includes(i)) return s;
+    return { cells: [...s.cells, i], turn: 1 - s.turn };
+  },
+  turn: (s) => (s.cells.length >= 4 ? null : s.turn),
+  result: (s) => (s.cells.length >= 4 ? { winner: s.cells[0] % 2 } : null),
+  view: (s) => ({ pieces: s.cells.map((i, k) => ({ ...at(i), piece: k % 2 ? 'o' : 'x' })) }),
+  legal: (s, p) => (s.cells.length >= 4 || p !== s.turn ? []
+    : Array.from({ length: N * N }, (_, i) => i).filter((i) => !s.cells.includes(i)).map((i) => ({ kind: 'click', ...at(i) }))),
+};
+"""
+
+
+class VersusPipeTest(unittest.TestCase):
+    def test_two_networks_with_big_replies(self):
+        """모델 대 모델에서 워커가 신경망 요청 둘을 겹쳐 보내면, train.py가 첫 답을 쓰는 동안 워커는 둘째 요청을 쓰느라
+        서로 기다리며 멈췄습니다 (답이 파이프 버퍼보다 클 때. Windows에서는 스플체스 크기로도 멈춤)"""
+        with tempfile.TemporaryDirectory() as d:
+            game = Path(d) / "big-board"
+            game.mkdir()
+            (game / "index.js").write_text(BIG_GAME, encoding="utf-8")
+            (game / "package.json").write_text('{"type": "module"}', encoding="utf-8")
+            pool = Pool(game, 1)
+            try:
+                n = pool.info["nActions"]
+
+                def infer(x):
+                    return np.zeros((len(x), n), np.float32), np.zeros(len(x), np.float32)
+
+                cmd = {"cmd": "match", "opponent": "network", "games": 64, "sims": 2, "openingMoves": 0}
+                out = {}
+                t = threading.Thread(target=lambda: out.update(r=pool.split(cmd, [infer, infer], unit=2)), daemon=True)
+                t.start()
+                t.join(60)
+                self.assertFalse(t.is_alive(), "the versus match got stuck")
+                self.assertEqual(sum(out["r"]["first"]) + sum(out["r"]["second"]), 64)
+            finally:
+                # 멈췄으면 quit을 보낼 수도 없으니 바로 끄고 파이프를 닫습니다
+                for w in pool.workers:
+                    w.proc.kill()
+                    w.proc.communicate()
 
 
 class VersusTest(unittest.TestCase):
