@@ -178,7 +178,7 @@ def merge(results):
     """워커마다 나눠 돈 selfplay·match 결과를 합칩니다"""
     out = dict(results[0])
     for r in results[1:]:
-        for k in ("games", "draws", "cut", "moves"):
+        for k in ("games", "draws", "cut", "moves", "positions"):
             if k in r:
                 out[k] += r[k]
         for k in ("wins", "first", "second"):
@@ -557,6 +557,19 @@ def main():
         default=0,
         help="mix this much of the search's value into the value target (0 = game result only)",
     )
+    ap.add_argument(
+        "--fast-sims",
+        type=int,
+        default=0,
+        help="playout cap randomization (KataGo): most moves search only this many times and are not trained on; "
+        "--full-prob of the moves search --sims times and become training data (0 = off, every move uses --sims)",
+    )
+    ap.add_argument(
+        "--full-prob",
+        type=float,
+        default=0.25,
+        help="with --fast-sims: the share of moves that search --sims times and become training data (default 0.25)",
+    )
     ap.add_argument("--out", default=None, help="output folder (default trainer/runs/<game id>)")
     ap.add_argument("--resume", action="store_true", help="continue from model.pt in the output folder")
     ap.add_argument("--eval-only", action="store_true", help="only evaluate model.pt in the output folder")
@@ -612,7 +625,12 @@ def main():
     print(
         f"{info['id']}: {info['rows']}x{info['cols']} board, {info['nActions']} actions, "
         f"{info['channels']} input channels, lang {info['lang']}, device {args.device}, {len(pool.workers)} workers, "
-        f"{args.search} search",
+        f"{args.search} search"
+        + (
+            f", {args.full_prob:.0%} of moves with {args.sims} sims (trained on), the rest {args.fast_sims}"
+            if args.fast_sims
+            else ""
+        ),
         flush=True,
     )
 
@@ -675,6 +693,9 @@ def main():
                 "teacher": "rollout" if warmup else None,
                 "method": args.search,
                 "valueMix": args.value_mix,
+                # 롤아웃 AI가 두는 워밍업에는 쓰지 않습니다
+                "fastSims": 0 if warmup else args.fast_sims,
+                "fullProb": args.full_prob,
             }
             stats = pool.split(cmd, infer, on_game=lambda obj, data: games.append(unpack_game(info, obj, data)))
             new = tuple(np.concatenate([g[k] for g in games]) for k in range(3))
@@ -686,7 +707,9 @@ def main():
             print(
                 f"iter {it:3d}  first/second/draw {stats['wins'][0]}/{stats['wins'][1]}/{stats['draws']}"
                 + (f" (cut {stats['cut']})" if stats["cut"] else "")
-                + f"  moves {stats['moves'] / args.games:.1f}  loss p {loss['policy']:.3f} v {loss['value']:.3f}"
+                + f"  moves {stats['moves'] / args.games:.1f}"
+                + (f"  kept {stats['positions']}" if args.fast_sims and not warmup else "")
+                + f"  loss p {loss['policy']:.3f} v {loss['value']:.3f}"
                 + (
                     f"  new games p {fresh['policy']:.3f} v {fresh['value']:.3f} (always 0: {fresh['zero']:.3f})"
                     if fresh

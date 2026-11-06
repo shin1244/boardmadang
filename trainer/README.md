@@ -119,6 +119,8 @@ final evaluation
 | `--warmup-sims` | 50 | 그때 롤아웃 AI의 탐색 횟수 |
 | `--search` | `puct` | 자기대국 탐색. `gumbel`은 탐색이 적어도(16번 안팎) 학습이 되는 Gumbel AlphaZero입니다 |
 | `--value-mix` | 0 | 가치 정답에 탐색이 낸 그 국면의 평가를 이만큼 섞습니다. 0이면 최종 승패만 씁니다 |
+| `--fast-sims` | 0 | 0보다 크면 수의 `--full-prob`만 `--sims`번 탐색해 학습 데이터로 남기고, 나머지는 이만큼만 탐색해 판을 진행합니다 (아래 "탐색 횟수 섞기") |
+| `--full-prob` | 0.25 | `--fast-sims`를 쓸 때 깊게 탐색해서 남기는 수의 비율 |
 | `--snapshot-every` | 10 | 학습 기록: 몇 분마다 그때의 AI끼리 둔 판을 남길지. 0이면 남기지 않음 (아래 "학습 기록") |
 | `--snapshot-games` | 2 | 스냅샷마다 AI끼리 둘 판 수 (8판까지) |
 | `--device` | GPU가 있으면 `cuda` | |
