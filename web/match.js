@@ -646,6 +646,8 @@ function renderActions() {
   $('#again').hidden = !['ended', 'idle', 'error'].includes(phase) || !runner;
   $('#again').textContent = t({ quick: 'match.again', create: 'match.againRoom', enter: 'match.toRooms' }[mode]);
   $('#replay').hidden = phase !== 'ended' || !ended?.record;
+  // 두는 동안에는 판 위의 ‹ 버튼으로 나갑니다 (버튼 줄을 무승부 제안 · 기권만으로)
+  $('#to-lobby').hidden = phase === 'playing';
   if (ended?.record) $('#replay').href = `/web/replay.html?id=${encodeURIComponent(ended.record)}`;
   const specials = $('#specials');
   specials.replaceChildren();
@@ -747,8 +749,9 @@ async function invite() {
 function fit() {
   if (!board) return;
   // 왼쪽 칸의 폭에 맞춥니다. 휴대폰에서는 칸이 없어지므로(display: contents) 화면 폭에
+  // 넓은 화면에서는 판을 크게 두되, 화면 높이 안에 들어오게 합니다 (리체스처럼)
   const width = $('.mr-board').clientWidth || $('.match').clientWidth;
-  board.resize(Math.min(600, width - 26));
+  board.resize(Math.min(760, width - 26, Math.max(320, innerHeight - 280)));
 }
 
 function setupBoard() {
