@@ -124,7 +124,7 @@ final evaluation
 | `--snapshot-every` | 10 | 학습 기록: 몇 분마다 그때의 AI끼리 둔 판을 남길지. 0이면 남기지 않음 (아래 "학습 기록") |
 | `--snapshot-games` | 2 | 스냅샷마다 AI끼리 둘 판 수 (8판까지) |
 | `--init-from` | | 다른 `model.pt`에서 시작합니다 (아래 "이어 학습") |
-| `--save-every` | 0 | 몇 분마다 그때의 신경망을 `checkpoints/`에 남길지. 학습 곡선을 그릴 때 씁니다. 0이면 남기지 않음 |
+| `--save-every` | 0 | 몇 분마다 그때의 신경망을 `checkpoints/`에 남길지. 학습 곡선을 그릴 때 씁니다. `--resume`이면 분을 앞 학습에 이어서 셉니다. 0이면 남기지 않음 |
 | `--versus A B` | | 학습하지 않고 두 `model.pt`를 서로 두게 합니다 (아래 "모델 대 모델") |
 | `--opening-moves` | 2 | `--versus`에서 판마다 처음 몇 수를 무작위로 둘지 |
 | `--device` | GPU가 있으면 `cuda` | |
