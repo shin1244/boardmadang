@@ -129,16 +129,15 @@ body {
   font-size: 18px;
 }
 
+/* 로고: 체크 판 위의 폰. 어두운 화면은 탭 아이콘과 같은 icon.svg, 밝은 화면은 조금 진한 icon-light.svg */
 .logo-mark {
-  display: grid;
-  grid-template-columns: repeat(2, 9px);
-  gap: 2px;
+  display: block;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  background: url("icon.svg") center / contain no-repeat;
 }
-.logo-mark { gap: 3px; }
-.logo-mark i { width: 9px; height: 9px; border-radius: 2px; background: #ef5350; }
-.logo-mark i:nth-child(2) { background: #82aaff; }
-.logo-mark i:nth-child(3) { background: #7fdbca; }
-.logo-mark i:nth-child(4) { background: #ecc48d; }
+:root[data-theme="light"] .logo-mark { background-image: url("icon-light.svg"); }
 
 .menu { display: flex; align-items: center; gap: 4px; flex: 1; }
 .menu a, .menu .soon { padding: 7px 12px; border-radius: 8px; color: var(--topbar-muted); text-decoration: none; font-size: 15px; white-space: nowrap; }
@@ -1088,8 +1087,7 @@ fieldset .bars-chip, .bars-chip { width: 44px; padding: 0; justify-content: cent
 .app > .site-footer { width: 100%; max-width: 1240px; margin: 0 auto; padding: 24px 32px; justify-content: space-between; border-top: 1px solid var(--line); }
 .site-footer nav { display: flex; flex-wrap: wrap; gap: 4px 18px; }
 .footer-logo { display: flex; align-items: center; gap: 8px; color: var(--muted); }
-.footer-logo .logo-mark { grid-template-columns: repeat(2, 6px); gap: 2px; }
-.footer-logo .logo-mark i { width: 6px; height: 6px; border-radius: 1px; }
+.footer-logo .logo-mark { width: 16px; height: 16px; }
 
 /* ---- 좁은 화면 (휴대폰) ---- */
 

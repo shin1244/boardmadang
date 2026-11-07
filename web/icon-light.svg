@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+<mask id="cut"><rect width="32" height="32" fill="#fff"/><g transform="translate(16 16) scale(0.86) translate(-16 -16.4)" fill="#000" stroke="#000" stroke-width="4.884" stroke-linejoin="round"><circle cx="16" cy="7.4" r="4.6"/><rect x="10.4" y="12.6" width="11.2" height="2.8" rx="1.4"/><path d="M13.5 16.3h5c.3 3.5 1.6 6.4 3.7 8.9H9.8c2.1-2.5 3.4-5.4 3.7-8.9z"/><rect x="6.5" y="25.6" width="19" height="4.4" rx="2.2"/></g></mask>
+<g mask="url(#cut)"><rect width="14.4" height="14.4" rx="3.2" fill="#4a7fdc"/><rect x="17.6" width="14.4" height="14.4" rx="3.2" fill="#a9c1ee"/><rect y="17.6" width="14.4" height="14.4" rx="3.2" fill="#a9c1ee"/><rect x="17.6" y="17.6" width="14.4" height="14.4" rx="3.2" fill="#4a7fdc"/></g>
+<g transform="translate(16 16) scale(0.86) translate(-16 -16.4)" fill="#e0524f"><circle cx="16" cy="7.4" r="4.6"/><rect x="10.4" y="12.6" width="11.2" height="2.8" rx="1.4"/><path d="M13.5 16.3h5c.3 3.5 1.6 6.4 3.7 8.9H9.8c2.1-2.5 3.4-5.4 3.7-8.9z"/><rect x="6.5" y="25.6" width="19" height="4.4" rx="2.2"/></g>
+</svg>
