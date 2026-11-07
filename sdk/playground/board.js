@@ -55,6 +55,18 @@ const chessPath = (k) => (chessPaths ??= Object.fromEntries(Object.entries(CHESS
 
 /** 직접 정의한 기물: 목록 순서대로 이 색의 원에 이름 앞 두 글자 */
 const CUSTOM_COLORS = ['#e0524f', '#4a7fdc', '#3a9a6b', '#d0942f', '#8f5bc4', '#0c969b', '#cc5f8c', '#6b7f93'];
+
+/**
+ * 글자 패의 방향 표시. n은 패 주인이 볼 때 앞(상대 쪽)이고 시계 방향으로 돕니다.
+ * sdk/check.js, web/engine.js, 서버의 thumbnail.go와 같은 목록입니다.
+ */
+export const TILE_ARROWS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
+const ARROW_VEC = { n: [0, -1], ne: [1, -1], e: [1, 0], se: [1, 1], s: [0, 1], sw: [-1, 1], w: [-1, 0], nw: [-1, -1] };
+const TILE_FACE = '#fbf7ee';
+const TILE_FONT = '"Noto Serif KR", "Noto Serif CJK KR", Batang, "Songti SC", SimSun, serif';
+
+/** 기물 목록의 한 항목 → 이름. 이름 문자열이거나 글자 패 { name, text, player, arrows } 입니다 */
+export const pieceName = (p) => (typeof p === 'string' ? p : p?.name);
 const COL_LABELS = 'abcdefghijklmnopqrstuvwxyzABCDEF';
 
 /** frame 테두리와 선(lines)의 두께. 칸 한 변에 대한 %입니다 (sdk/check.js, web/engine.js와 같은 범위) */
@@ -86,6 +98,15 @@ export class BoardView {
     this.canvas = canvas;
     this.board = board;
     this.pieceSet = pieceSet;
+    // 직접 정의한 기물: 이름 → 목록 순서(원의 색)와 글자 패 정의
+    this.custom = new Map();
+    if (Array.isArray(pieceSet)) {
+      pieceSet.forEach((p, index) => {
+        const name = pieceName(p);
+        if (!this.custom.has(name)) this.custom.set(name, { index, tile: typeof p === 'object' ? p : null });
+      });
+    }
+    this.flip = false;
     this.ctx = canvas.getContext('2d');
     this.points = board.places === 'points';
   }
@@ -161,6 +182,7 @@ export class BoardView {
     // attachInput이 봅니다: 미리보기가 있는지, 지금 그려진 호버
     this.view = view;
     this.hover = hover;
+    this.flip = flip; // 글자 패가 어느 쪽을 보고 서는지 정할 때 씁니다
     const { ctx, S, board } = this;
     const { rows, cols } = board;
     const look = LOOKS[board.look] ?? LOOKS.plain;
@@ -297,9 +319,16 @@ export class BoardView {
       this.circle(x, y, S * 0.12);
       ctx.fill();
     }
+    // 글자 패 위의 글자는 패 글자를 가리지 않게 칸의 오른쪽 아래 귀퉁이에 작게 씁니다 (손에 든 개수 같은 것)
+    const tiled = new Set((view.pieces ?? []).filter((p) => this.custom.get(p.piece)?.tile).map((p) => p.row * cols + p.col));
     for (const t of view.text ?? []) {
-      const [x, y] = at(t.row, t.col);
-      ctx.font = `bold ${Math.round(S * 0.32)}px system-ui, sans-serif`;
+      let [x, y] = at(t.row, t.col);
+      const corner = tiled.has(t.row * cols + t.col);
+      if (corner) {
+        x += S * 0.34;
+        y += S * 0.32;
+      }
+      ctx.font = `bold ${Math.round(S * (corner ? 0.24 : 0.32))}px system-ui, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.lineWidth = 3;
@@ -428,9 +457,11 @@ export class BoardView {
       ctx.lineWidth = 3.5;
       ctx.lineJoin = 'round';
       ctx.stroke(path);
+    } else if (this.custom.get(piece)?.tile) {
+      this.drawTile(this.custom.get(piece).tile, x, y);
     } else {
       // 직접 정의한 기물: 목록 순서대로 색을 정하고 이름 앞 두 글자를 씁니다.
-      const idx = Array.isArray(set) ? set.indexOf(piece) : -1;
+      const idx = this.custom.get(piece)?.index ?? -1;
       this.circle(x, y, S * 0.38);
       ctx.fillStyle = idx >= 0 ? CUSTOM_COLORS[idx % CUSTOM_COLORS.length] : '#888';
       ctx.fill();
@@ -444,6 +475,65 @@ export class BoardView {
       ctx.fillText(idx >= 0 ? String(piece).slice(0, 2) : '?', x, y);
     }
     ctx.restore();
+  }
+
+  /**
+   * 글자 패: 장기 · 쇼기 말처럼 네모난 패에 글자를 쓰고, 갈 수 있는 방향마다 가장자리에 작은 삼각형을 그립니다.
+   * 주인(player)이 있으면 주인 색으로 칠하고 주인 쪽을 보고 섭니다: 화면 아래쪽 플레이어의 패는 바로, 위쪽 플레이어의 패는 거꾸로.
+   */
+  drawTile(tile, x, y) {
+    const { ctx, S } = this;
+    const owned = tile.player === 0 || tile.player === 1;
+    const ink = owned ? PLAYER_COLORS[tile.player] : MARK.ink;
+    const top = this.board.flipForPlayer ?? 1; // 뒤집지 않은 화면에서 위쪽에 앉는 플레이어
+    const bottom = this.flip ? top : 1 - top;
+    ctx.translate(x, y);
+    if (owned && tile.player !== bottom) ctx.rotate(Math.PI);
+
+    const h = S * 0.42; // 패 한 변의 반
+    const r = S * 0.09;
+    ctx.beginPath();
+    ctx.moveTo(-h + r, -h);
+    ctx.arcTo(h, -h, h, h, r);
+    ctx.arcTo(h, h, -h, h, r);
+    ctx.arcTo(-h, h, -h, -h, r);
+    ctx.arcTo(-h, -h, h, -h, r);
+    ctx.closePath();
+    ctx.fillStyle = TILE_FACE;
+    ctx.fill();
+    ctx.lineWidth = Math.max(1.5, S * 0.045);
+    ctx.strokeStyle = ink;
+    ctx.stroke();
+
+    // 방향: 앞뒤좌우는 변 가운데의 삼각형, 대각선은 모서리를 채운 직각삼각형. 모두 바깥을 가리킵니다
+    ctx.fillStyle = ink;
+    const d = S * 0.365; // 삼각형 끝이 닿는 곳 (패 테두리 바로 안)
+    const t = S * 0.085; // 삼각형 크기
+    for (const a of new Set(Array.isArray(tile.arrows) ? tile.arrows : [])) {
+      const v = ARROW_VEC[a];
+      if (!v) continue;
+      const [dx, dy] = v;
+      ctx.beginPath();
+      if (dx && dy) {
+        ctx.moveTo(dx * d, dy * d);
+        ctx.lineTo(dx * (d - t), dy * d);
+        ctx.lineTo(dx * d, dy * (d - t));
+      } else {
+        // 끝 (dx, dy) * d, 밑변은 안쪽으로 t만큼
+        const w = t * 0.8;
+        ctx.moveTo(dx * d, dy * d);
+        ctx.lineTo(dx * (d - t) + dy * w, dy * (d - t) + dx * w);
+        ctx.lineTo(dx * (d - t) - dy * w, dy * (d - t) - dx * w);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    const text = String(tile.text ?? '');
+    ctx.font = `bold ${Math.round(S * ([...text].length > 1 ? 0.27 : 0.4))}px ${TILE_FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 0, S * 0.02);
   }
 
   circle(x, y, r) {

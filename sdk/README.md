@@ -166,6 +166,25 @@ so players can pick a piece and drag it to where it should go (like on Lichess).
 `starPoints`, `labels`, and `flipForPlayer` (show the board upside down for one player, like black in chess).
 
 **Pieces:** use a built-in set (`'xo'`, `'go-stones'`, `'chess'`) or list your own names, like `['red', 'blue']`.
+Your own names are drawn as circles, colored by their order in the list, with the first two characters of the name.
+
+To draw pieces like janggi or shogi pieces, put a **lettered tile** in the list instead of a name. It is a square tile with a character on it, and small triangles on its edges show the directions it can move.
+
+```js
+pieces: [
+  { name: 'wK', text: '王', player: 0, arrows: ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'] },
+  { name: 'wP', text: '子', player: 0, arrows: ['n'] },
+  { name: 'bK', text: '王', player: 1, arrows: ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'] },
+  // …
+],
+```
+
+- `name`: the name you use as `piece` in `view()`. The AI's observation is split by this name too.
+- `text`: the characters on the tile, 1 or 2.
+- `player` (optional): the tile's owner. The tile is drawn in that player's color and faces its owner: the bottom player's tiles stand upright and the top player's are upside down (also on a board flipped with `flipForPlayer`).
+- `arrows` (optional): the direction marks. `'n'` is forward from the owner's side, then clockwise `'ne'`, `'e'`, `'se'`, `'s'`, `'sw'`, `'w'`, `'nw'`.
+
+You can mix names and tiles in one list. `text` on a cell with a tile is drawn small in the cell's corner so it doesn't cover the tile (a count of pieces in hand, for example).
 
 ## Thumbnail
 

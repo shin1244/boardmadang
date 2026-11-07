@@ -166,12 +166,30 @@ export interface Thumbnail {
   view: Omit<View, 'message'>;
 }
 
+/** 글자 패의 방향. n이 패 주인이 볼 때 앞이고 시계 방향으로 돕니다 */
+export type TileArrow = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
+
+/** 글자 패: 장기 · 쇼기 말처럼 네모난 패에 글자를 쓰고, 갈 수 있는 방향을 작은 삼각형으로 보여 줍니다 */
+export interface TilePiece {
+  /** view()의 piece에 쓰는 이름 (32자까지) */
+  name: string;
+  /** 패에 쓸 글자, 1~2자 */
+  text: string;
+  /** 주인. 그 플레이어 색으로 칠하고 주인 쪽을 보고 서게 그립니다 (화면 아래쪽 플레이어의 패는 바로, 위쪽은 거꾸로) */
+  player?: 0 | 1;
+  /** 갈 수 있는 방향 표시 (겹치지 않게) */
+  arrows?: TileArrow[];
+}
+
 export interface Game<S> {
   /** 영문 소문자 id (URL에 쓰입니다) */
   id: string;
   board: BoardConfig;
-  /** 내장 기물 세트 이름, 또는 이 게임이 쓰는 기물 id 목록 (AI 관측 채널이 됩니다) */
-  pieces: 'chess' | 'go-stones' | 'xo' | string[];
+  /**
+   * 내장 기물 세트 이름, 또는 이 게임이 쓰는 기물 목록 (이름마다 AI 관측 채널이 됩니다).
+   * 목록의 항목은 이름(원에 이름 앞 두 글자) 또는 글자 패(TilePiece)입니다.
+   */
+  pieces: 'chess' | 'go-stones' | 'xo' | Array<string | TilePiece>;
   /** 좌표가 아닌 행동. 플랫폼이 버튼으로 보여줍니다. 기권은 플랫폼 기능이라 넣지 않습니다. */
   specialActions?: string[];
   /**

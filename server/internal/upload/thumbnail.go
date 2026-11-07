@@ -7,6 +7,8 @@ import (
 	"math"
 	"regexp"
 	"slices"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // 썸네일 검사. sdk/check.js의 validateThumbnail, normalizeThumbnail과 같은 규칙입니다. 한쪽을 고치면 같이 고칩니다.
@@ -230,7 +232,49 @@ func piecesOk(v any) bool {
 		return slices.Contains(pieceSets, s)
 	}
 	list, ok := v.([]any)
-	return ok && len(list) <= pieceKinds && !slices.ContainsFunc(list, func(x any) bool { _, isStr := x.(string); return !isStr })
+	return ok && len(list) <= pieceKinds && !slices.ContainsFunc(list, func(x any) bool { return !pieceOk(x) })
+}
+
+// tileArrows는 글자 패의 방향입니다 (sdk/playground/board.js의 TILE_ARROWS).
+var tileArrows = []string{"n", "ne", "e", "se", "s", "sw", "w", "nw"}
+
+// pieceOk는 기물 목록의 한 항목이 이름이거나 글자 패 { name, text, player?, arrows? }인지입니다 (sdk/check.js의 tileOk와 같은 규칙).
+func pieceOk(x any) bool {
+	if _, ok := x.(string); ok {
+		return true
+	}
+	m, ok := x.(map[string]any)
+	if !ok {
+		return false
+	}
+	name, ok := m["name"].(string)
+	if !ok || name == "" || len(utf16.Encode([]rune(name))) > 32 {
+		return false
+	}
+	text, ok := m["text"].(string)
+	if n := utf8.RuneCountInString(text); !ok || n < 1 || n > 2 {
+		return false
+	}
+	if has(m, "player") {
+		if p, ok := m["player"].(float64); !ok || (p != 0 && p != 1) {
+			return false
+		}
+	}
+	if has(m, "arrows") {
+		arrows, ok := m["arrows"].([]any)
+		if !ok {
+			return false
+		}
+		seen := map[string]bool{}
+		for _, a := range arrows {
+			s, ok := a.(string)
+			if !ok || !slices.Contains(tileArrows, s) || seen[s] {
+				return false
+			}
+			seen[s] = true
+		}
+	}
+	return true
 }
 
 // isWidth는 두께(width)가 없거나 범위 안의 숫자인지입니다.

@@ -55,7 +55,8 @@ export class Env {
     this.cols = cols;
     this.specials = game.specialActions ?? [];
     this.nActions = rows * cols + this.specials.length;
-    this.pieces = Array.isArray(game.pieces) ? game.pieces : PIECE_SETS[game.pieces];
+    // 직접 정의한 기물은 이름 문자열이거나 글자 패 { name, ... } 입니다. 관측 채널은 이름마다 하나
+    this.pieces = Array.isArray(game.pieces) ? game.pieces.map((p) => (typeof p === 'string' ? p : p?.name)) : PIECE_SETS[game.pieces];
     if (!this.pieces) throw new Error(`unknown piece set: ${game.pieces}`);
     this.maxActions = game.maxActions;
 

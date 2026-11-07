@@ -100,11 +100,32 @@ function cleanBoard(b) {
   return out;
 }
 
+// 글자 패의 방향 (sdk/playground/board.js의 TILE_ARROWS)
+const TILE_ARROWS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
+
+/** 기물 목록의 한 항목: 이름, 또는 글자 패 { name, text(1~2자), player?, arrows? }. 맞지 않으면 null (sdk/check.js의 tileOk와 같은 규칙) */
+function cleanPiece(p) {
+  if (isStr(p, 32)) return p;
+  if (!p || typeof p !== 'object' || !isStr(p.name, 32) || !p.name || typeof p.text !== 'string') return null;
+  const chars = [...p.text].length;
+  if (chars < 1 || chars > 2) return null;
+  const out = { name: p.name, text: p.text };
+  if (p.player !== undefined) {
+    if (p.player !== 0 && p.player !== 1) return null;
+    out.player = p.player;
+  }
+  if (p.arrows !== undefined) {
+    if (!Array.isArray(p.arrows) || !p.arrows.every((a) => TILE_ARROWS.includes(a)) || new Set(p.arrows).size !== p.arrows.length) return null;
+    out.arrows = [...p.arrows];
+  }
+  return out;
+}
+
 function cleanInfo(v) {
   if (!v || typeof v !== 'object') throw new Error('game info is missing');
-  const pieces = PIECE_SETS.includes(v.pieces) ? v.pieces
-    : Array.isArray(v.pieces) && v.pieces.length <= 32 && v.pieces.every((p) => isStr(p, 32)) ? [...v.pieces] : null;
-  if (!pieces) throw new Error('pieces must be a built-in set or a list of names');
+  const list = Array.isArray(v.pieces) && v.pieces.length <= 32 ? v.pieces.map(cleanPiece) : null;
+  const pieces = PIECE_SETS.includes(v.pieces) ? v.pieces : list && !list.includes(null) ? list : null;
+  if (!pieces) throw new Error('pieces must be a built-in set or a list of names and tiles');
   const specials = Array.isArray(v.specialActions) ? v.specialActions : [];
   return {
     id: isStr(v.id, 40) ? v.id : '',

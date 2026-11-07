@@ -174,3 +174,27 @@ test('찍은 뒤 게임의 판이나 기물을 바꾸면 다시 찍으라고 합
   const reordered = variant({ board: { look: 'plain', cols: 3, rows: 3, places: 'cells' } });
   assert.deepEqual(checkThumbnail(reordered, thumb), []);
 });
+
+test('글자 패: { name, text, player, arrows }를 이름과 섞어 쓸 수 있고, 썸네일은 이름으로 맞춥니다', () => {
+  const tiles = [
+    { name: 'x', text: '王', player: 0, arrows: ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'] },
+    { name: 'o', text: '侯爵' },
+  ];
+  assert.deepEqual(checkMembers({ ...tictactoe, pieces: tiles }), []);
+  assert.deepEqual(checkMembers({ ...tictactoe, pieces: [...tiles, 'plain'] }), []);
+  const bad = [
+    { name: 'x', text: '三글자' }, { name: 'x', text: '' }, { name: '', text: '王' }, { name: 'x' },
+    { name: 'x', text: '王', player: 2 }, { name: 'x', text: '王', player: null },
+    { name: 'x', text: '王', arrows: ['up'] }, { name: 'x', text: '王', arrows: ['n', 'n'] }, { name: 'x', text: '王', arrows: 'n' },
+    7, null, ['x'],
+  ];
+  for (const piece of bad) {
+    assert.match(checkMembers({ ...tictactoe, pieces: [piece] }).join(), /pieces: must be/, JSON.stringify(piece));
+  }
+  // 썸네일은 기물 목록을 그대로 담고, 판의 기물이 목록의 이름인지 봅니다
+  const game = variant({ pieces: tiles });
+  const thumb = makeThumbnail(game, 0, tictactoe.view(midGame(), 0, 'ko'));
+  assert.deepEqual(thumb.pieces, tiles);
+  assert.deepEqual(checkThumbnail(game, thumb), []);
+  assert.deepEqual(validateThumbnail({ ...thumb, pieces: [{ name: 'x', text: '王', player: 3 }] }), ["thumbnail.pieces: must look like the game's pieces"]);
+});
