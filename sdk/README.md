@@ -144,6 +144,10 @@ view(state, player, lang) {
 | `blocked` | A square you can't use (darkened) |
 | `frame` | A colored border (needs `color`), e.g. a goal square. Set `width` to make it 1–30% of a square's side (default 9%) |
 
+**Colors:** a `color` is a player color (`0`, `1`), a named board-palette color (`'green'`, `'yellow'`, `'gray'`), or `'#rrggbb'`.
+Boardmadang draws board backgrounds (the `plain`, `checker` and `wood` looks), player colors, marks, chess pieces and stones from one palette,
+so every game's board looks like part of the same set. `'#rrggbb'` may clash with it, so prefer player colors and named colors.
+
 **Lines (`lines`):** a see-through line drawn over the pieces, from the center of one square to another. You can set `color` (default dark gray)
 and `width` (1–50% of a square's side, default 20%). Add `hover: { row, col }` to show it only while the mouse is over that square,
 for example to preview which stones a move would connect to. If your game has `legal()`, the mouse only counts as over squares you can play.

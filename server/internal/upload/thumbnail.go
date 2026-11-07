@@ -247,8 +247,11 @@ func isColor(v any) bool {
 		return n == 0 || n == 1
 	}
 	s, ok := v.(string)
-	return ok && hexColor.MatchString(s)
+	return ok && (hexColor.MatchString(s) || slices.Contains(colorNames, s))
 }
+
+// colorNames는 게임이 쓸 수 있는 이름 붙은 색입니다 (sdk/playground/board.js의 NAMED_COLORS와 같아야 함).
+var colorNames = []string{"green", "yellow", "gray"}
 
 // whole은 Number.isInteger입니다.
 func whole(v any) (float64, bool) {

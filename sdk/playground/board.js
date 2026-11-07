@@ -1,24 +1,67 @@
 // 범용 보드 렌더러. 게임의 board 설정과 view() 결과만 보고 그립니다.
 // 게임 제작자는 이 파일을 몰라도 됩니다.
 
-export const PLAYER_COLORS = ['#d94f4f', '#3f7fd9'];
+// ---- 보드마당 판 팔레트 (Night Owl 계열) ----
+// 게임은 판 모양(plain, checker, wood), 플레이어 색(0, 1), 이름 붙은 색(NAMED_COLORS)만 고르고
+// 실제 색은 여기서 정합니다. 그래서 어느 게임이든 판이 한 계열로 보입니다.
+
+export const PLAYER_COLORS = ['#e0524f', '#4a7fdc'];
+
+/** 게임이 color에 쓸 수 있는 이름 (tint, frame, lines). '#rrggbb'도 되지만 판 팔레트와 맞추려면 이름을 씁니다 */
+export const NAMED_COLORS = { green: '#8cc65a', yellow: '#e8b04a', gray: '#7d8fa3' };
 
 const LOOKS = {
-  plain: { bg: '#f7f4ee', line: '#555' },
-  checker: { bg: '#f0d9b5', dark: '#b58863', line: '#7a5a3a' },
-  wood: { bg: '#dcb36c', line: '#3b2a14' },
+  plain: { bg: '#dde5ef', line: '#4b6479' },
+  checker: { bg: '#dde5ef', dark: '#8ea6be', line: '#4b6479' },
+  wood: { bg: '#d6bf93', line: '#5b4a2f' },
 };
 
-const CHESS_GLYPHS = { K: '♚', Q: '♛', R: '♜', B: '♝', N: '♞', P: '♟' };
-const CUSTOM_COLORS = ['#d94f4f', '#3f7fd9', '#3a9a5b', '#c98a1b', '#8a55c9', '#2a9aa8', '#c9558a', '#6b6b6b'];
+/** 판 위 표시의 색 */
+const MARK = {
+  ring: '#0c969b', // 고른 기물
+  last: '#e8b04a', // 마지막 수 (칸)
+  lastPoint: '#e0524f', // 마지막 수 (교차점: 나무판 위에서 잘 보이게)
+  dot: 'rgb(1 22 39 / 0.35)', // 둘 수 있는 곳
+  blocked: 'rgb(1 22 39 / 0.5)', // 쓸 수 없는 칸
+  hover: 'rgb(1 22 39 / 0.1)',
+  finger: 'rgb(1 22 39 / 0.35)', // 손가락으로 누르고 있는 칸의 고리
+  danger: '224, 82, 79',
+  ink: '#262b36', // frame, lines의 기본 색
+};
+
+/** 흰 · 검은 기물과 돌: 같은 굵기의 테두리와 면 */
+const PIECE_INK = {
+  w: { fill: '#fbfaf6', stroke: '#262b36' },
+  b: { fill: '#2b303b', stroke: '#0f1218' },
+};
+
+/**
+ * 체스 기물 (100×100 칸 안의 그림). 글꼴의 체스 문자는 기기마다 모양이 달라서 직접 그립니다.
+ * 기하 도형으로 새로 그린 것이고, 겹치지 않는 조각을 이어 붙이며 눈과 홈은 evenodd로 뚫습니다.
+ */
+const PIECE_BASE = 'M22 90V85a5 5 0 0 1 5-5h46a5 5 0 0 1 5 5v5z';
+const PIECE_FOOT = 'M32 80l3-9h30l3 9z';
+const CHESS_PATHS = {
+  K: `M46.5 5h7v6h6v7h-6v8h-7v-8h-6v-7h6z M30 64c-6-12-6-24 4-31c6-4 12-3 16 2c4-5 10-6 16-2c10 7 10 19 4 31z M30 64h40a3 3 0 0 1 0 6h-40a3 3 0 0 1 0-6z ${PIECE_FOOT} ${PIECE_BASE}`,
+  Q: `M22 23.5a4.5 4.5 0 1 1 0 9a4.5 4.5 0 1 1 0-9z M36 15.5a4.5 4.5 0 1 1 0 9a4.5 4.5 0 1 1 0-9z M50 11.5a4.5 4.5 0 1 1 0 9a4.5 4.5 0 1 1 0-9z M64 15.5a4.5 4.5 0 1 1 0 9a4.5 4.5 0 1 1 0-9z M78 23.5a4.5 4.5 0 1 1 0 9a4.5 4.5 0 1 1 0-9z M22 34l9 30h38l9-30-13 13-2-21-7 19-6-23-6 23-7-19-2 21z M30 64h40a3 3 0 0 1 0 6h-40a3 3 0 0 1 0-6z ${PIECE_FOOT} ${PIECE_BASE}`,
+  R: `M28 18h10v7h7v-7h10v7h7v-7h10v16h-44z M34 34h32l-2 6v25l3 6h-34l3-6v-25z ${PIECE_FOOT} ${PIECE_BASE}`,
+  B: `M50 10a5 5 0 1 1 0 10a5 5 0 1 1 0-10z M50 21c12 10 18 20 18 29c0 10-8 16-18 16s-18-6-18-16c0-9 6-19 18-29z M54 31l5 4-10 14-5-4z M37 66h26a2.5 2.5 0 0 1 0 5h-26a2.5 2.5 0 0 1 0-5z ${PIECE_FOOT} ${PIECE_BASE}`,
+  N: `M32 80c0-12 4-20 12-26c-6 1-12-1-16-5c-3-3-2-8 2-10l14-10c1-6 5-11 11-13l2-7 5 6c10 5 16 18 15 33c-1 12-6 22-9 32z M52 27a3 3 0 1 1 0 6a3 3 0 1 1 0-6z M61 31c6 10 7 22 3 33l-3-1c3-11 2-21-3-30z ${PIECE_BASE}`,
+  P: `M50 18a12 12 0 1 1 0 24a12 12 0 1 1 0-24z M39 44h22a2.5 2.5 0 0 1 0 5h-22a2.5 2.5 0 0 1 0-5z M41 50h18l5 21h-28z ${PIECE_FOOT} ${PIECE_BASE}`,
+};
+let chessPaths = null; // Path2D는 처음 그릴 때 만듭니다
+const chessPath = (k) => (chessPaths ??= Object.fromEntries(Object.entries(CHESS_PATHS).map(([key, d]) => [key, new Path2D(d)])))[k];
+
+/** 직접 정의한 기물: 목록 순서대로 이 색의 원에 이름 앞 두 글자 */
+const CUSTOM_COLORS = ['#e0524f', '#4a7fdc', '#3a9a6b', '#d0942f', '#8f5bc4', '#0c969b', '#cc5f8c', '#6b7f93'];
 const COL_LABELS = 'abcdefghijklmnopqrstuvwxyzABCDEF';
 
 /** frame 테두리와 선(lines)의 두께. 칸 한 변에 대한 %입니다 (sdk/check.js, web/engine.js와 같은 범위) */
 export const FRAME_WIDTH = { min: 1, max: 30 };
 export const LINE_WIDTH = { min: 1, max: 50, default: 20 };
 const validWidth = (w, range) => Number.isFinite(w) && w >= range.min && w <= range.max;
-/** 0 / 1이면 플레이어 색, 문자열이면 그 색 */
-const colorOf = (c, fallback) => (typeof c === 'number' ? PLAYER_COLORS[c] : (c ?? fallback));
+/** 0 / 1이면 플레이어 색, 이름(green 등)이면 판 팔레트의 색, '#rrggbb'면 그 색 */
+const colorOf = (c, fallback) => (typeof c === 'number' ? PLAYER_COLORS[c] : NAMED_COLORS[c] ?? c ?? fallback);
 
 /** 바둑판 크기별 기본 화점 */
 function defaultStars(rows, cols) {
@@ -46,26 +89,49 @@ export class BoardView {
     this.points = board.places === 'points';
   }
 
-  /** maxPx 안에 들어가도록 칸 크기를 정합니다. */
+  /**
+   * 판 전체(좌표 글자, 여백 포함)가 maxPx × maxPx 안에 들어가도록 칸 크기를 정합니다.
+   * 칸 크기와 여백은 화면의 실제 픽셀(devicePixelRatio를 곱한 것) 단위의 정수로 맞춥니다.
+   * 그래야 화면 배율이 125%, 150%여도 줄이 칸마다 같은 굵기로 또렷하게 그려집니다.
+   */
   resize(maxPx) {
     const { rows, cols, labels } = this.board;
+    const dpr = window.devicePixelRatio || 1;
     const span = (n) => (this.points ? n - 1 + 1.2 : n); // 교차점 모드는 양옆에 0.6칸씩 여백
-    const S = Math.max(16, Math.min(110, Math.floor(Math.min(maxPx / span(cols), maxPx / span(rows)))));
-    this.S = S;
-    this.lab = labels ? Math.max(14, Math.round(S * 0.35)) : 0;
-    this.m = this.points ? Math.round(S * 0.6) : 2;
+    const lines = (n) => (this.points ? n - 1 : n);
+    // 칸 크기(화면 픽셀)를 큰 것부터 줄여 가며 판 전체가 maxPx에 들어가는 첫 값을 찾습니다
+    const layout = (sd) => {
+      const lab = labels ? Math.round(Math.max(14, (sd / dpr) * 0.35) * dpr) : 0;
+      const m = this.points ? Math.round(sd * 0.6) : Math.round(2 * dpr);
+      return { sd, lab, m, w: lab + m * 2 + lines(cols) * sd, h: lab + m * 2 + lines(rows) * sd };
+    };
+    const limit = maxPx * dpr;
+    const smallest = Math.ceil(16 * dpr);
+    const sd = Math.floor(Math.min(limit / span(cols), limit / span(rows), 110 * dpr));
+    let L = layout(Math.max(sd, smallest));
+    while (L.sd > smallest && (L.w > limit || L.h > limit)) L = layout(L.sd - 1);
+
+    this.dpr = dpr;
+    this.S = L.sd / dpr;
+    this.lab = L.lab / dpr;
+    this.m = L.m / dpr;
     this.x0 = this.lab + this.m;
     this.y0 = this.m;
-    const w = (n) => (this.points ? (n - 1) * S : n * S);
-    this.width = this.lab + this.m * 2 + w(cols);
-    this.height = this.lab + this.m * 2 + w(rows);
+    this.width = L.w / dpr;
+    this.height = L.h / dpr;
+    // 줄 굵기: 화면 픽셀로 정수 (보통 1, 배율이 2배쯤이면 2)
+    this.lw = Math.max(1, Math.round(dpr));
 
-    const dpr = window.devicePixelRatio || 1;
-    this.canvas.width = Math.round(this.width * dpr);
-    this.canvas.height = Math.round(this.height * dpr);
+    this.canvas.width = L.w;
+    this.canvas.height = L.h;
     this.canvas.style.width = `${this.width}px`;
     this.canvas.style.height = `${this.height}px`;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  /** 칸 경계(CSS 픽셀) → 그 경계에서 시작하는 줄의 가운데. 줄이 화면 픽셀에 딱 맞게 */
+  edge(v) {
+    return (Math.round(v * this.dpr) + this.lw / 2) / this.dpr;
   }
 
   /** 논리 좌표 → 화면상의 중심점 (뒤집기 반영) */
@@ -103,7 +169,7 @@ export class BoardView {
     ctx.fillStyle = look.bg;
     ctx.fillRect(0, 0, this.width, this.height);
 
-    // 판
+    // 판 (체크무늬)
     if (!this.points && look.dark) {
       ctx.fillStyle = look.dark;
       for (let r = 0; r < rows; r++) {
@@ -113,41 +179,6 @@ export class BoardView {
             ctx.fillRect(x - S / 2, y - S / 2, S, S);
           }
         }
-      }
-    }
-    ctx.strokeStyle = look.line;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    if (this.points) {
-      for (let i = 0; i < rows; i++) {
-        ctx.moveTo(this.x0, this.y0 + i * S + 0.5);
-        ctx.lineTo(this.x0 + (cols - 1) * S, this.y0 + i * S + 0.5);
-      }
-      for (let i = 0; i < cols; i++) {
-        ctx.moveTo(this.x0 + i * S + 0.5, this.y0);
-        ctx.lineTo(this.x0 + i * S + 0.5, this.y0 + (rows - 1) * S);
-      }
-    } else if (look.dark) {
-      ctx.rect(this.x0 + 0.5, this.y0 + 0.5, cols * S - 1, rows * S - 1);
-    } else {
-      for (let i = 0; i <= rows; i++) {
-        ctx.moveTo(this.x0, this.y0 + i * S + 0.5);
-        ctx.lineTo(this.x0 + cols * S, this.y0 + i * S + 0.5);
-      }
-      for (let i = 0; i <= cols; i++) {
-        ctx.moveTo(this.x0 + i * S + 0.5, this.y0);
-        ctx.lineTo(this.x0 + i * S + 0.5, this.y0 + rows * S);
-      }
-    }
-    ctx.stroke();
-
-    if (this.points && board.starPoints) {
-      const stars = board.starPoints === true ? defaultStars(rows, cols) : board.starPoints;
-      ctx.fillStyle = look.line;
-      for (const p of stars) {
-        const [x, y] = at(p.row, p.col);
-        this.circle(x, y, Math.max(2, S * 0.1));
-        ctx.fill();
       }
     }
 
@@ -162,7 +193,7 @@ export class BoardView {
     const previewed = new Set((view.tint ?? []).filter((t) => t.hover && onHover(t.hover)).map((t) => t.row * cols + t.col));
     for (const t of view.tint ?? []) {
       if (t.hover ? !onHover(t.hover) : previewed.has(t.row * cols + t.col)) continue;
-      const color = typeof t.color === 'number' ? PLAYER_COLORS[t.color] : t.color;
+      const color = colorOf(t.color, MARK.ink);
       const [x, y] = at(t.row, t.col);
       ctx.globalAlpha = t.hover ? 0.28 : 0.55;
       ctx.fillStyle = color;
@@ -177,30 +208,32 @@ export class BoardView {
     for (const m of marksOf('danger')) {
       const [x, y] = at(m.row, m.col);
       const g = ctx.createRadialGradient(x, y, 0, x, y, S * 0.5);
-      g.addColorStop(0, 'rgba(220, 40, 40, 0.75)');
-      g.addColorStop(1, 'rgba(220, 40, 40, 0)');
+      g.addColorStop(0, `rgba(${MARK.danger}, 0.75)`);
+      g.addColorStop(1, `rgba(${MARK.danger}, 0)`);
       ctx.fillStyle = g;
       ctx.fillRect(x - S / 2, y - S / 2, S, S);
     }
     for (const m of marksOf('blocked')) {
       const [x, y] = at(m.row, m.col);
-      ctx.fillStyle = 'rgba(25, 25, 25, 0.55)';
+      ctx.fillStyle = MARK.blocked;
       ctx.fillRect(x - S / 2, y - S / 2, S, S);
     }
+    // 줄은 칸 색칠 위에 그립니다. 칠한 칸이 옆 줄을 덮어 줄마다 진하기가 달라 보이지 않게
+    this.drawGrid(look, flip);
     // 테두리: 칸 가장자리를 따라 굵게. 교차점 모드는 점 둘레의 사각형입니다.
     // 두께는 width(칸 한 변의 %, 1~30)로 정하고, 없으면 칸의 9%(적어도 3px)입니다.
     const frameW = Math.max(3, Math.round(S * 0.09));
     for (const m of marksOf('frame')) {
       const [x, y] = at(m.row, m.col);
       const w = validWidth(m.width, FRAME_WIDTH) ? Math.max(1, (S * m.width) / 100) : frameW;
-      ctx.strokeStyle = colorOf(m.color, '#333');
+      ctx.strokeStyle = colorOf(m.color, MARK.ink);
       ctx.lineWidth = w;
       const half = this.points ? S * 0.42 : S / 2 - w / 2;
       ctx.strokeRect(x - half, y - half, half * 2, half * 2);
     }
     if (hover) {
       const [x, y] = at(hover.row, hover.col);
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+      ctx.fillStyle = MARK.hover;
       if (this.points) {
         this.circle(x, y, S * 0.4);
         ctx.fill();
@@ -227,7 +260,7 @@ export class BoardView {
       if (l.hover && !(hover && hover.row === l.hover.row && hover.col === l.hover.col)) continue;
       const [x1, y1] = at(l.from.row, l.from.col);
       const [x2, y2] = at(l.to.row, l.to.col);
-      ctx.strokeStyle = colorOf(l.color, '#333');
+      ctx.strokeStyle = colorOf(l.color, MARK.ink);
       ctx.lineWidth = Math.max(1, (S * (validWidth(l.width, LINE_WIDTH) ? l.width : LINE_WIDTH.default)) / 100);
       ctx.beginPath();
       ctx.moveTo(x1, y1);
@@ -240,26 +273,26 @@ export class BoardView {
     for (const m of marksOf('last-move')) {
       const [x, y] = at(m.row, m.col);
       if (this.points) {
-        ctx.fillStyle = '#e04848';
+        ctx.fillStyle = MARK.lastPoint;
         const d = S * 0.16;
         ctx.fillRect(x - d / 2, y - d / 2, d, d);
       } else {
         const inset = frameW + 3;
-        ctx.strokeStyle = '#e0a800';
+        ctx.strokeStyle = MARK.last;
         ctx.lineWidth = 2.5;
         ctx.strokeRect(x - S / 2 + inset, y - S / 2 + inset, S - inset * 2, S - inset * 2);
       }
     }
     for (const m of marksOf('ring')) {
       const [x, y] = at(m.row, m.col);
-      ctx.strokeStyle = '#2e9e5b';
+      ctx.strokeStyle = MARK.ring;
       ctx.lineWidth = Math.max(2, S * 0.06);
       this.circle(x, y, S * 0.44);
       ctx.stroke();
     }
     for (const m of marksOf('dot')) {
       const [x, y] = at(m.row, m.col);
-      ctx.fillStyle = 'rgba(20, 20, 20, 0.35)';
+      ctx.fillStyle = MARK.dot;
       this.circle(x, y, S * 0.12);
       ctx.fill();
     }
@@ -277,10 +310,57 @@ export class BoardView {
     // 손가락으로 누르고 있는 칸: 손가락에 가려지므로 둘레에 큰 고리를 그립니다
     if (hover?.touch) {
       const [x, y] = at(hover.row, hover.col);
-      ctx.strokeStyle = 'rgba(20, 20, 20, 0.35)';
+      ctx.strokeStyle = MARK.finger;
       ctx.lineWidth = Math.max(2, S * 0.08);
       this.circle(x, y, S * 1.05);
       ctx.stroke();
+    }
+  }
+
+  /** 판의 줄 (칸 모드는 칸 경계, 교차점 모드는 놓는 줄과 화점). 줄은 화면 픽셀에 맞춰 모두 같은 굵기로 */
+  drawGrid(look, flip) {
+    const { ctx, S, board } = this;
+    const { rows, cols } = board;
+    const e = (v) => this.edge(v);
+    const lw = this.lw / this.dpr;
+    ctx.strokeStyle = look.line;
+    ctx.lineWidth = lw;
+    ctx.beginPath();
+    if (this.points) {
+      for (let i = 0; i < rows; i++) {
+        ctx.moveTo(this.x0, e(this.y0 + i * S));
+        ctx.lineTo(this.x0 + (cols - 1) * S + lw, e(this.y0 + i * S));
+      }
+      for (let i = 0; i < cols; i++) {
+        ctx.moveTo(e(this.x0 + i * S), this.y0);
+        ctx.lineTo(e(this.x0 + i * S), this.y0 + (rows - 1) * S + lw);
+      }
+    } else if (look.dark) {
+      // 체크무늬 판은 테두리만
+      ctx.rect(this.x0 + lw / 2, this.y0 + lw / 2, cols * S - lw, rows * S - lw);
+    } else {
+      // 마지막 줄은 판 안쪽에 오도록 줄 굵기만큼 앞에서
+      for (let i = 0; i <= rows; i++) {
+        const y = this.y0 + (i === rows ? rows * S - lw : i * S);
+        ctx.moveTo(this.x0, e(y));
+        ctx.lineTo(this.x0 + cols * S, e(y));
+      }
+      for (let i = 0; i <= cols; i++) {
+        const x = this.x0 + (i === cols ? cols * S - lw : i * S);
+        ctx.moveTo(e(x), this.y0);
+        ctx.lineTo(e(x), this.y0 + rows * S);
+      }
+    }
+    ctx.stroke();
+
+    if (this.points && board.starPoints) {
+      const stars = board.starPoints === true ? defaultStars(rows, cols) : board.starPoints;
+      ctx.fillStyle = look.line;
+      for (const p of stars) {
+        const [x, y] = this.center(p.row, p.col, flip);
+        this.circle(x, y, Math.max(2, S * 0.1));
+        ctx.fill();
+      }
     }
   }
 
@@ -326,32 +406,36 @@ export class BoardView {
         ctx.stroke();
       }
     } else if (set === 'go-stones' && (piece === 'black' || piece === 'white')) {
-      this.circle(x, y, S * 0.46);
-      ctx.fillStyle = piece === 'black' ? '#1b1b1b' : '#f7f7f7';
+      // 돌: 체스 기물과 같은 흰 · 검은 면과 테두리
+      const ink = PIECE_INK[piece === 'black' ? 'b' : 'w'];
+      this.circle(x, y, S * 0.44);
+      ctx.fillStyle = ink.fill;
       ctx.fill();
-      ctx.strokeStyle = '#444';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = ink.stroke;
+      ctx.lineWidth = Math.max(1, S * 0.035);
       ctx.stroke();
     } else if (set === 'chess' && /^[wb][KQRBNP]$/.test(piece)) {
-      ctx.font = `${Math.round(S * 0.8)}px "Segoe UI Symbol", "Noto Sans Symbols 2", serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const glyph = CHESS_GLYPHS[piece[1]];
-      if (piece[0] === 'w') {
-        ctx.lineWidth = Math.max(1.5, S * 0.035);
-        ctx.strokeStyle = '#222';
-        ctx.strokeText(glyph, x, y + S * 0.04);
-        ctx.fillStyle = '#fff';
-      } else {
-        ctx.fillStyle = '#1b1b1b';
-      }
-      ctx.fillText(glyph, x, y + S * 0.04);
+      // 그림(100×100)을 칸의 86% 크기로 칸 가운데에
+      const k = (S * 0.86) / 100;
+      const ink = PIECE_INK[piece[0]];
+      const path = chessPath(piece[1]);
+      ctx.translate(x - 50 * k, y - 50 * k);
+      ctx.scale(k, k);
+      ctx.fillStyle = ink.fill;
+      ctx.fill(path, 'evenodd');
+      ctx.strokeStyle = ink.stroke;
+      ctx.lineWidth = 3.5;
+      ctx.lineJoin = 'round';
+      ctx.stroke(path);
     } else {
       // 직접 정의한 기물: 목록 순서대로 색을 정하고 이름 앞 두 글자를 씁니다.
       const idx = Array.isArray(set) ? set.indexOf(piece) : -1;
       this.circle(x, y, S * 0.38);
       ctx.fillStyle = idx >= 0 ? CUSTOM_COLORS[idx % CUSTOM_COLORS.length] : '#888';
       ctx.fill();
+      ctx.strokeStyle = 'rgb(15 18 24 / 0.55)';
+      ctx.lineWidth = Math.max(1, S * 0.035);
+      ctx.stroke();
       ctx.fillStyle = '#fff';
       ctx.font = `bold ${Math.round(S * 0.28)}px system-ui, sans-serif`;
       ctx.textAlign = 'center';
@@ -365,6 +449,18 @@ export class BoardView {
     this.ctx.beginPath();
     this.ctx.arc(x, y, r, 0, Math.PI * 2);
   }
+}
+
+/**
+ * 요소의 안쪽(패딩을 뺀) 폭과 높이. 판은 이 크기로 resize해서 CSS가 늘이거나 줄이지 않게 합니다
+ * (캔버스를 CSS로 소수배 줄이면 1픽셀 줄이 칸마다 다른 굵기로 보입니다).
+ */
+export function innerSize(el) {
+  const cs = getComputedStyle(el);
+  return {
+    w: el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+    h: el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom),
+  };
 }
 
 const sameCell = (a, b) => !!a && !!b && a.row === b.row && a.col === b.col;

@@ -631,6 +631,7 @@ func TestCheckThumbnail(t *testing.T) {
 		`{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[],"lines":[{"from":{"row":0,"col":0},"to":{"row":1,"col":0},"hover":null}]}}`: "thumbnail.view.lines: each needs from and to on the board, and width from 1 to 50",
 		`{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[],"lines":[7]}}`:                                                              "thumbnail.view.lines: each needs from and to on the board, and width from 1 to 50",
 		`{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[],"tint":[{"row":0,"col":0,"color":0,"hover":{"row":3,"col":0}}]}}`:           "thumbnail.view.tint: each needs a place on the board and a color",
+		`{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[],"tint":[{"row":0,"col":0,"color":"pink"}]}}`:                                "thumbnail.view.tint: each needs a place on the board and a color",
 	}
 	for in, want := range widths {
 		if _, p := CheckThumbnail([]byte(in)); len(p) == 0 || p[0] != want {

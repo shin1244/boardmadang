@@ -280,7 +280,10 @@ export function checkGame(game, { n = 200, langs = ['ko'], random = Math.random 
 const isCell = (c, b) => c && typeof c === 'object'
   && Number.isInteger(c.row) && Number.isInteger(c.col)
   && c.row >= 0 && c.col >= 0 && c.row < b.rows && c.col < b.cols;
-const isColor = (c) => c === 0 || c === 1 || (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c));
+/** 이름 붙은 색 (playground/board.js의 NAMED_COLORS와 같아야 함) */
+const COLOR_NAMES = ['green', 'yellow', 'gray'];
+/** 색: 0 / 1(플레이어 색), 이름 붙은 색, '#rrggbb' */
+const isColor = (c) => c === 0 || c === 1 || COLOR_NAMES.includes(c) || (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c));
 /** 두께: 없거나, 칸 한 변의 % 범위 안의 숫자 */
 const isWidth = (w, range) => w === undefined || (typeof w === 'number' && w >= range.min && w <= range.max);
 /** 선(lines) 하나: 두 칸과 색, 두께, 마우스를 올렸을 때만 보일 칸(hover) */
