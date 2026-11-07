@@ -5,7 +5,7 @@
 // 썸네일도 여기서 검사합니다. 썸네일은 이미지가 아니라 혼자 두던 판을 그대로 찍은 데이터(thumbnail.json)이고,
 // 사이트가 보드 렌더러로 다시 그립니다. 판 설정과 기물 세트까지 들어 있어서 게임 코드 없이도 그릴 수 있습니다.
 
-import { FRAME_WIDTH, LINE_WIDTH } from './playground/board.js';
+import { FRAME_WIDTH, LINE_WIDTH, TILE_ARROWS, pieceName } from './playground/board.js';
 import { hashOf, makeRng } from './playground/platform.js';
 
 /** 업로드할 때 검사하는 상한 */
@@ -60,8 +60,16 @@ function boardProblems(b, where) {
   return p;
 }
 
+/** 글자 패 { name, text, player?, arrows? }. 글자는 1~2자, 방향은 TILE_ARROWS에서 겹치지 않게 */
+const tileOk = (x) => !!x && typeof x === 'object' && !Array.isArray(x)
+  && typeof x.name === 'string' && x.name.length >= 1 && x.name.length <= 32
+  && typeof x.text === 'string' && [...x.text].length >= 1 && [...x.text].length <= 2
+  && (x.player === undefined || x.player === 0 || x.player === 1)
+  && (x.arrows === undefined || (Array.isArray(x.arrows) && x.arrows.every((a) => TILE_ARROWS.includes(a))
+    && new Set(x.arrows).size === x.arrows.length));
+
 const piecesOk = (pc) => PIECE_SETS.includes(pc)
-  || (Array.isArray(pc) && pc.length <= GAME_LIMITS.pieceKinds && pc.every((x) => typeof x === 'string'));
+  || (Array.isArray(pc) && pc.length <= GAME_LIMITS.pieceKinds && pc.every((x) => typeof x === 'string' || tileOk(x)));
 
 /** 필수 멤버와 제한값 검사. 업로드 검사의 첫 단계와 같습니다. */
 export function checkMembers(g) {
@@ -69,7 +77,7 @@ export function checkMembers(g) {
   const fn = (k) => typeof g[k] === 'function';
   if (typeof g.id !== 'string' || !/^[a-z0-9-]+$/.test(g.id)) p.push('id: must use only lowercase letters, numbers, and -');
   p.push(...boardProblems(g.board, 'board'));
-  if (!piecesOk(g.pieces)) p.push(`pieces: must be 'chess', 'go-stones', 'xo', or a list of up to ${GAME_LIMITS.pieceKinds} names`);
+  if (!piecesOk(g.pieces)) p.push(`pieces: must be 'chess', 'go-stones', 'xo', or a list of up to ${GAME_LIMITS.pieceKinds} names or tiles ({ name, text, player, arrows })`);
   if (!Number.isInteger(g.maxActions) || g.maxActions < 1 || g.maxActions > GAME_LIMITS.maxActions) {
     p.push(`maxActions: must be a whole number from 1 to ${GAME_LIMITS.maxActions.toLocaleString('en')}`);
   }
@@ -383,7 +391,7 @@ export function checkThumbnail(game, t) {
   }
   if (!sameJson(t.pieces, game.pieces)) p.push('pieces changed after the thumbnail was taken. Take it again.');
   if (Array.isArray(game.pieces)) {
-    const known = new Set(game.pieces);
+    const known = new Set(game.pieces.map(pieceName));
     const used = [...t.view.pieces.map((x) => x.piece), ...(t.view.marks ?? []).filter((m) => m.piece).map((m) => m.piece)];
     if (used.some((x) => !known.has(x))) p.push("The thumbnail has a piece that isn't in the game's pieces.");
   }

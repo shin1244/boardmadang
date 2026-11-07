@@ -638,6 +638,26 @@ func TestCheckThumbnail(t *testing.T) {
 			t.Errorf("%s: %v, want %q", in, p, want)
 		}
 	}
+	// 글자 패: { name, text(1~2자), player?, arrows? } (sdk/test/check.test.js와 같은 경우)
+	tiles := map[string]bool{
+		`[{"name":"wK","text":"王","player":0,"arrows":["n","ne","e","se","s","sw","w","nw"]},"plain"]`: true,
+		`[{"name":"x","text":"侯爵"}]`:                   true,
+		`[{"name":"x","text":"三글자"}]`:                  false,
+		`[{"name":"x","text":""}]`:                     false,
+		`[{"name":"","text":"王"}]`:                     false,
+		`[{"name":"x","text":"王","player":2}]`:         false,
+		`[{"name":"x","text":"王","player":null}]`:      false,
+		`[{"name":"x","text":"王","arrows":["up"]}]`:    false,
+		`[{"name":"x","text":"王","arrows":["n","n"]}]`: false,
+		`[{"name":"x","text":"王","arrows":"n"}]`:       false,
+		`[7]`: false,
+	}
+	for list, ok := range tiles {
+		in := `{"board":{"places":"cells","rows":3,"cols":3},"pieces":` + list + `,"player":0,"view":{"pieces":[]}}`
+		if _, p := CheckThumbnail([]byte(in)); (len(p) == 0) != ok || (!ok && p[0] != "thumbnail.pieces: must look like the game's pieces") {
+			t.Errorf("글자 패 %s: %v", list, p)
+		}
+	}
 	big := `{"board":{"places":"cells","rows":32,"cols":32},"pieces":"xo","player":1,"view":{"pieces":[` +
 		strings.TrimSuffix(strings.Repeat(`{"row":1,"col":1,"piece":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"},`, 700), ",") + `]}}`
 	if _, p := CheckThumbnail([]byte(big)); len(p) != 1 || !strings.Contains(p[0], "larger than 32KB") {
