@@ -9,7 +9,7 @@
 // 실제 플랫폼과 다른 점: 게임 코드를 Web Worker가 아니라 이 페이지에서 바로 실행합니다.
 
 import { checkGame, checkMembers, checkThumbnail, findNonJson, makeThumbnail, sameAction } from '../check.js';
-import { BoardView } from './board.js';
+import { BoardView, attachInput } from './board.js';
 import { LANGS, LANG_NAMES, fullLangs, localize } from './listing.js';
 import { hashOf, makeRng } from './platform.js';
 
@@ -362,25 +362,18 @@ function buildPanels() {
     const canvas = panel.querySelector('canvas');
     const board = new BoardView(canvas, game.board, game.pieces);
     const flip = game.board.flipForPlayer === p;
-    canvas.addEventListener('click', (e) => {
-      const cell = board.cellAt(e, flip);
-      if (cell) dispatch(p, { kind: 'click', ...cell });
-    });
-    canvas.addEventListener('mousemove', (e) => {
-      const cell = board.cellAt(e, flip);
-      const legal = cell && legalOf(p);
+    attachInput(board, canvas, {
+      flip: () => flip,
       // legal()이 있으면 둘 수 있는 곳에만 호버를 보여줍니다.
-      const ok = cell && (legal ? legal.some((a) => sameAction(a, { kind: 'click', ...cell })) : !ended);
-      const next = ok ? cell : null;
-      canvas.style.cursor = ok ? 'pointer' : 'default';
-      if (next?.row !== hover[p]?.row || next?.col !== hover[p]?.col) {
-        hover[p] = next;
+      canHover: (cell) => {
+        const legal = legalOf(p);
+        return legal ? legal.some((a) => sameAction(a, { kind: 'click', ...cell })) : !ended;
+      },
+      click: (cell) => dispatch(p, { kind: 'click', ...cell }),
+      hover: (cell) => {
+        hover[p] = cell;
         render();
-      }
-    });
-    canvas.addEventListener('mouseleave', () => {
-      hover[p] = null;
-      render();
+      },
     });
     boards.push(board);
   }

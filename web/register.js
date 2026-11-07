@@ -16,7 +16,7 @@
 // 자동 검사와 직접 깨기는 이 브라우저에서 돌기 때문에 서버는 결과를 믿지 않습니다 (모양만 봅니다).
 // 검사는 올리는 사람이 문제를 미리 알게 하려는 것이고, 클리어는 적어도 한 번은 끝까지 둘 수 있는 게임이라는 표시입니다.
 
-import { BoardView, PLAYER_COLORS } from '/sdk/playground/board.js';
+import { BoardView, PLAYER_COLORS, attachInput } from '/sdk/playground/board.js';
 import { LANGS, LANG_NAMES, LIMITS, NO_TIMER, TIMER_MINUTES, fullLangs, gameLang, isRtl, localize, validateListing } from '/sdk/playground/listing.js';
 import { makeThumbnail, sameAction, validateThumbnail } from '/sdk/check.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
@@ -980,25 +980,31 @@ async function refreshLists() {
 
 function setupPlay() {
   const canvas = $('#play-board');
-  canvas.addEventListener('click', (e) => {
-    const cell = board && canPlay() ? board.cellAt(e, flipped()) : null;
-    if (cell) act({ kind: 'click', ...cell });
-  });
-  canvas.addEventListener('mousemove', (e) => {
-    const cell = board && canPlay() ? board.cellAt(e, flipped()) : null;
-    const legal = play?.look?.legal;
+  // 판(BoardView)은 게임을 올릴 때마다 새로 만드므로 그때그때의 board를 씁니다
+  const current = {
+    cellAt: (e, flip) => board?.cellAt(e, flip) ?? null,
+    get view() {
+      return board?.view;
+    },
+    get hover() {
+      return board?.hover;
+    },
+  };
+  attachInput(current, canvas, {
+    flip: flipped,
     // legal()이 있으면 둘 수 있는 곳에만 호버를 보여줍니다
-    const ok = cell && (!legal || legal.some((a) => sameAction(a, { kind: 'click', ...cell })));
-    canvas.style.cursor = ok ? 'pointer' : 'default';
-    const next = ok ? cell : null;
-    if (next?.row !== hover?.row || next?.col !== hover?.col) {
-      hover = next;
-      drawBoard();
-    }
-  });
-  canvas.addEventListener('mouseleave', () => {
-    hover = null;
-    if (play) drawBoard();
+    canHover: (cell) => {
+      if (!board || !canPlay()) return false;
+      const legal = play?.look?.legal;
+      return !legal || legal.some((a) => sameAction(a, { kind: 'click', ...cell }));
+    },
+    click: (cell) => {
+      if (board && canPlay()) act({ kind: 'click', ...cell });
+    },
+    hover: (cell) => {
+      hover = cell;
+      if (play) drawBoard();
+    },
   });
   for (const b of document.querySelectorAll('.seat')) b.addEventListener('click', () => chooseSeat(Number(b.dataset.seat)));
   $('#play-undo').addEventListener('click', undo);

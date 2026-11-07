@@ -305,7 +305,7 @@ python -m unittest discover -s trainer
 |---|---|
 | 기물 | 기물 이름마다 한 채널 (`pieces`. `'xo'`는 2개, `'go-stones'`는 2개, `'chess'`는 12개) |
 | 표시 | `marks`의 종류마다 한 채널 (`dot`, `ring`, `last-move`, `danger`, `ghost`, `blocked`, `frame`) |
-| 칠한 칸 | `tint`의 색이 0, 1, 그 밖의 색 |
+| 칠한 칸 | `tint`의 색이 0, 1, 그 밖의 색 (마우스를 올렸을 때만 보이는 `hover` 미리보기는 빼고) |
 | 숫자 | `text`의 숫자 (만칼라의 씨앗 수 같은 것). 숫자가 아니면 1 |
 | 두는 쪽 | 후공 차례면 전부 1. 기물 이름은 절대값이라 누가 두는지를 따로 알려 줍니다 |
 | `observe()` | 판에 안 보이는 정보 (게임이 줄 때만) |

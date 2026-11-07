@@ -112,6 +112,18 @@ test('tic-tac-toe adapter', async () => {
   assert.deepEqual(env.outcome(won), { winner: 0 });
 });
 
+test('a tint shown only under the mouse (hover) is not part of what the AI sees', () => {
+  const env = new Env({
+    ...long(3),
+    board: { places: 'cells', rows: 1, cols: 2 },
+    view: () => ({ pieces: [], tint: [{ row: 0, col: 0, color: 0 }, { row: 0, col: 1, color: 1, hover: { row: 0, col: 0 } }] }),
+  });
+  const x = env.encode(env.start(0));
+  const plane = (name) => [...x.subarray(env.channelNames().indexOf(name) * 2, (env.channelNames().indexOf(name) + 1) * 2)];
+  assert.deepEqual(plane('tint:0'), [1, 0]);
+  assert.deepEqual(plane('tint:1'), [0, 0]);
+});
+
 test('solve tic-tac-toe: a draw with perfect play', async () => {
   const env = await loadEnv(TICTACTOE);
   const r = solve(env, env.start(1));

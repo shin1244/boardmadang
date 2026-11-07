@@ -73,8 +73,12 @@ export interface Line {
 export interface View {
   pieces: Array<Cell & { piece: string }>;
   marks?: Mark[];
-  /** 칸 칠하기. 0 / 1이면 플랫폼이 정한 플레이어 색, 문자열이면 '#rrggbb' */
-  tint?: Array<Cell & { color: Player | string }>;
+  /**
+   * 칸 칠하기. 0 / 1이면 플랫폼이 정한 플레이어 색, 문자열이면 '#rrggbb'.
+   * hover가 있으면 마우스를 그 칸에 올렸을 때만, 그 칸의 원래 칠하기 대신 연하게 그립니다 (두면 칠해질 칸의 미리보기).
+   * legal()이 있으면 둘 수 있는 칸에만 마우스가 올라간 것으로 칩니다. hover가 있는 칠하기는 AI 관측과 썸네일에 들어가지 않습니다.
+   */
+  tint?: Array<Cell & { color: Player | string; hover?: Cell }>;
   /** 칸 위의 숫자나 짧은 글자 (만칼라의 씨앗 수 등) */
   text?: Array<Cell & { text: string }>;
   /** 두 칸을 잇는 선 */

@@ -7,7 +7,7 @@
 // 모델은 운영자가 학습해 올린 것입니다 (/api/games의 ai, server/internal/ai). 관측과 행동의 모양이 지금 게임 코드와 같아야 씁니다.
 // 난이도는 한 수마다의 탐색 횟수만 다릅니다 (LEVELS). 보통이 모델에 적힌 sims이고, 시험할 때는 주소에 ?sims=을 붙여 바꿀 수 있습니다.
 
-import { BoardView, PLAYER_COLORS } from '/sdk/playground/board.js';
+import { BoardView, PLAYER_COLORS, attachInput } from '/sdk/playground/board.js';
 import { gameLang, localize } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { loadGame, modelFits } from './engine.js';
@@ -326,26 +326,19 @@ function fit() {
 function setupBoard() {
   const canvas = $('#board');
   board = new BoardView(canvas, runner.info.board, runner.info.pieces);
-  canvas.addEventListener('click', (e) => {
-    const cell = board.cellAt(e, flip());
-    if (cell) humanAct({ kind: 'click', ...cell });
-  });
-  canvas.addEventListener('mousemove', (e) => {
-    if (phase !== 'playing') return;
-    const cell = board.cellAt(e, flip());
-    const legal = cell && legalNow();
+  attachInput(board, canvas, {
+    flip,
     // legal()이 있으면 둘 수 있는 곳에만 호버를 보여줍니다
-    const ok = cell && turn === seat && (legal ? legal.some((a) => sameClick(a, cell)) : true);
-    canvas.style.cursor = ok ? 'pointer' : 'default';
-    const next = ok ? cell : null;
-    if (next?.row !== hover?.row || next?.col !== hover?.col) {
-      hover = next;
+    canHover: (cell) => {
+      if (phase !== 'playing' || turn !== seat) return false;
+      const legal = legalNow();
+      return legal ? legal.some((a) => sameClick(a, cell)) : true;
+    },
+    click: (cell) => humanAct({ kind: 'click', ...cell }),
+    hover: (cell) => {
+      hover = cell;
       renderBoard();
-    }
-  });
-  canvas.addEventListener('mouseleave', () => {
-    hover = null;
-    renderBoard();
+    },
   });
   addEventListener('resize', () => {
     fit();

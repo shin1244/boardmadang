@@ -106,7 +106,10 @@ func CheckThumbnail(data []byte) (json.RawMessage, []string) {
 	}) {
 		p = append(p, "thumbnail.view.marks: each needs a place on the board and a known mark type")
 	}
-	if !every("tint", func(x map[string]any) bool { return isCell(x) && isColor(x["color"]) }) {
+	if !every("tint", func(x map[string]any) bool {
+		hover, _ := x["hover"].(map[string]any)
+		return isCell(x) && isColor(x["color"]) && (!has(x, "hover") || isCell(hover))
+	}) {
 		p = append(p, "thumbnail.view.tint: each needs a place on the board and a color")
 	}
 	if !every("text", func(x map[string]any) bool {
@@ -162,6 +165,9 @@ func CheckThumbnail(data []byte) (json.RawMessage, []string) {
 		if _, present := view[k]; present {
 			list := []any{}
 			for _, x := range items(k) {
+				if k == "tint" && has(x, "hover") {
+					continue // 마우스를 올렸을 때만 보이는 칠하기는 썸네일에 넣지 않습니다
+				}
 				c := cell(x)
 				c[field] = x[field]
 				list = append(list, c)

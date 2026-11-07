@@ -149,6 +149,14 @@ and `width` (1–50% of a square's side, default 20%). Add `hover: { row, col }`
 for example to preview which stones a move would connect to. If your game has `legal()`, the mouse only counts as over squares you can play.
 Lines aren't part of what the AI sees, and lines with `hover` aren't saved in thumbnails.
 
+**Paint previews:** a `tint` can also have `hover: { row, col }`. It's then drawn only while the mouse is over that square, lighter,
+in place of that square's usual tint — for example to show which squares a move would turn your color.
+Tints with `hover` aren't part of what the AI sees and aren't saved in thumbnails.
+
+**On phones:** a finger can't hover, so pressing the board and sliding shows the preview (lines and tints with `hover`) for the square under the finger,
+and lifting the finger plays that square. A quick tap plays right away, as before. Pressing a piece that has no preview clicks it at once,
+so players can pick a piece and drag it to where it should go (like on Lichess).
+
 **Board options:** `places` is `'cells'` (inside squares, like chess) or `'points'` (on line crossings, like go).
 `rows` and `cols` are how many places there are (up to 32). You can also set `look` (`'plain'`, `'checker'`, `'wood'`),
 `starPoints`, `labels`, and `flipForPlayer` (show the board upside down for one player, like black in chess).
