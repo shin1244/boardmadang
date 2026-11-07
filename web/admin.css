@@ -88,16 +88,14 @@
 /* ---- 통계 (admin-stats.js) ----
    그래프 계열 색은 두 가지를 이 순서로만 씁니다. 밝은 화면(#fff)과 어두운 화면(#0b2942) 위에서 색약 구분과 대비를 검사한 값입니다. */
 :root {
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
+  --chart-grid: #16354f;
+}
+:root[data-theme="light"] {
   --chart-1: #2a78d6;
   --chart-2: #eb6834;
   --chart-grid: #ececec;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --chart-1: #3987e5;
-    --chart-2: #d95926;
-    --chart-grid: #16354f;
-  }
 }
 
 .stat-range { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
