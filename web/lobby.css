@@ -112,7 +112,7 @@ body {
   display: flex;
   align-items: center;
   gap: 24px;
-  padding: 0 24px;
+  padding: 0 max(32px, calc((100% - 1240px) / 2 + 32px));
   height: 60px;
   border-bottom: 1px solid var(--topbar-line);
   background: var(--topbar);
@@ -317,9 +317,9 @@ svg .fill { fill: currentColor; stroke: none; }
 }
 .hero-text { flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 26px; }
 .hero h1 { word-break: keep-all; margin: 0; font-size: clamp(28px, 4vw, 42px); line-height: 1.2; letter-spacing: -0.02em; color: var(--strong); }
-.hero-steps { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; margin: 0; padding: 0; list-style: none; }
-.hero-steps li { width: 76px; display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 13px; text-align: center; }
-.hero-steps .step-arrow { width: auto; padding-top: 14px; color: var(--faint); }
+.hero-steps { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 20px; margin: 0; padding: 0; list-style: none; }
+.hero-steps li { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; font-size: 13px; white-space: nowrap; }
+.hero-steps .step-arrow { align-self: flex-start; padding-top: 14px; color: var(--faint); }
 .hero-steps .step-arrow svg { width: 20px; height: 20px; }
 .step-icon {
   width: 48px;
@@ -338,8 +338,8 @@ svg .fill { fill: currentColor; stroke: none; }
 .hero-ctas { display: flex; flex-wrap: wrap; gap: 10px; }
 .hero-ctas .hero-cta { flex: none; display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 10px; font-size: 15px; }
 .hero-cta svg { width: 16px; height: 16px; }
-.hero-cta.ghost { border-color: var(--border); color: var(--text); }
-.hero-cta.ghost:hover { border-color: var(--muted); }
+.hero-ctas .hero-cta.ghost { border-color: var(--border); color: var(--text); }
+.hero-ctas .hero-cta.ghost:hover { border-color: var(--muted); }
 
 /* 규칙 코드 → 판 (꾸밈) */
 .hero-art { flex: 1 1 460px; min-width: 0; display: flex; align-items: center; gap: 14px; }
@@ -915,7 +915,8 @@ fieldset .bars-chip, .bars-chip { width: 44px; padding: 0; justify-content: cent
 /* ---- 게임 목록 ---- */
 
 .list { flex: 1; width: 100%; max-width: 1240px; margin: 0 auto; padding: 0 32px 56px; }
-.list-head { display: flex; align-items: baseline; gap: 10px; padding: 28px 0 16px; }
+.list-head { display: flex; align-items: center; gap: 10px; padding: 24px 0 16px; }
+.list-head .sort svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .list-head h2 { margin: 0; color: var(--strong); font-size: 20px; }
 .count { color: var(--muted); font-family: var(--mono); font-size: 13px; font-weight: 400; }
 
@@ -1097,7 +1098,25 @@ fieldset .bars-chip, .bars-chip { width: 44px; padding: 0; justify-content: cent
   .login-menu { top: 100%; left: 16px; right: 16px; width: auto; max-width: none; }
   .logo { white-space: nowrap; }
   .theme-btn { margin-left: auto; }
-  .me { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .me {
+    flex: none;
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid var(--topbar-line);
+    border-radius: 50%;
+    font-size: 0;
+  }
+  .me::before {
+    content: "";
+    width: 16px;
+    height: 16px;
+    background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'%3E%3Ccircle cx='8' cy='5.5' r='2.8'/%3E%3Cpath d='M2.5 14c.7-2.6 2.8-4 5.5-4s4.8 1.4 5.5 4'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'%3E%3Ccircle cx='8' cy='5.5' r='2.8'/%3E%3Cpath d='M2.5 14c.7-2.6 2.8-4 5.5-4s4.8 1.4 5.5 4'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
 
   /* 메뉴는 화면 아래의 탭 막대로 (엄지로 누르기 쉽게). 아이콘은 주소마다 */
   .menu {
@@ -1146,9 +1165,9 @@ fieldset .bars-chip, .bars-chip { width: 44px; padding: 0; justify-content: cent
   .hero { padding: 28px 16px 24px; gap: 22px; }
   .hero-text { gap: 22px; }
   .hero h1 { font-size: 28px; }
-  .hero-steps { flex-wrap: nowrap; gap: 4px; }
-  .hero-steps li { flex: 1; width: auto; font-size: 12px; }
-  .hero-steps .step-arrow { flex: none; padding-top: 12px; }
+  .hero-steps { flex-wrap: nowrap; gap: 14px; }
+  .hero-steps li { font-size: 12px; }
+  .hero-steps .step-arrow { padding-top: 12px; }
   .step-icon { width: 44px; height: 44px; }
   .hero-ctas .hero-cta { flex: 1; justify-content: center; padding: 12px 8px; }
   /* 코드 → 판 그림은 넓은 화면에만 */

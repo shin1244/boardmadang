@@ -128,6 +128,10 @@
 
         <button id="reset" class="link" type="button" data-i18n="reset">필터 초기화</button>
 
+      </div>
+
+      <div class="list-head">
+        <h2><span data-i18n="list.title">게임</span> <span id="count" class="count"></span></h2>
         <label class="sort"><span class="sr-only" data-i18n="sort">정렬</span>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3v10M2 11l2 2 2-2M9 4h5M9 8h4M9 12h3"/></svg>
           <select id="sort">
@@ -136,10 +140,6 @@
             <option value="released" data-i18n="sort.released">출시일순</option>
           </select>
         </label>
-      </div>
-
-      <div class="list-head">
-        <h2><span data-i18n="list.title">게임</span> <span id="count" class="count"></span></h2>
       </div>
       <div id="grid" class="grid"></div>
       <p id="empty" class="empty" hidden data-i18n="empty">조건에 맞는 게임이 없습니다.</p>

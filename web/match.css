@@ -203,7 +203,7 @@
    AI 대국, 다시 보기, 관전 화면은 위의 가운데 정렬 모양을 그대로 씁니다. */
 
 .match.match-room {
-  max-width: 1160px;
+  max-width: 1240px; /* 상단 막대, 홈과 같은 세로줄 */
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   gap: 24px;
