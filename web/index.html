@@ -17,6 +17,7 @@
   <link rel="icon" href="icon-32.png" sizes="32x32">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-180.png">
+  <script src="theme.js"></script>
   <link rel="stylesheet" href="lobby.css">
 </head>
 <body>
@@ -44,71 +45,115 @@
       </div>
     </header>
 
-    <section class="banner" data-i18n-attr="aria-label:banner.label" aria-label="이벤트">
-      <div id="slides" class="slides"></div>
-      <div id="dots" class="dots" role="tablist" data-i18n-attr="aria-label:banner.dots" aria-label="배너 선택"></div>
+    <!-- 첫 화면: 무엇을 하는 곳인지 글 대신 그림으로 (규칙 → 보드 · 대전 · AI) -->
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-text">
+        <h1 id="hero-title" data-i18n="banner.make.title">내가 만든 보드게임을 올려보세요</h1>
+        <ol class="hero-steps" data-i18n-attr="aria-label:banner.make.body" aria-label="규칙만 쓰면 보드 그리기, 온라인 대전, AI 상대는 보드마당이 맡습니다.">
+          <li><span class="step-icon code"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5"/></svg></span><span data-i18n="hero.rules">규칙 쓰기</span></li>
+          <li class="step-arrow" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></li>
+          <li><span class="step-icon board"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M6 2v12M10 2v12M2 6h12M2 10h12"/></svg></span><span data-i18n="hero.board">보드</span></li>
+          <li><span class="step-icon match"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="5" cy="6" r="2.2"/><circle cx="11" cy="6" r="2.2"/><path d="M1.5 13c.5-1.9 1.8-3 3.5-3s3 1.1 3.5 3M7.5 13c.5-1.9 1.8-3 3.5-3s3 1.1 3.5 3"/></svg></span><span data-i18n="hero.match">온라인 대전</span></li>
+          <li><span class="step-icon ai"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5"/><path d="M6.5 1.5v2.5M9.5 1.5v2.5M6.5 12v2.5M9.5 12v2.5M1.5 6.5h2.5M1.5 9.5h2.5M12 6.5h2.5M12 9.5h2.5"/></svg></span><span data-i18n="hero.ai">AI 상대</span></li>
+        </ol>
+        <div class="hero-ctas">
+          <a class="btn hero-cta" href="/web/register.html"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span data-i18n="banner.make.cta">게임 만들기</span></a>
+          <a id="sdk-docs" class="btn ghost hero-cta" href="https://github.com/shin1244/boardmadang/blob/main/sdk/README.ko.md"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5"/></svg><span data-i18n="banner.make.docs">SDK 문서</span></a>
+        </div>
+      </div>
+      <!-- 규칙 코드가 판이 되는 그림 (꾸밈) -->
+      <div class="hero-art" aria-hidden="true">
+        <div class="code-card">
+          <div class="code-tab"><i></i>index.js</div>
+          <pre class="code"><span class="ln">1</span><span class="k">export default</span> {
+<span class="ln">2</span>  <span class="p">id</span>: <span class="s">'tictactoe'</span>,
+<span class="ln">3</span>  <span class="p">board</span>: { <span class="p">rows</span>: <span class="n">3</span>, <span class="p">cols</span>: <span class="n">3</span> },
+<span class="ln">4</span>  <span class="f">setup</span>, <span class="f">play</span>, <span class="f">view</span>,
+<span class="ln">5</span>};</pre>
+        </div>
+        <span class="hero-arrow"><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></span>
+        <div class="mini-match">
+          <div class="mini-head"><b data-i18n="hero.demo.game">틱택토</b><span><i class="p0"></i><span data-i18n="hero.demo.turn">내 차례</span></span></div>
+          <div class="mini-board">
+            <span class="x"></span><span></span><span class="o"></span>
+            <span></span><span class="x"></span><span></span>
+            <span class="o"></span><span></span><span></span>
+          </div>
+          <div class="mini-foot"><span><i class="p0"></i><span data-i18n="hero.demo.me">나</span></span><span class="vs">vs</span><span>AI<i class="p1"></i></span></div>
+        </div>
+      </div>
     </section>
 
-    <div class="body">
-      <aside class="filters" data-i18n-attr="aria-label:filters.label" aria-label="필터">
-        <input id="q" class="search" type="search" data-i18n-attr="placeholder:search aria-label:search" placeholder="게임 이름 검색" aria-label="게임 이름 검색">
+    <main id="games" class="list">
+      <!-- 필터: 한 줄의 칩. 글 대신 아이콘과 짧은 표시, 이름은 title과 읽기 프로그램용 글자로 -->
+      <div class="filters" role="group" data-i18n-attr="aria-label:filters.label" aria-label="필터">
+        <label class="search-box">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+          <input id="q" class="search" type="search" data-i18n-attr="placeholder:search aria-label:search" placeholder="게임 이름 검색" aria-label="게임 이름 검색">
+        </label>
 
-        <!-- 별을 단 게임만. 별은 계정만 달 수 있어서 게스트에게는 꺼 두고 안내를 보입니다 -->
-        <fieldset>
-          <legend data-i18n="filter.star">즐겨찾기</legend>
-          <label><input id="only-starred" type="checkbox" name="starred" value="1" disabled> <span data-i18n="filter.starred">즐겨찾기한 게임만</span></label>
-          <small id="starred-login" class="filter-note" data-i18n="filter.starred.login" hidden>로그인하면 쓸 수 있습니다</small>
+        <fieldset class="chips">
+          <legend class="sr-only" data-i18n="filter.places">놓는 자리</legend>
+          <label class="chip"><input type="checkbox" name="places" value="cells"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M8 2v12M2 8h12"/><rect class="fill" x="9.5" y="3.5" width="3" height="3"/></svg><span data-i18n="places.cells">칸 안</span></label>
+          <label class="chip"><input type="checkbox" name="places" value="points"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5h12M2 11h12M5 2v12M11 2v12"/><circle class="fill" cx="11" cy="5" r="2"/></svg><span data-i18n="places.points">교차점</span></label>
         </fieldset>
 
-        <fieldset>
-          <legend data-i18n="filter.places">놓는 자리</legend>
-          <label><input type="checkbox" name="places" value="cells"> <span data-i18n="places.cells">칸 안</span></label>
-          <label><input type="checkbox" name="places" value="points"> <span data-i18n="places.points">교차점</span></label>
+        <fieldset class="chips">
+          <legend class="sr-only" data-i18n="filter.size">판 크기</legend>
+          <label class="chip mono" data-i18n-attr="title:size.small.hint" title="5줄 이하"><input type="checkbox" name="size" value="small"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M8 2v12M2 8h12"/></svg><span aria-hidden="true">≤5</span><span class="sr-only" data-i18n="size.small.hint">5줄 이하</span></label>
+          <label class="chip mono" data-i18n-attr="title:size.medium.hint" title="6~10줄"><input type="checkbox" name="size" value="medium"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M6 2v12M10 2v12M2 6h12M2 10h12"/></svg><span aria-hidden="true">6–10</span><span class="sr-only" data-i18n="size.medium.hint">6~10줄</span></label>
+          <label class="chip mono" data-i18n-attr="title:size.large.hint" title="11줄 이상"><input type="checkbox" name="size" value="large"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 2v12M8 2v12M11 2v12M2 5h12M2 8h12M2 11h12"/></svg><span aria-hidden="true">11+</span><span class="sr-only" data-i18n="size.large.hint">11줄 이상</span></label>
         </fieldset>
 
-        <fieldset>
-          <legend data-i18n="filter.size">판 크기</legend>
-          <label><input type="checkbox" name="size" value="small"> <span data-i18n="size.small">작음</span> <small data-i18n="size.small.hint">5줄 이하</small></label>
-          <label><input type="checkbox" name="size" value="medium"> <span data-i18n="size.medium">중간</span> <small data-i18n="size.medium.hint">6~10줄</small></label>
-          <label><input type="checkbox" name="size" value="large"> <span data-i18n="size.large">큼</span> <small data-i18n="size.large.hint">11줄 이상</small></label>
+        <fieldset class="chips">
+          <legend class="sr-only" data-i18n="filter.difficulty">난이도</legend>
+          <label class="chip bars-chip" data-i18n-attr="title:difficulty.easy" title="하"><input type="checkbox" name="difficulty" value="easy"><span class="bars d1" aria-hidden="true"><i></i><i></i><i></i></span><span class="sr-only" data-i18n="difficulty.easy">하</span></label>
+          <label class="chip bars-chip" data-i18n-attr="title:difficulty.normal" title="중"><input type="checkbox" name="difficulty" value="normal"><span class="bars d2" aria-hidden="true"><i></i><i></i><i></i></span><span class="sr-only" data-i18n="difficulty.normal">중</span></label>
+          <label class="chip bars-chip" data-i18n-attr="title:difficulty.hard" title="상"><input type="checkbox" name="difficulty" value="hard"><span class="bars d3" aria-hidden="true"><i></i><i></i><i></i></span><span class="sr-only" data-i18n="difficulty.hard">상</span></label>
         </fieldset>
 
-        <fieldset>
-          <legend data-i18n="filter.difficulty">난이도</legend>
-          <label><input type="checkbox" name="difficulty" value="easy"> <span data-i18n="difficulty.easy">하</span></label>
-          <label><input type="checkbox" name="difficulty" value="normal"> <span data-i18n="difficulty.normal">중</span></label>
-          <label><input type="checkbox" name="difficulty" value="hard"> <span data-i18n="difficulty.hard">상</span></label>
+        <!-- 별을 단 게임만. 별은 계정만 달 수 있어서 게스트에게는 꺼 두고, 이유는 칩의 title과 읽기 프로그램용 글자로 -->
+        <fieldset class="chips">
+          <legend class="sr-only" data-i18n="filter.star">즐겨찾기</legend>
+          <label class="chip" data-i18n-attr="title:filter.starred" title="즐겨찾기한 게임만"><input id="only-starred" type="checkbox" name="starred" value="1" disabled><svg class="star-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2l1.7 3.6 3.9.5-2.9 2.7.8 3.9L8 11l-3.5 1.9.8-3.9-2.9-2.7 3.9-.5z"/></svg><span data-i18n="filter.star">즐겨찾기</span><small id="starred-login" class="sr-only" data-i18n="filter.starred.login" hidden>로그인하면 쓸 수 있습니다</small></label>
         </fieldset>
 
-        <!-- 언어 이름은 화면 언어와 상관없이 그 언어로 씁니다. 언어 체크박스는 lobby.js가 LANGS로 채웁니다. -->
-        <fieldset id="support-langs">
-          <legend data-i18n="filter.lang">지원 언어</legend>
-        </fieldset>
+        <!-- 언어 이름은 화면 언어와 상관없이 그 언어로 씁니다. 언어 체크박스는 lobby.js가 등록된 게임의 언어로 채웁니다. -->
+        <details class="chip-menu">
+          <summary class="chip mono" data-i18n-attr="title:filter.lang" title="지원 언어"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2.2 2 2.2 10 0 12M8 2c-2.2 2-2.2 10 0 12"/></svg><span data-i18n="filter.lang">지원 언어</span></summary>
+          <fieldset id="support-langs" class="chip-menu-list">
+            <legend class="sr-only" data-i18n="filter.lang">지원 언어</legend>
+          </fieldset>
+        </details>
 
         <button id="reset" class="link" type="button" data-i18n="reset">필터 초기화</button>
-      </aside>
 
-      <main class="list">
-        <div class="list-head">
-          <h1><span data-i18n="list.title">게임</span> <span id="count" class="count"></span></h1>
-          <label class="sort"><span data-i18n="sort">정렬</span>
-            <select id="sort">
-              <option value="plays" data-i18n="sort.plays">인기순</option>
-              <option value="stars" data-i18n="sort.stars">별 많은순</option>
-              <option value="released" data-i18n="sort.released">출시일순</option>
-            </select>
-          </label>
-        </div>
-        <div id="grid" class="grid"></div>
-        <p id="empty" class="empty" hidden data-i18n="empty">조건에 맞는 게임이 없습니다.</p>
-        <footer class="site-footer">
-          <a href="/web/legal.html" data-i18n="footer.legal">약관과 개인정보</a>
-          <a href="https://github.com/shin1244/boardmadang" data-i18n="footer.source">소스 코드</a>
-          <a href="https://discord.gg/ayJzfmtXJ" data-i18n="footer.discord">디스코드</a>
-          <a href="mailto:shincl1244@gmail.com" data-i18n="footer.contact">문의</a>
-        </footer>
-      </main>
-    </div>
+        <label class="sort"><span class="sr-only" data-i18n="sort">정렬</span>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3v10M2 11l2 2 2-2M9 4h5M9 8h4M9 12h3"/></svg>
+          <select id="sort">
+            <option value="plays" data-i18n="sort.plays">인기순</option>
+            <option value="stars" data-i18n="sort.stars">별 많은순</option>
+            <option value="released" data-i18n="sort.released">출시일순</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="list-head">
+        <h2><span data-i18n="list.title">게임</span> <span id="count" class="count"></span></h2>
+      </div>
+      <div id="grid" class="grid"></div>
+      <p id="empty" class="empty" hidden data-i18n="empty">조건에 맞는 게임이 없습니다.</p>
+    </main>
+
+    <footer class="site-footer">
+      <span class="footer-logo"><span class="logo-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span data-i18n="site.name">보드마당</span></span>
+      <nav data-i18n-attr="aria-label:footer.label" aria-label="사이트 정보">
+        <a href="/web/legal.html" data-i18n="footer.legal">약관과 개인정보</a>
+        <a href="https://github.com/shin1244/boardmadang" data-i18n="footer.source">소스 코드</a>
+        <a href="https://discord.gg/ayJzfmtXJ" data-i18n="footer.discord">디스코드</a>
+        <a href="mailto:shincl1244@gmail.com" data-i18n="footer.contact">문의</a>
+      </nav>
+    </footer>
   </div>
 
   <!-- 게임 창: 카드를 누르면 뜹니다. 왼쪽은 그림과 버튼들, 오른쪽은 소개 (방 만들기를 누르면 방 만들기, 아래 의견 칸을 누르면 의견) -->
@@ -140,23 +185,27 @@
     <section class="gd-main">
       <header class="gd-head">
         <button id="gd-back" class="back" type="button" hidden data-i18n-attr="aria-label:detail.back title:detail.back" aria-label="소개로 돌아가기">‹</button>
-        <h3 id="gd-title"></h3>
+        <!-- 소개 · 룰북 · 의견은 탭으로, 방 만들기와 신고는 ‹와 제목으로 -->
+        <div id="gd-tabs" class="gd-tabs" role="group" data-i18n-attr="aria-label:detail.tabs" aria-label="보기">
+          <button type="button" data-tab="about" data-i18n="detail.about">소개</button>
+          <button id="gd-tab-rules" type="button" data-tab="rules" data-i18n="card.rulebook">룰북</button>
+          <button type="button" data-tab="comments" data-i18n="comments.title">의견</button>
+        </div>
+        <h3 id="gd-title" hidden></h3>
         <form method="dialog"><button class="close" data-i18n-attr="aria-label:dialog.close title:dialog.close" aria-label="닫기">×</button></form>
       </header>
       <div class="gd-body">
         <div id="gd-panel-about" class="gd-card" role="tabpanel" data-panel="about">
           <div class="gd-field">
-            <h4 data-i18n="detail.description">소개 글</h4>
-            <p id="gd-desc" class="gd-desc"></p>
+            <h4 class="sr-only" data-i18n="detail.description">소개 글</h4>
+            <p id="gd-desc" class="gd-desc gd-lead"></p>
             <a id="gd-register" class="btn ghost gd-register" data-i18n="card.register" hidden>등록하기</a>
           </div>
+          <!-- 판, 타이머, 난이도, 지원 언어를 큰 아이콘과 숫자로. 둔 판 수와 특수 행동은 아래의 작은 태그로 -->
           <div class="gd-field">
-            <h4 data-i18n="detail.info">정보</h4>
-            <ul id="gd-tags" class="tags"></ul>
-          </div>
-          <div class="gd-field row">
-            <h4 data-i18n="detail.timer">타이머</h4>
-            <span id="gd-timer"></span>
+            <h4 class="sr-only" data-i18n="detail.info">정보</h4>
+            <div id="gd-tiles" class="gd-tiles"></div>
+            <ul id="gd-tags" class="tags gd-extra" hidden></ul>
           </div>
           <!-- 학습한 AI가 있으면 학습 마지막 구간에 AI끼리 둔 판의 선공·후공 승률 (model.json의 balance) -->
           <div id="gd-balance-row" class="gd-field" hidden>
@@ -173,19 +222,22 @@
               <a id="gd-clear" class="gd-link" data-i18n="detail.clear.open">제작자가 직접 이긴 판 보기</a>
             </div>
           </div>
-          <!-- 지원 언어와 룰북은 접어 두고, 제목을 누르면 펼칩니다 -->
+          <!-- 언어마다 어디까지 번역했는지는 접어 두고, 제목을 누르면 펼칩니다 -->
           <details id="gd-langs-row" class="gd-field gd-fold">
             <summary><h4 data-i18n="detail.langs">지원 언어</h4></summary>
             <p id="gd-langs" class="gd-desc"></p>
           </details>
-          <details id="gd-rulebook" class="gd-field gd-fold" hidden>
-            <summary><h4 data-i18n="card.rulebook">룰북</h4></summary>
+        </div>
+
+        <!-- 룰북: 등록한 게임만 (탭도 그때만 보입니다) -->
+        <div id="gd-panel-rules" class="gd-card" role="tabpanel" data-panel="rules" hidden>
+          <div id="gd-rulebook" class="gd-field">
             <!-- 룰북을 여러 언어로 썼으면 읽을 언어를 고릅니다. 화면 언어는 그대로입니다 -->
             <label class="rulebook-lang" hidden><span data-i18n="rulebook.lang">룰북 언어</span>
               <select id="rulebook-lang"></select></label>
             <p class="rulebook-notes"></p>
             <div class="rulebook-text"></div>
-          </details>
+          </div>
         </div>
 
         <!-- 제작자가 커스텀 타이머를 허용했으면 시간을 고르고, 아니면 정해진 시간으로 만듭니다 -->

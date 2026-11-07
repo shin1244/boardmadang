@@ -198,3 +198,200 @@
   .emote-bubble.pop { animation: none; }
   .emote-btn:hover:not(:disabled) svg { transform: none; }
 }
+
+/* ---- 대국 화면 (match.html): 왼쪽 판, 오른쪽 상대 · 대화와 수순 · 버튼 · 나 ----
+   AI 대국, 다시 보기, 관전 화면은 위의 가운데 정렬 모양을 그대로 씁니다. */
+
+.match.match-room {
+  max-width: 1160px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: 24px;
+  padding: 28px 32px 48px;
+  text-align: left;
+}
+.match-room svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+.mr-board { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.mr-title { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.mr-title h1 { margin: 0; color: var(--strong); font-size: 22px; }
+.mr-title .timer-info { margin: 0; font: 12px var(--mono); }
+.mr-back {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+}
+.mr-back svg { width: 16px; height: 16px; }
+.mr-back:hover { border-color: var(--muted); }
+.match-room .match-status { margin: 0; }
+.match-room .match-status:empty { display: none; }
+.match-room .hosting { justify-content: flex-start; }
+
+.match-room .board-wrap { padding: 12px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+.match-room .board-wrap canvas { margin: 0 auto; }
+/* 게임이 보내는 안내 (view().message): 판 아래의 한 줄 */
+.match-room .message {
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--strong);
+}
+.match-room .message:empty { display: none; }
+
+.mr-side { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+/* 두 카드는 오른쪽 칸의 위와 아래로 나뉘어 들어갑니다 (order) */
+.match-room .players { display: contents; }
+.match-room .players[hidden] { display: none; }
+.match-room .who.opp { order: 1; }
+.match-room .log-box { order: 2; }
+.match-room .offer { order: 3; }
+.match-room .match-actions { order: 4; }
+.match-room .match-note { order: 5; }
+.match-room .who.mine { order: 6; }
+
+.match-room .who {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.match-room .who.active { border-color: var(--accent); box-shadow: inset 0 0 0 0.5px var(--accent); }
+.match-room .avatar { width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 50%; background: var(--bg); }
+.match-room .avatar .dot { width: 14px; height: 14px; }
+.who-name { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.who-name b { overflow: hidden; color: var(--strong); text-overflow: ellipsis; white-space: nowrap; }
+.who-name small { color: var(--muted); font-size: 12px; }
+.turn-chip { padding: 2px 8px; border-radius: 999px; background: var(--accent); color: var(--accent-text); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.turn-chip[hidden] { display: none; }
+.match-room .who .clock { grid-column: 4; padding: 0; border: 0; color: var(--muted); font: 500 24px var(--mono); }
+.match-room .who .clock.running { color: var(--strong); }
+.match-room .who .clock.low { color: var(--bad); }
+.match-room .who:not(:has(.turn-chip:not([hidden]))) .clock { grid-column: 3 / 5; justify-self: end; }
+/* 남은 시간 막대 */
+.clock-bar { grid-column: 1 / -1; height: 4px; overflow: hidden; border-radius: 2px; background: var(--bg); }
+.clock-bar[hidden] { display: none; }
+.clock-bar i { display: block; height: 100%; border-radius: 2px; background: var(--border); transition: width 0.9s linear; }
+.clock-bar i.running { background: var(--accent); }
+.clock-bar i.low { background: var(--bad); }
+/* 이모티콘 말풍선: 카드 오른쪽 위 */
+.match-room .emote-bubble { left: auto; right: 12px; bottom: calc(100% - 10px); transform: none; }
+.match-room .emote-bubble::after { left: auto; right: 22px; transform: translateY(-5px) rotate(45deg); }
+.match-room .emote-bubble.pop { animation: emote-life-side 3s ease-out forwards; }
+@keyframes emote-life-side {
+  0% { opacity: 0; transform: translateY(6px) scale(0.5); }
+  8% { opacity: 1; transform: translateY(0) scale(1.12); }
+  14% { transform: scale(1); }
+  85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* 대화(이모티콘)와 수순: 남는 높이를 모두 채웁니다 */
+.log-box {
+  flex: 1 1 240px;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.log-box[hidden] { display: none; }
+.log-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 8px 10px; border-bottom: 1px solid var(--line); }
+.log-tabs { display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--bg); }
+.log-tabs button {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.log-tabs button[aria-pressed="true"] { border-color: var(--border); background: var(--surface); color: var(--strong); font-weight: 600; }
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.icon-btn:hover { background: var(--bg); color: var(--text); }
+.icon-btn svg { width: 16px; height: 16px; }
+.icon-btn .off, .icon-btn.muted .on { display: none; }
+.icon-btn.muted .off { display: block; }
+
+.log-list, .moves-list { flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 14px; list-style: none; scrollbar-width: thin; }
+.log-list[hidden], .moves-list[hidden] { display: none; }
+.log-list { display: flex; flex-direction: column; gap: 8px; }
+.log-line { display: flex; align-items: center; gap: 8px; color: var(--faint); font: 11px var(--mono); }
+.log-line::before, .log-line::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.log-emote { width: 44px; height: 44px; }
+.log-emote svg { display: block; width: 100%; height: 100%; stroke: none; }
+.log-emote.mine { align-self: flex-end; }
+.log-emote.theirs { align-self: flex-start; }
+.moves-list { display: flex; flex-direction: column; gap: 2px; font: 13px var(--mono); }
+.moves-list li { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 8px; border-radius: 8px; }
+.moves-list li:nth-child(odd) { background: var(--bg); }
+.moves-list li.current { outline: 1px dashed var(--border); outline-offset: -1px; color: var(--muted); }
+.moves-list .mv-n { min-width: 2ch; color: var(--faint); text-align: right; }
+.moves-list .dot { width: 8px; height: 8px; }
+.moves-list .log-line { background: none; }
+
+/* 이모티콘 고르기: 대화 칸 아래 */
+.match-room .emote-bar { display: block; margin: 0; padding: 10px; border-top: 1px solid var(--line); }
+.match-room .emote-bar[hidden] { display: none; }
+.match-room .emote-buttons { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.match-room .emote-btn { width: auto; height: 46px; border-color: var(--line); background: var(--bg); }
+.match-room .emote-btn svg { width: 32px; height: 32px; margin: 0 auto; stroke: none; }
+
+.match-room .match-actions { justify-content: stretch; margin: 0; }
+.match-room .match-actions .btn { flex: 1 1 40%; padding: 10px 12px; border-radius: 10px; font-size: 14px; }
+.match-room .match-actions .btn.ghost { border-color: var(--border); color: var(--text); }
+.match-room .match-actions .btn.ghost:hover { border-color: var(--muted); }
+.match-room .match-actions .btn.danger { color: var(--bad); }
+.match-room .offer { max-width: none; margin: 0; }
+.match-room .match-note { margin: 0; }
+
+/* 휴대폰: 상대 · 판 · 나 · 대화 · 버튼을 한 줄로 */
+@media (max-width: 860px) {
+  .match.match-room { display: flex; flex-direction: column; gap: 10px; padding: 12px 12px 24px; }
+  .mr-board, .mr-side { display: contents; }
+  .mr-title { order: 0; }
+  .match-room .match-status { order: 1; }
+  .match-room .hosting { order: 2; }
+  .match-room .who.opp { order: 3; }
+  .match-room .board-wrap { order: 4; padding: 6px; border-radius: 12px; }
+  .match-room .message { order: 5; padding: 8px 12px; font-size: 14px; }
+  .match-room .who.mine { order: 6; }
+  .match-room .log-box { order: 7; flex: none; min-height: 0; }
+  .match-room .offer { order: 8; }
+  .match-room .match-actions { order: 9; }
+  .match-room .match-note { order: 10; }
+  .match-room .who { padding: 10px 12px; }
+  .match-room .avatar { width: 30px; height: 30px; }
+  .match-room .who .clock { font-size: 20px; }
+  .log-list, .moves-list { max-height: 160px; }
+  .match-room .emote-buttons { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; }
+  .match-room .emote-btn { height: 44px; padding: 2px; }
+  .match-room .emote-btn svg { width: 28px; height: 28px; }
+}

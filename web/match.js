@@ -76,6 +76,8 @@ let drawBy = null; // 무승부를 제안해 둔 자리. 없으면 null
 let rematch = { mine: false, theirs: false, off: false }; // 끝난 대국의 재대결: 내가 원함, 상대가 원함, 할 수 없음
 let emoteCooling = false; // 이모티콘을 보낸 뒤 EMOTE_EVERY 동안 버튼을 잠급니다
 let muted = emotesMuted(); // 상대 이모티콘을 끔
+let history = []; // 수순: [{ player, labels: 칸 좌표들, done: 차례가 넘어갔는지 }]
+let logTab = 'talk'; // 오른쪽 칸: 대화(이모티콘) 또는 수순
 let queue = Promise.resolve(); // 서버 메시지를 받은 순서대로 하나씩 처리합니다
 
 const flip = () => runner.info.board.flipForPlayer === seat;
@@ -274,6 +276,7 @@ async function onMessage(m) {
     case 'emote':
       if (m.player === seat) popEmote($('#my-emote'), m.emote);
       else if (!muted) popEmote($('#opp-emote'), m.emote);
+      if (m.player === seat || !muted) addTalkEmote(m.player === seat, m.emote);
       return; // 말풍선만 바뀌므로 화면 전체를 다시 그리지 않습니다
     case 'error':
       if (phase === 'connecting') {
@@ -314,6 +317,9 @@ async function start(m) {
   oppAwayUntil = null;
   drawBy = null;
   rematch = { mine: false, theirs: false, off: false };
+  history = [];
+  $('#talk-log').replaceChildren();
+  addTalkLine(t('match.log.start'));
   phase = 'playing';
   const s = await runner.start(m.seed, lookOpts());
   stateHash = s.hash;
@@ -356,6 +362,7 @@ async function applyLog(list) {
   applied += todo.length;
   const { steps, look } = await runner.play(todo.map((m) => ({ player: m.player, action: m.action })), lookOpts());
   steps.forEach((s, i) => {
+    if (s.changed) recordMove(todo[i].player, todo[i].action, s.turn);
     if (s.changed && s.turn !== todo[i].player) moves++; // turn()이 없는 게임은 상태를 바꾼 행동마다 한 수
     stateHash = s.hash;
     turn = s.turn;
@@ -363,6 +370,84 @@ async function applyLog(list) {
   });
   snap = look;
   checkResult();
+}
+
+// ---- 수순과 대화 ----
+
+const COLS = 'abcdefghijklmnopqrstuvwxyzABCDEF'; // 판 아래의 열 이름 (sdk/playground/board.js)
+
+/** 행동 하나의 이름: 칸이면 판의 좌표(a1), 특수 행동이면 그 이름 */
+function actionLabel(a) {
+  if (a.kind !== 'click') return a.kind;
+  return `${COLS[a.col] ?? a.col}${runner.info.board.rows - a.row}`;
+}
+
+/** 한 차례에 누른 칸들을 한 수로 묶습니다 (기물 고르기 → 옮기기: a1 → a4). 차례가 넘어가면 그 수는 끝 */
+function recordMove(player, action, nextTurn) {
+  const last = history[history.length - 1];
+  if (last && !last.done && last.player === player) last.labels.push(actionLabel(action));
+  else history.push({ player, labels: [actionLabel(action)], done: false });
+  if (nextTurn !== player) history[history.length - 1].done = true;
+}
+
+/** 대화 칸에 한 줄. 오래된 것은 100개까지만 둡니다 */
+function pushTalk(li) {
+  const list = $('#talk-log');
+  list.append(li);
+  while (list.children.length > 100) list.firstElementChild.remove();
+  list.scrollTop = list.scrollHeight;
+}
+
+function addTalkLine(text) {
+  const li = document.createElement('li');
+  li.className = 'log-line';
+  li.textContent = text;
+  pushTalk(li);
+}
+
+/** 주고받은 이모티콘: 상대는 왼쪽, 나는 오른쪽 */
+function addTalkEmote(mine, id) {
+  const svg = emoteSvg(id, `${mine ? t('match.you') : displayName(opponent)}: ${emoteLabel(id)}`);
+  if (!svg) return;
+  const li = document.createElement('li');
+  li.className = `log-emote ${mine ? 'mine' : 'theirs'}`;
+  li.append(svg);
+  pushTalk(li);
+}
+
+/** 오른쪽 가운데 칸: 대화 또는 수순 */
+function renderLog() {
+  const show = seat !== null && ['playing', 'ended'].includes(phase);
+  $('#log-box').hidden = !show;
+  if (!show) return;
+  for (const b of document.querySelectorAll('.log-tabs [data-log]')) b.setAttribute('aria-pressed', String(b.dataset.log === logTab));
+  $('#talk-log').hidden = logTab !== 'talk';
+  const list = $('#moves-log');
+  list.hidden = logTab !== 'moves';
+  if (logTab !== 'moves') return;
+  if (!history.length) {
+    const li = document.createElement('li');
+    li.className = 'log-line';
+    li.textContent = t('match.log.noMoves');
+    list.replaceChildren(li);
+    return;
+  }
+  list.replaceChildren(...history.map((h, i) => {
+    const li = document.createElement('li');
+    li.className = h.player === seat ? 'mine' : 'theirs';
+    if (!h.done) li.classList.add('current');
+    const n = document.createElement('span');
+    n.className = 'mv-n';
+    n.textContent = String(i + 1);
+    const dot = document.createElement('i');
+    dot.className = 'dot';
+    dot.style.background = PLAYER_COLORS[h.player];
+    const text = document.createElement('span');
+    text.textContent = h.labels.join(' → ');
+    li.append(n, dot, text);
+    return li;
+  }));
+  list.scrollTop = list.scrollHeight;
 }
 
 /** 게임 로직이 끝났다고 하거나 maxActions에 이르면 결과를 한 번 보고합니다. */
@@ -470,15 +555,22 @@ function formatClock(ms) {
 }
 
 function renderClocks() {
-  for (const [id, p] of [['#my-clock', seat], ['#opp-clock', 1 - seat]]) {
+  for (const [id, barId, p] of [['#my-clock', '#my-bar', seat], ['#opp-clock', '#opp-bar', 1 - seat]]) {
     const el = $(id);
+    const bar = $(barId);
     el.hidden = minutes === null || seat === null;
+    bar.parentElement.hidden = el.hidden;
     if (el.hidden) continue;
     const ms = clockLeft(p);
+    const running = clock?.running === p && phase === 'playing';
     el.textContent = formatClock(ms);
-    el.classList.toggle('running', clock?.running === p && phase === 'playing');
+    el.classList.toggle('running', running);
     el.classList.toggle('low', ms < 30_000);
     el.setAttribute('aria-label', t('match.clock', { time: formatClock(ms) }));
+    // 남은 시간 막대: 처음 시간에 대한 비율
+    bar.style.width = `${Math.min(100, (ms / (minutes * 60_000)) * 100)}%`;
+    bar.classList.toggle('running', running);
+    bar.classList.toggle('low', ms < 30_000);
   }
 }
 
@@ -502,6 +594,11 @@ function renderPlayers() {
   $('#opp-name').textContent = displayName(opponent);
   $('#my-seat').textContent = t(seat === 0 ? 'match.first' : 'match.second');
   $('#opp-seat').textContent = t(seat === 0 ? 'match.second' : 'match.first');
+  // 둘 차례인 쪽의 카드를 강조하고, 내 차례면 배지를 붙입니다
+  const playing = phase === 'playing';
+  $('.who.mine').classList.toggle('active', playing && turn === seat);
+  $('.who.opp').classList.toggle('active', playing && turn === 1 - seat);
+  $('#my-turn').hidden = !(playing && turn === seat);
   renderClocks();
 }
 
@@ -585,7 +682,11 @@ function renderEmotes() {
     b.setAttribute('aria-label', label);
     b.disabled = emoteCooling;
   }
-  $('#emote-mute').textContent = t(muted ? 'emote.unmute' : 'emote.mute');
+  const mute = $('#emote-mute');
+  const muteLabel = t(muted ? 'emote.unmute' : 'emote.mute');
+  mute.setAttribute('aria-label', muteLabel);
+  mute.title = muteLabel;
+  mute.classList.toggle('muted', muted);
 }
 
 function sendEmote(id) {
@@ -611,6 +712,7 @@ function render() {
   if (board) renderBoard();
   renderActions();
   renderEmotes();
+  renderLog();
   $('#note').hidden = !note;
   $('#note').textContent = note;
 }
@@ -644,7 +746,9 @@ async function invite() {
 
 function fit() {
   if (!board) return;
-  board.resize(Math.min(480, $('.match').clientWidth));
+  // 왼쪽 칸의 폭에 맞춥니다. 휴대폰에서는 칸이 없어지므로(display: contents) 화면 폭에
+  const width = $('.mr-board').clientWidth || $('.match').clientWidth;
+  board.resize(Math.min(600, width - 26));
 }
 
 function setupBoard() {
@@ -700,6 +804,12 @@ async function main() {
     renderEmotes();
   });
 
+  for (const b of document.querySelectorAll('.log-tabs [data-log]')) {
+    b.addEventListener('click', () => {
+      logTab = b.dataset.log;
+      renderLog();
+    });
+  }
   $('#resign').addEventListener('click', () => {
     if (confirm(t('match.resign.confirm'))) send({ type: 'resign' });
   });

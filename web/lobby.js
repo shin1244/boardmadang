@@ -1,4 +1,4 @@
-// 로비: 게임 목록, 이벤트 배너, 필터.
+// 로비: 첫 화면(무엇을 하는 곳인지), 게임 목록, 필터.
 // 이름, 소개, 룰북, 난이도, 지원 언어, 타이머는 등록 정보(listing)에서, 보드 모양은 게임 모듈에서 읽어 옵니다.
 // 썸네일은 게임의 setup()이 만든 시작 화면을 플랫폼 렌더러로 그린 것입니다.
 
@@ -10,83 +10,8 @@ import { displayName, isMember, loadMe, openLogin, renderMe, suspendedText } fro
 
 const $ = (sel) => document.querySelector(sel);
 
-const BANNERS = [
-  { key: 'banner.make', cta: '/web/register.html', docs: true, tone: 'tone-a' },
-  { key: 'banner.soon', tone: 'tone-b' },
-];
-
 /** 게임 만드는 법 (SDK 안내). 한국어 화면은 한국어판, 나머지는 영어판 */
 const sdkDocs = () => `https://github.com/shin1244/boardmadang/blob/main/sdk/README${lang === 'ko' ? '.ko' : ''}.md`;
-
-// ---- 배너 ----
-
-let showBanner = () => {};
-let bannerIndex = 0;
-
-function setupBanner() {
-  let timer = null;
-
-  showBanner = (i) => {
-    bannerIndex = i;
-    [...$('#slides').children].forEach((s, j) => { s.hidden = j !== i; });
-    [...$('#dots').children].forEach((d, j) => d.setAttribute('aria-selected', String(j === i)));
-  };
-
-  function restart() {
-    clearInterval(timer);
-    if (BANNERS.length < 2 || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    timer = setInterval(() => showBanner((bannerIndex + 1) % BANNERS.length), 6000);
-  }
-
-  $('#dots').addEventListener('click', (e) => {
-    const i = [...$('#dots').children].indexOf(e.target);
-    if (i < 0) return;
-    showBanner(i);
-    restart();
-  });
-  const banner = $('.banner');
-  banner.addEventListener('mouseenter', () => clearInterval(timer));
-  banner.addEventListener('mouseleave', restart);
-  restart();
-}
-
-/** 지금 언어로 슬라이드를 다시 만듭니다. 보던 슬라이드는 그대로 둡니다. */
-function renderBanner() {
-  const slides = BANNERS.map((b) => {
-    const s = document.createElement('div');
-    s.className = `slide ${b.tone}`;
-    s.innerHTML = `<div class="slide-text"><h2></h2><p></p></div>`;
-    s.querySelector('h2').textContent = t(`${b.key}.title`);
-    s.querySelector('p').textContent = t(`${b.key}.body`);
-    const link = (cls, href, key) => {
-      const a = document.createElement('a');
-      a.className = cls;
-      a.href = href;
-      a.textContent = t(key);
-      return a;
-    };
-    const ctas = [];
-    if (b.docs) ctas.push(link('cta ghost', sdkDocs(), `${b.key}.docs`));
-    if (b.cta) ctas.push(link('cta', b.cta, `${b.key}.cta`));
-    if (ctas.length) {
-      const box = document.createElement('div');
-      box.className = 'ctas';
-      box.append(...ctas);
-      s.append(box);
-    }
-    return s;
-  });
-  const dots = BANNERS.map((_, i) => {
-    const d = document.createElement('button');
-    d.type = 'button';
-    d.setAttribute('role', 'tab');
-    d.setAttribute('aria-label', t('banner.n', { n: i + 1 }));
-    return d;
-  });
-  $('#slides').replaceChildren(...slides);
-  $('#dots').replaceChildren(...dots);
-  showBanner(bannerIndex);
-}
 
 // ---- 게임 목록 ----
 
@@ -144,44 +69,6 @@ function addBadge(el, text, title, cls = '') {
   el.append(b);
 }
 
-/** 판, 난이도, 타이머, 언어 태그 [글, class, title]. 카드와 게임 창에서 같이 씁니다. */
-function tagsOf(entry) {
-  const { game, listing } = entry;
-  const tags = [
-    [`${game.board.rows}×${game.board.cols}`],
-    [t(game.board.places === 'points' ? 'tag.points' : 'tag.cells')],
-    [t('tag.players')],
-  ];
-  if (listing) {
-    tags.push([t('tag.difficulty', { d: t(`difficulty.${listing.difficulty}`) }), `diff-${listing.difficulty}`]);
-    const timer = timerOfEntry(entry);
-    tags.push([`⏱ ${timerText(timer.minutes)}`, timer.custom ? 'timer-tag custom' : 'timer-tag', timer.custom ? t('tag.timer.custom') : '']);
-    // 완전 번역 언어는 한데 묶고(KO · EN), 일부 번역 언어는 따로 점선 태그로
-    const full = fullLangs(listing);
-    tags.push([full.map((l) => l.toUpperCase()).join(' · '), 'lang-tag full', full.map((l) => t('tag.lang.full', { lang: LANG_NAMES[l] })).join(', ')]);
-    for (const l of LANGS.filter((x) => listing.languages[x] === 'rulebook')) {
-      tags.push([t('tag.rulebookOnly', { code: l.toUpperCase() }), 'lang-tag', t('tag.lang.rulebook', { lang: LANG_NAMES[l] })]);
-    }
-  }
-  if (game.specialActions?.length) tags.push([t('tag.special', { n: game.specialActions.length })]);
-  // 둔 판 수 (서버의 /api/games에만 있음). 아직 아무도 안 둔 게임은 붙이지 않습니다
-  if (entry.plays) {
-    const n = entry.plays.toLocaleString(lang);
-    tags.unshift([entry.plays === 1 ? t('tag.plays.one') : t('tag.plays', { n }), 'plays-tag', t('tag.plays.title')]);
-  }
-  return tags;
-}
-
-function fillTags(ul, entry) {
-  ul.replaceChildren(...tagsOf(entry).map(([text, cls, title]) => {
-    const li = document.createElement('li');
-    li.textContent = text;
-    if (cls) li.className = cls;
-    if (title) li.title = title;
-    return li;
-  }));
-}
-
 /**
  * 게임 그림. 제작자가 혼자 두던 판을 그대로 찍은 썸네일(thumbnail.json)이 있으면 그 판을, 없으면 시작 판을 그립니다.
  * 썸네일은 이미지가 아니라 판 설정, 기물 세트, 화면 데이터라서 같은 보드 렌더러로 그립니다. 그리지 못하면 false
@@ -227,7 +114,62 @@ function addBadges(el, entry) {
   if (!entry.listing) addBadge(el, t('card.unregistered'), null, 'warn');
 }
 
-/** 카드: 그림, 이름, 짧은 소개, 태그만. 누르면 게임 창이 뜹니다. */
+/** 카드와 필터에 쓰는 작은 그림 (16×16, 선은 CSS가 글자 색으로 칠합니다. .fill은 면) */
+const ICONS = {
+  cells: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M8 2v12M2 8h12"/><rect class="fill" x="9.5" y="3.5" width="3" height="3"/></svg>',
+  points: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5h12M2 11h12M5 2v12M11 2v12"/><circle class="fill" cx="11" cy="5" r="2"/></svg>',
+  clock: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1.5"/></svg>',
+  plays: '<svg viewBox="0 0 16 16" aria-hidden="true"><path class="fill" d="M5 3.5v9l7-4.5z"/></svg>',
+  chip: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5"/><path d="M6.5 1.5v2.5M9.5 1.5v2.5M6.5 12v2.5M9.5 12v2.5M1.5 6.5h2.5M1.5 9.5h2.5M12 6.5h2.5M12 9.5h2.5"/></svg>',
+  plus: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>',
+  globe: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2.2 2 2.2 10 0 12M8 2c-2.2 2-2.2 10 0 12"/></svg>',
+};
+
+/** 난이도 막대 (하 1칸, 중 2칸, 상 3칸). 글자는 title과 읽기 프로그램용 이름으로 */
+function difficultyBars(d) {
+  const bars = document.createElement('span');
+  bars.className = `bars d${{ easy: 1, normal: 2, hard: 3 }[d] ?? 0}`;
+  bars.innerHTML = '<i></i><i></i><i></i>';
+  bars.setAttribute('role', 'img');
+  const label = t('tag.difficulty', { d: t(`difficulty.${d}`) });
+  bars.setAttribute('aria-label', label);
+  bars.title = label;
+  return bars;
+}
+
+/** 카드 아래의 한 줄: 판 크기, 시간, 난이도, 언어, 둔 판 수를 아이콘과 숫자로 (글은 title에) */
+function cardMeta(entry) {
+  const { game, listing } = entry;
+  const row = document.createElement('div');
+  row.className = 'card-meta';
+  const item = (icon, text, title, cls = '') => {
+    const s = document.createElement('span');
+    s.className = `meta ${cls}`;
+    s.innerHTML = icon;
+    s.append(text);
+    s.title = title;
+    row.append(s);
+  };
+  const dims = `${game.board.rows}×${game.board.cols}`;
+  const points = game.board.places === 'points';
+  item(points ? ICONS.points : ICONS.cells, dims, `${t(points ? 'tag.points' : 'tag.cells')} · ${dims}`);
+  if (listing) {
+    const timer = timerOfEntry(entry);
+    if (timer.minutes !== null) item(ICONS.clock, t('timer.short', { m: timer.minutes }), timerText(timer.minutes));
+    row.append(difficultyBars(listing.difficulty));
+  }
+  if (entry.plays) {
+    const n = entry.plays.toLocaleString(lang);
+    item(ICONS.plays, n, entry.plays === 1 ? t('tag.plays.one') : t('tag.plays', { n }));
+  }
+  if (listing) {
+    const full = fullLangs(listing);
+    item('', full.map((l) => l.toUpperCase()).join(' · '), full.map((l) => t('tag.lang.full', { lang: LANG_NAMES[l] })).join(', '), 'langs');
+  }
+  return row;
+}
+
+/** 카드: 판 그림이 크게, 아래에 이름과 아이콘 한 줄. 누르면 게임 창이 뜨고, 마우스를 올리면 대전 찾기·방 만들기가 보입니다. */
 function renderCard(entry) {
   const card = document.createElement('article');
   card.className = 'card';
@@ -241,25 +183,47 @@ function renderCard(entry) {
   }
 
   const name = nameOf(entry);
+  const id = encodeURIComponent(entry.id);
   card.innerHTML = `
-    <div class="thumb"><canvas></canvas><button type="button" class="star-btn" aria-pressed="false"></button></div>
+    <div class="thumb"><canvas></canvas><button type="button" class="star-btn" aria-pressed="false"></button>
+      <div class="card-actions"><a class="btn"></a><button type="button" class="btn ghost"></button></div>
+    </div>
     <div class="card-body">
       <h3><button type="button" class="card-open"></button></h3>
-      <p class="desc"></p>
-      <ul class="tags"></ul>
     </div>`;
   const open = card.querySelector('.card-open');
   open.textContent = name;
   open.setAttribute('aria-label', t('detail.open', { name }));
   open.addEventListener('click', () => openGame(entry));
   addBadges(card.querySelector('h3'), entry);
-  fillDescription(card.querySelector('.desc'), entry);
-  fillTags(card.querySelector('.tags'), entry);
-  if (!drawThumb(card.querySelector('canvas'), entry, 168)) card.querySelector('.thumb').classList.add('no-thumb');
+  card.querySelector('.card-body').append(cardMeta(entry));
+  if (!drawThumb(card.querySelector('canvas'), entry, 260)) card.querySelector('.thumb').classList.add('no-thumb');
+  if (entry.aiReady) {
+    const ai = document.createElement('span');
+    ai.className = 'card-badge ai';
+    ai.innerHTML = `${ICONS.chip}AI`;
+    ai.title = t('card.ai');
+    card.querySelector('.thumb').append(ai);
+  }
+  const [match, create] = card.querySelectorAll('.card-actions .btn');
+  match.textContent = t('card.match');
+  match.href = `/web/match.html?game=${id}`;
+  create.textContent = t('card.createRoom');
+  create.addEventListener('click', () => openGame(entry, 'create'));
   const star = card.querySelector('.star-btn');
   fillStar(star, entry);
   star.addEventListener('click', (e) => toggleStar(entry, e));
   return card;
+}
+
+/** 목록 끝의 "내 게임 올리기" 칸 */
+function renderAddCard() {
+  const a = document.createElement('a');
+  a.className = 'add-card';
+  a.href = '/web/register.html';
+  a.innerHTML = `<span class="add-icon">${ICONS.plus}</span><b></b><code>index.js → .zip</code>`;
+  a.querySelector('b').textContent = t('card.addGame');
+  return a;
 }
 
 // ---- 즐겨찾기 (별) ----
@@ -369,7 +333,9 @@ async function loadStars() {
 // 오른쪽: 소개 (방 만들기를 누르면 방 만들기, 의견 칸을 누르면 의견, 의견이나 게임을 신고하면 신고).
 // 열려 있는 동안 주소에 ?game=<id>&tab=<메뉴>를 붙여 두므로 링크로 바로 열 수 있습니다.
 
-const TABS = { about: 'detail.about', create: 'card.createRoom', comments: 'comments.title', report: 'report.title' };
+const TABS = { about: 'detail.about', rules: 'card.rulebook', create: 'card.createRoom', comments: 'comments.title', report: 'report.title' };
+/** 위의 탭으로 고르는 칸. 나머지(방 만들기, 신고)는 ‹와 제목으로 */
+const TOP_TABS = ['about', 'rules', 'comments'];
 let current = null; // 창에 띄운 게임
 let tab = 'about';
 
@@ -430,10 +396,16 @@ function fillDialog() {
   $('#gd-ai').href = `/web/ai.html?game=${id}`;
   $('#gd-create').setAttribute('aria-pressed', String(tab === 'create'));
 
-  // 오른쪽
+  // 오른쪽: 룰북은 등록한 게임만 있습니다
+  if (tab === 'rules' && !listing) tab = 'about';
+  $('#gd-tab-rules').hidden = !listing;
+  const top = TOP_TABS.includes(tab);
+  $('#gd-tabs').hidden = !top;
+  for (const b of document.querySelectorAll('#gd-tabs [data-tab]')) b.setAttribute('aria-pressed', String(b.dataset.tab === (tab === 'report' ? 'comments' : tab)));
+  $('#gd-title').hidden = top;
   $('#gd-title').textContent = t(TABS[tab]);
   const back = $('#gd-back');
-  back.hidden = tab === 'about';
+  back.hidden = top;
   // 신고에서 ‹를 누르면 의견으로, 나머지는 소개로 돌아갑니다
   const backLabel = t(tab === 'report' ? 'detail.backToComments' : 'detail.back');
   back.setAttribute('aria-label', backLabel);
@@ -490,16 +462,53 @@ function fillBalance(entry) {
   $('#gd-balance-note').textContent = note.join(' ');
 }
 
+/** 게임 창의 정보 타일: 판, 타이머, 난이도, 지원 언어. 둔 판 수와 특수 행동은 아래의 작은 태그로 */
+function fillTiles(entry) {
+  const { game, listing } = entry;
+  const tiles = [];
+  const tile = (icon, value, label) => {
+    const d = document.createElement('div');
+    d.className = 'gd-tile';
+    if (typeof icon === 'string') d.innerHTML = icon;
+    else d.append(icon);
+    const b = document.createElement('b');
+    b.append(value);
+    const s = document.createElement('span');
+    s.textContent = label;
+    d.append(b, s);
+    tiles.push(d);
+  };
+  const points = game.board.places === 'points';
+  tile(points ? ICONS.points : ICONS.cells, `${game.board.rows}×${game.board.cols}`, t(points ? 'tag.points' : 'tag.cells'));
+  const timer = timerOfEntry(entry);
+  const none = timer.minutes === null;
+  tile(ICONS.clock, none ? '—' : t('timer.short', { m: timer.minutes }),
+    timer.custom ? t('detail.timer.custom') : none ? t('timer.none') : t('detail.timer.each'));
+  if (listing) {
+    tile(difficultyBars(listing.difficulty), t(`difficulty.${listing.difficulty}`), t('filter.difficulty'));
+    tile(ICONS.globe, fullLangs(listing).map((l) => l.toUpperCase()).join(' · '), t('filter.lang'));
+  }
+  $('#gd-tiles').replaceChildren(...tiles);
+
+  const extras = [];
+  if (entry.plays) extras.push(entry.plays === 1 ? t('tag.plays.one') : t('tag.plays', { n: entry.plays.toLocaleString(lang) }));
+  extras.push(t('tag.players'));
+  if (game.specialActions?.length) extras.push(t('tag.special', { n: game.specialActions.length }));
+  const ul = $('#gd-tags');
+  ul.replaceChildren(...extras.map((text) => {
+    const li = document.createElement('li');
+    li.textContent = text;
+    return li;
+  }));
+  ul.hidden = !extras.length;
+}
+
 function fillAbout(entry) {
   const { listing } = entry;
   fillDescription($('#gd-desc'), entry);
   $('#gd-register').hidden = !!listing;
   $('#gd-register').href = `/web/register.html?game=${encodeURIComponent(entry.id)}`;
-  fillTags($('#gd-tags'), entry);
-  const timer = timerOfEntry(entry);
-  $('#gd-timer').textContent = timer.custom
-    ? `${timerText(timer.minutes)} · ${t('detail.timer.custom')}`
-    : timerText(timer.minutes);
+  fillTiles(entry);
   fillBalance(entry);
   // 제작자: 올린 게임만 이름(서버가 지금 계정 이름으로 줌)과 직접 이긴 판이 있습니다. 레포 게임은 둘 다 없어서 줄을 숨깁니다
   $('#gd-author-row').hidden = !entry.author && !entry.clear;
@@ -873,6 +882,7 @@ function setupDialog() {
   // 방 만들기를 다시 누르거나 ‹를 누르면 소개로 돌아갑니다
   $('#gd-create').addEventListener('click', () => setTab(tab === 'create' ? 'about' : 'create'));
   $('#gd-back').addEventListener('click', () => setTab(tab === 'report' ? 'comments' : 'about'));
+  for (const b of document.querySelectorAll('#gd-tabs [data-tab]')) b.addEventListener('click', () => setTab(b.dataset.tab));
   $('#gd-star').addEventListener('click', (e) => current && toggleStar(current, e));
   // 창 바깥(어두운 곳)을 누르면 닫습니다
   dlg.addEventListener('click', (e) => {
@@ -914,6 +924,7 @@ let entries = null;
 let cards = new Map();
 let loadError = null;
 let me = null;
+let addCard = null; // 목록 끝의 "내 게임 올리기" 칸 (언어가 바뀌면 다시 만듭니다)
 let meReady = false; // loadMe를 마쳤는지 (게스트 안내를 그 뒤에만 보입니다)
 
 function checked(name) {
@@ -953,7 +964,7 @@ function apply() {
   // 그래도 같으면 이름순 (둘 다 Infinity면 NaN이라 이름으로 넘어갑니다)
   shown.sort((a, b) => by(a) - by(b) || then(a) - then(b) || nameOf(a).localeCompare(nameOf(b), lang));
 
-  $('#grid').replaceChildren(...shown.map((e) => cards.get(e)));
+  $('#grid').replaceChildren(...shown.map((e) => cards.get(e)), ...(addCard ? [addCard] : []));
   $('#count').textContent = `${shown.length}`;
   $('#empty').hidden = shown.length > 0;
 }
@@ -992,7 +1003,7 @@ function setupFilters() {
 function render() {
   applyStatic();
   renderMe(me);
-  renderBanner();
+  $('#sdk-docs').href = sdkDocs();
   // 별 단 게임만 보기는 계정만 (게스트는 별을 달 수 없음)
   $('#only-starred').disabled = !isMember(me);
   if (!isMember(me)) $('#only-starred').checked = false;
@@ -1003,11 +1014,11 @@ function render() {
     return;
   }
   if (entries) cards = new Map(entries.map((e) => [e, renderCard(e)]));
+  addCard = renderAddCard();
   apply();
   if (current) fillDialog();
 }
 
-setupBanner();
 setupFilters();
 setupDialog();
 setupTalk();
