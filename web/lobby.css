@@ -317,9 +317,11 @@ svg .fill { fill: currentColor; stroke: none; }
 }
 .hero-text { flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 26px; }
 .hero h1 { word-break: keep-all; margin: 0; font-size: clamp(28px, 4vw, 42px); line-height: 1.2; letter-spacing: -0.02em; color: var(--strong); }
-.hero-steps { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 20px; margin: 0; padding: 0; list-style: none; }
-.hero-steps li { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; font-size: 13px; white-space: nowrap; }
-.hero-steps .step-arrow { align-self: flex-start; padding-top: 14px; color: var(--faint); }
+/* 칸마다 아이콘 폭으로 같은 간격을 두고, 이름은 아이콘 가운데 아래에 (아이콘보다 긴 이름은 양옆으로 같이 넘침).
+   첫 아이콘은 제목·버튼과 같은 세로줄에서 시작합니다 */
+.hero-steps { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 32px; margin: 0; padding: 0; list-style: none; }
+.hero-steps li { width: 48px; display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 13px; text-align: center; white-space: nowrap; }
+.hero-steps .step-arrow { width: auto; padding-top: 14px; color: var(--faint); }
 .hero-steps .step-arrow svg { width: 20px; height: 20px; }
 .step-icon {
   width: 48px;
@@ -1165,8 +1167,8 @@ fieldset .bars-chip, .bars-chip { width: 44px; padding: 0; justify-content: cent
   .hero { padding: 28px 16px 24px; gap: 22px; }
   .hero-text { gap: 22px; }
   .hero h1 { font-size: 28px; }
-  .hero-steps { flex-wrap: nowrap; gap: 14px; }
-  .hero-steps li { font-size: 12px; }
+  .hero-steps { flex-wrap: nowrap; gap: 28px; }
+  .hero-steps li { width: 44px; font-size: 12px; }
   .hero-steps .step-arrow { padding-top: 12px; }
   .step-icon { width: 44px; height: 44px; }
   .hero-ctas .hero-cta { flex: 1; justify-content: center; padding: 12px 8px; }
