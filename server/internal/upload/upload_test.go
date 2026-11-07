@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -407,6 +408,22 @@ func TestNewGamesPerDay(t *testing.T) {
 	if err := publish(a, "dots-two", gameCode); err != nil {
 		t.Fatalf("다음 날: %v", err)
 	}
+
+	// 운영자는 하루 등록 횟수 제한이 없습니다: 새 게임 여럿, 등록 PublishesPerDay번 넘게
+	op := member("m_op")
+	op.Admin = true
+	for i := range PublishesPerDay + 1 {
+		if err := publish(op, fmt.Sprintf("op-game-%d", i), gameCode); err != nil {
+			t.Fatalf("운영자 %d번째: %v", i+1, err)
+		}
+	}
+	if err := publish(op, "op-game-0", gameCode+"// v2\n"); err != nil {
+		t.Fatalf("운영자 새 버전: %v", err)
+	}
+	// 같은 계정이라도 운영자가 아니면 그대로 막힙니다
+	if err := publish(member("m_op"), "op-game-x", gameCode); !errors.Is(err, ErrTooMany) {
+		t.Fatalf("운영자가 아닐 때: %v", err)
+	}
 }
 
 func TestAuthor(t *testing.T) {
@@ -777,9 +794,15 @@ func TestHTTP(t *testing.T) {
 		t.Fatalf("클리어 기보: %d %s", rec.Code, rec.Body)
 	}
 	rec = do("GET", "/api/uploads", "", nil, cookie)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"id":"dots"`) || !strings.Contains(rec.Body.String(), `"listing":{`) || strings.Contains(rec.Body.String(), "m_a") {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"id":"dots"`) || !strings.Contains(rec.Body.String(), `"listing":{`) || strings.Contains(rec.Body.String(), "m_a") || strings.Contains(rec.Body.String(), "unlimited") {
 		t.Fatalf("내 게임: %d %s", rec.Code, rec.Body)
 	}
+	// 운영자에게는 하루 등록 횟수 제한이 없다고 알립니다
+	ids.Admins = map[string]bool{"m_a": true}
+	if rec = do("GET", "/api/uploads", "", nil, cookie); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"unlimited":true`) {
+		t.Fatalf("운영자의 내 게임: %d %s", rec.Code, rec.Body)
+	}
+	ids.Admins = nil
 
 	// 등록 정보만 고치기와 내리기
 	other := &http.Cookie{Name: identity.CookieName, Value: ids.Sign(member("m_b"))}

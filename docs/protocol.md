@@ -22,7 +22,7 @@
 | `PUT /api/games/{id}/star` | 별 달기 → `{"stars":3,"starred":true}` (바뀐 뒤의 별 수). 이미 달았으면 그대로. 계정만, 없는 게임이면 `404` |
 | `DELETE /api/games/{id}/star` | 별 떼기 → `{"stars":2,"starred":false}`. 계정만 (정지된 계정도 뗄 수는 있음) |
 | `POST /api/reports` | 신고 `{"game":"tictactoe","comment":"RN92MFYW","reason":"spam","detail":"…"}` → `{"ok":true,"hidden":false}`. `comment`가 없으면 게임 신고 |
-| `GET /api/uploads` | 내가 올린 게임과 오늘 남은 등록 횟수 `{"games":[{"id":"dots","module":"…","version":"e9ff673cd0205ffa","listing":{…},"thumbnail":{…},"clear":true,"published":"…","hidden":true}],"left":4,"newLeft":0}`. 게임마다 `/api/games`의 항목에 마지막으로 등록한 때와 내렸는지(`hidden`)를 더한 것입니다. `left`는 새 게임과 새 버전을 합친 횟수, `newLeft`는 오늘 더 올릴 수 있는 새 게임 수(하루 1개, `left`를 넘지 않음)입니다. 계정만 |
+| `GET /api/uploads` | 내가 올린 게임과 오늘 남은 등록 횟수 `{"games":[{"id":"dots","module":"…","version":"e9ff673cd0205ffa","listing":{…},"thumbnail":{…},"clear":true,"published":"…","hidden":true}],"left":4,"newLeft":0}`. 게임마다 `/api/games`의 항목에 마지막으로 등록한 때와 내렸는지(`hidden`)를 더한 것입니다. `left`는 새 게임과 새 버전을 합친 횟수, `newLeft`는 오늘 더 올릴 수 있는 새 게임 수(하루 1개, `left`를 넘지 않음)입니다. 운영자 계정이면 `"unlimited":true`이고, 하루 등록 횟수에 막히지 않습니다. 계정만 |
 | `PATCH /api/uploads/{id}` | 내 게임의 등록 정보만 고치기 `{"listing":{…}}`, 내리기 `{"hidden":true}`, 다시 올리기 `{"hidden":false}` → `{"game":{…}}` (`GET /api/uploads`의 항목). 계정만 |
 | `POST /api/drafts` | 게임 zip을 초안으로 올리기. 본문은 zip 그대로(`Content-Type: application/zip`). 계정만 → `201 {"id":"<초안>","module":"/drafts/<초안>/index.js","version":"…","files":[{"path":"index.js","bytes":3640}],"listing":{…},"thumbnail":{…},"thumbnailProblems":["…"]}` |
 | `POST /api/drafts/{draft}/publish` | 초안 등록 `{"id":"dots","listing":{…},"thumbnail":{…},"clear":{"version":"…","seed":3551073280,"moves":[{"player":0,"action":{"kind":"click","row":1,"col":1}}],"winner":0}}` → `{"game":{…}}` (`/api/games`의 항목). 계정만 |
@@ -100,7 +100,7 @@ AI 모델을 올리면(`PUT /api/admin/ai/{game}`) 그 게임의 열린 요청�
   - 내린 게임은 `/api/games`와 클리어 기보에서 빠집니다. 코드(`/uploads/…`)는 그대로 내보내서 이미 둔 대국의 기보는 계속 다시볼 수 있고,
     id도 그대로 주인의 것입니다. 다시 올리거나 새로 등록하면 다시 나옵니다.
 - 실패: `409 {"error":"id taken"}` 레포 게임이거나 다른 계정이 올린 id, `400 {"error":"bad id"}` id 모양(영문 소문자, 숫자, `-`로 40자까지),
-  `429 {"error":"too many"}` 하루 등록 5번 또는 한 시간에 초안 30번, `429 {"error":"too many new games"}` 새 게임은 하루 1개 (내 게임의 새 버전은 됨),
+  `429 {"error":"too many"}` 하루 등록 5번 또는 한 시간에 초안 30번, `429 {"error":"too many new games"}` 새 게임은 하루 1개 (내 게임의 새 버전은 됨. 하루 제한은 운영자에게는 없음),
   `404` 초안이 없거나 남의 것이거나 하루가 지남
 - 초안은 하루가 지나면 지우고, 계정마다 최근 3개만 남깁니다. 등록하면 그 초안은 없어집니다.
 - 서버는 게임 코드를 돌리지 않습니다. 자동 검사는 올린 사람의 브라우저에서 돌므로 서버는 그 결과를 믿지 않습니다 ([architecture.md](architecture.md#보안)).
