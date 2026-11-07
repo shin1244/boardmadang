@@ -79,7 +79,9 @@ addEventListener('message', async (e) => {
 
 const isInt = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
 const isStr = (v, max) => typeof v === 'string' && v.length <= max;
-const isColor = (c) => c === 0 || c === 1 || (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c));
+/** 색: 0 / 1(플레이어 색), 이름 붙은 색(sdk/playground/board.js의 NAMED_COLORS), '#rrggbb' */
+const COLOR_NAMES = ['green', 'yellow', 'gray'];
+const isColor = (c) => c === 0 || c === 1 || COLOR_NAMES.includes(c) || (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c));
 const isWidth = (w, range) => typeof w === 'number' && w >= range.min && w <= range.max;
 
 function cleanBoard(b) {

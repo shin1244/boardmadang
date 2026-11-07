@@ -12,7 +12,7 @@
 // 게임 코드는 이 페이지가 아니라 게임 실행기(engine.js)의 샌드박스 Worker에서 돌립니다.
 // 모든 수의 상태는 Worker에 남기고, 이 페이지는 보고 있는 수의 판만 받아 와 그립니다.
 
-import { BoardView, PLAYER_COLORS } from '/sdk/playground/board.js';
+import { BoardView, PLAYER_COLORS, innerSize } from '/sdk/playground/board.js';
 import { gameLang, localize } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { loadGame } from './engine.js';
@@ -297,7 +297,7 @@ function setupControls() {
 }
 
 function fit() {
-  board?.resize(Math.min(480, $('.match').clientWidth));
+  board?.resize(Math.min(480, innerSize($('.match')).w));
 }
 
 /** 기보를 둔 버전의 올린 게임 코드 주소. 지금 버전이거나 옛 코드가 없으면(레포 게임, 버전을 모르던 때의 기보) null */

@@ -5,7 +5,7 @@
 //
 // 연결이 끊기면 다시 붙어 처음부터 받아 옵니다 (관전자 자리는 서버가 기다려 주지 않습니다).
 
-import { BoardView, PLAYER_COLORS } from '/sdk/playground/board.js';
+import { BoardView, PLAYER_COLORS, innerSize } from '/sdk/playground/board.js';
 import { gameLang, localize } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { popEmote } from './emotes.js';
@@ -263,7 +263,7 @@ function render() {
 }
 
 function fit() {
-  board?.resize(Math.min(480, $('.match').clientWidth));
+  board?.resize(Math.min(480, innerSize($('.match')).w));
 }
 
 async function main() {

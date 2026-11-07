@@ -42,12 +42,18 @@ export interface BoardConfig {
  */
 export type MarkType = 'dot' | 'ring' | 'last-move' | 'danger' | 'ghost' | 'blocked' | 'frame';
 
+/**
+ * 판 팔레트의 이름 붙은 색. 실제 색은 플랫폼이 정해서 어느 게임이든 판이 한 계열로 보입니다.
+ * '#rrggbb'도 쓸 수 있지만, 판 색과 어울리게 하려면 이 이름이나 플레이어 색(0, 1)을 쓰세요.
+ */
+export type ColorName = 'green' | 'yellow' | 'gray';
+
 export interface Mark extends Cell {
   type: MarkType;
   /** ghost에 그릴 기물 */
   piece?: string;
-  /** frame의 색. 0 / 1이면 플랫폼이 정한 플레이어 색, 문자열이면 '#rrggbb' */
-  color?: Player | string;
+  /** frame의 색. 0 / 1이면 플레이어 색, 'green' · 'yellow' · 'gray'면 판 팔레트의 색, 아니면 '#rrggbb' */
+  color?: Player | ColorName | string;
   /** frame의 두께. 칸 한 변에 대한 % (1~30). 없으면 9% */
   width?: number;
 }
@@ -61,8 +67,8 @@ export interface Mark extends Cell {
 export interface Line {
   from: Cell;
   to: Cell;
-  /** 0 / 1이면 플랫폼이 정한 플레이어 색, 문자열이면 '#rrggbb'. 없으면 진한 회색 */
-  color?: Player | string;
+  /** 0 / 1이면 플레이어 색, 'green' · 'yellow' · 'gray'면 판 팔레트의 색, 아니면 '#rrggbb'. 없으면 진한 회색 */
+  color?: Player | ColorName | string;
   /** 두께. 칸 한 변에 대한 % (1~50). 없으면 20% */
   width?: number;
   /** 이 칸에 마우스를 올렸을 때만 그립니다 */
@@ -74,11 +80,11 @@ export interface View {
   pieces: Array<Cell & { piece: string }>;
   marks?: Mark[];
   /**
-   * 칸 칠하기. 0 / 1이면 플랫폼이 정한 플레이어 색, 문자열이면 '#rrggbb'.
+   * 칸 칠하기. 0 / 1이면 플레이어 색, 'green' · 'yellow' · 'gray'면 판 팔레트의 색, 아니면 '#rrggbb'.
    * hover가 있으면 마우스를 그 칸에 올렸을 때만, 그 칸의 원래 칠하기 대신 연하게 그립니다 (두면 칠해질 칸의 미리보기).
    * legal()이 있으면 둘 수 있는 칸에만 마우스가 올라간 것으로 칩니다. hover가 있는 칠하기는 AI 관측과 썸네일에 들어가지 않습니다.
    */
-  tint?: Array<Cell & { color: Player | string; hover?: Cell }>;
+  tint?: Array<Cell & { color: Player | ColorName | string; hover?: Cell }>;
   /** 칸 위의 숫자나 짧은 글자 (만칼라의 씨앗 수 등) */
   text?: Array<Cell & { text: string }>;
   /** 두 칸을 잇는 선 */

@@ -147,6 +147,9 @@ test('썸네일의 테두리 두께와 선: hover가 있는 칠하기와 선은 
   assert.deepEqual(thumb.view.lines, [{ from: { row: 0, col: 0 }, to: { row: 2, col: 2 }, color: '#2563eb', width: 12 }]);
   assert.deepEqual(thumb.view.tint, [{ row: 0, col: 1, color: 0 }]);
   assert.deepEqual(validateThumbnail(thumb), []);
+  // 이름 붙은 색 (판 팔레트)
+  assert.deepEqual(validateThumbnail({ ...thumb, view: { ...thumb.view, tint: [{ row: 0, col: 0, color: 'green' }] } }), []);
+  assert.match(validateThumbnail({ ...thumb, view: { ...thumb.view, tint: [{ row: 0, col: 0, color: 'pink' }] } })[0], /thumbnail\.view\.tint/);
   // 썸네일을 직접 만든 경우: hover가 판 밖이면 막습니다
   assert.match(validateThumbnail({ ...thumb, view: { ...thumb.view, tint: [{ row: 0, col: 0, color: 0, hover: { row: 3, col: 0 } }] } })[0], /thumbnail\.view\.tint/);
 

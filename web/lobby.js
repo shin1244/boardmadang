@@ -2,7 +2,7 @@
 // 이름, 소개, 룰북, 난이도, 지원 언어, 타이머는 등록 정보(listing)에서, 보드 모양은 게임 모듈에서 읽어 옵니다.
 // 썸네일은 게임의 setup()이 만든 시작 화면을 플랫폼 렌더러로 그린 것입니다.
 
-import { BoardView, PLAYER_COLORS } from '/sdk/playground/board.js';
+import { BoardView, PLAYER_COLORS, innerSize } from '/sdk/playground/board.js';
 import { loadGame, modelFits } from './engine.js';
 import { LANGS, LANG_NAMES, NO_TIMER, fullLangs, gameLang, isRtl, localize, timerOf } from '/sdk/playground/listing.js';
 import { applyStatic, byLangOrder, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
@@ -74,6 +74,7 @@ function addBadge(el, text, title, cls = '') {
  * 썸네일은 이미지가 아니라 판 설정, 기물 세트, 화면 데이터라서 같은 보드 렌더러로 그립니다. 그리지 못하면 false
  */
 function drawThumb(canvas, entry, size) {
+  canvas.dataset.size = String(size);
   const { game, thumbnail: shot } = entry;
   if (shot) {
     try {
@@ -95,6 +96,31 @@ function drawThumb(canvas, entry, size) {
     return false;
   }
 }
+
+/**
+ * 그림 칸이 정해진 뒤 그 칸에 꼭 맞는 크기로 다시 그립니다 (처음에는 칸이 화면에 붙기 전이라 크기를 모름).
+ * 화면 크기가 바뀌어도 다시 맞춥니다.
+ */
+function fitThumb(box, canvas, entry) {
+  if (!box.isConnected || box.classList.contains('no-thumb')) return;
+  const { w, h } = innerSize(box);
+  const size = Math.floor(Math.min(w, h));
+  if (size > 0 && canvas.dataset.size !== String(size)) drawThumb(canvas, entry, size);
+}
+
+function fitThumbs() {
+  for (const [entry, card] of cards) {
+    const box = card.querySelector('.thumb');
+    if (box) fitThumb(box, box.querySelector('canvas'), entry);
+  }
+  if (current && $('#game').open) fitThumb($('#gd-thumb'), $('#gd-thumb canvas'), current);
+}
+
+let fitTimer = 0;
+addEventListener('resize', () => {
+  clearTimeout(fitTimer);
+  fitTimer = setTimeout(fitThumbs, 120);
+});
 
 /** 소개 글. 화면 언어로 쓴 소개가 없으면 다른 언어 소개를 보여주고, 읽기 프로그램을 위해 lang을 붙입니다. */
 function fillDescription(p, entry) {
@@ -387,6 +413,7 @@ function fillDialog() {
   name.textContent = nameOf(entry);
   addBadges(name, entry);
   $('#gd-thumb').classList.toggle('no-thumb', !drawThumb($('#gd-thumb canvas'), entry, 220));
+  requestAnimationFrame(() => current === entry && fitThumb($('#gd-thumb'), $('#gd-thumb canvas'), entry));
   const meta = [`${game.board.rows}×${game.board.cols}`, t('tag.players')];
   if (listing) meta.push(t('tag.difficulty', { d: t(`difficulty.${listing.difficulty}`) }));
   $('#gd-meta').textContent = meta.join(' · ');
@@ -965,6 +992,7 @@ function apply() {
   shown.sort((a, b) => by(a) - by(b) || then(a) - then(b) || nameOf(a).localeCompare(nameOf(b), lang));
 
   $('#grid').replaceChildren(...shown.map((e) => cards.get(e)), ...(addCard ? [addCard] : []));
+  requestAnimationFrame(fitThumbs);
   $('#count').textContent = `${shown.length}`;
   $('#empty').hidden = shown.length > 0;
 }
