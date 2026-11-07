@@ -332,7 +332,7 @@ svg .fill { fill: currentColor; stroke: none; }
   background: var(--surface);
 }
 .step-icon svg { width: 18px; height: 18px; }
-.step-icon.code { color: var(--code-key); }
+.step-icon.rules { color: var(--code-key); }
 .step-icon.board { color: var(--accent); }
 .step-icon.match { color: var(--bad); }
 .step-icon.ai { color: var(--teal); }
@@ -347,13 +347,14 @@ svg .fill { fill: currentColor; stroke: none; }
 .code-card { flex: 1 1 0; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
 .code-tab { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); font: 12px var(--mono); }
 .code-tab i { width: 8px; height: 8px; border-radius: 2px; background: var(--code-str); }
-.code { margin: 0; padding: 14px 16px 14px 0; overflow: hidden; color: var(--text); font: 13px/1.75 var(--mono); }
-.code .ln { display: inline-block; width: 36px; padding-right: 14px; color: var(--code-line); text-align: right; user-select: none; }
-.code .k { color: var(--code-key); }
-.code .p { color: var(--code-prop); }
-.code .s { color: var(--code-str); }
-.code .n { color: var(--code-num); }
-.code .f { color: var(--code-fn); }
+/* 코드 그림의 글자 칸. .code-card 안에만 (다른 곳의 같은 이름이 이 여백을 받지 않게) */
+.code-card .code { margin: 0; padding: 14px 16px 14px 0; overflow: hidden; color: var(--text); font: 13px/1.75 var(--mono); }
+.code-card .code .ln { display: inline-block; width: 36px; padding-right: 14px; color: var(--code-line); text-align: right; user-select: none; }
+.code-card .code .k { color: var(--code-key); }
+.code-card .code .p { color: var(--code-prop); }
+.code-card .code .s { color: var(--code-str); }
+.code-card .code .n { color: var(--code-num); }
+.code-card .code .f { color: var(--code-fn); }
 .hero-arrow { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--accent); }
 .hero-arrow svg { width: 16px; height: 16px; }
 .mini-match { flex: 0 0 200px; display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
