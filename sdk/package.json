@@ -1,6 +1,6 @@
 {
   "name": "boardmadang",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Make 1-vs-1 board games for boardmadang.com: write only the rules, then play them in a local playground, check them, and pack them for upload.",
   "license": "MIT",
   "type": "module",
