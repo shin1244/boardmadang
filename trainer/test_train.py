@@ -407,6 +407,13 @@ class VersusTest(unittest.TestCase):
             ckpts = sorted((a / "checkpoints").iterdir())
             self.assertEqual(len(ckpts), 2)
             self.assertEqual(torch.load(ckpts[0])["iteration"], 1)
+            # 이어 학습하면 분을 앞 학습에 이어서 셉니다 (0분부터 다시 세면 앞 중간 모델들과 섞임)
+            before = torch.load(a / "model.pt")["minutes"]
+            run("--iterations", "1", "--resume", "--save-every", "1e-9", "--out", str(a), *small, *quiet)
+            resumed = [torch.load(p) for p in (a / "checkpoints").iterdir() if p not in ckpts]
+            self.assertEqual([c["iteration"] for c in resumed], [3])
+            self.assertGreater(resumed[0]["minutes"], before)
+            self.assertGreater(torch.load(a / "model.pt")["minutes"], before)
             got = run("--iterations", "1", "--init-from", str(ckpts[0]), "--out", str(b), *small, *quiet)
             self.assertIn("14/14 input channels matched by name", got)
             got = run("--versus", str(ckpts[0]), str(b / "model.pt"), "--eval-games", "6", "--sims", "2", "--workers", "2")

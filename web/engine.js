@@ -130,10 +130,14 @@ function cleanView(v, board) {
     if (isWidth(m.width, FRAME_WIDTH)) o.width = m.width;
     return o;
   });
-  out.tint = list(v.tint).filter((x) => cell(x) && isColor(x.color)).map(({ row, col, color }) => ({ row, col, color }));
-  out.text = list(v.text).filter((x) => cell(x) && isStr(x.text, 8)).map(({ row, col, text }) => ({ row, col, text }));
-  // 선은 칸마다 여러 개(이웃 8칸 등)일 수 있어 상한을 두 배로 둡니다
   const at = ({ row, col }) => ({ row, col });
+  // 칠하기와 선은 칸마다 여러 개(마우스를 올린 칸마다의 미리보기, 이웃 8칸 등)일 수 있어 상한을 두 배로 둡니다
+  out.tint = (Array.isArray(v.tint) ? v.tint.slice(0, cap * 2) : []).filter((x) => cell(x) && isColor(x.color) && (x.hover === undefined || cell(x.hover))).map((x) => {
+    const o = { row: x.row, col: x.col, color: x.color };
+    if (cell(x.hover)) o.hover = at(x.hover);
+    return o;
+  });
+  out.text = list(v.text).filter((x) => cell(x) && isStr(x.text, 8)).map(({ row, col, text }) => ({ row, col, text }));
   out.lines = (Array.isArray(v.lines) ? v.lines.slice(0, cap * 2) : []).filter((l) => l && cell(l.from) && cell(l.to) && (l.hover === undefined || cell(l.hover))).map((l) => {
     const o = { from: at(l.from), to: at(l.to) };
     if (isColor(l.color)) o.color = l.color;

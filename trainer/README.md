@@ -124,7 +124,7 @@ final evaluation
 | `--snapshot-every` | 10 | 학습 기록: 몇 분마다 그때의 AI끼리 둔 판을 남길지. 0이면 남기지 않음 (아래 "학습 기록") |
 | `--snapshot-games` | 2 | 스냅샷마다 AI끼리 둘 판 수 (8판까지) |
 | `--init-from` | | 다른 `model.pt`에서 시작합니다 (아래 "이어 학습") |
-| `--save-every` | 0 | 몇 분마다 그때의 신경망을 `checkpoints/`에 남길지. 학습 곡선을 그릴 때 씁니다. 0이면 남기지 않음 |
+| `--save-every` | 0 | 몇 분마다 그때의 신경망을 `checkpoints/`에 남길지. 학습 곡선을 그릴 때 씁니다. `--resume`이면 분을 앞 학습에 이어서 셉니다. 0이면 남기지 않음 |
 | `--versus A B` | | 학습하지 않고 두 `model.pt`를 서로 두게 합니다 (아래 "모델 대 모델") |
 | `--opening-moves` | 2 | `--versus`에서 판마다 처음 몇 수를 무작위로 둘지 |
 | `--device` | GPU가 있으면 `cuda` | |
@@ -305,7 +305,7 @@ python -m unittest discover -s trainer
 |---|---|
 | 기물 | 기물 이름마다 한 채널 (`pieces`. `'xo'`는 2개, `'go-stones'`는 2개, `'chess'`는 12개) |
 | 표시 | `marks`의 종류마다 한 채널 (`dot`, `ring`, `last-move`, `danger`, `ghost`, `blocked`, `frame`) |
-| 칠한 칸 | `tint`의 색이 0, 1, 그 밖의 색 |
+| 칠한 칸 | `tint`의 색이 0, 1, 그 밖의 색 (마우스를 올렸을 때만 보이는 `hover` 미리보기는 빼고) |
 | 숫자 | `text`의 숫자 (만칼라의 씨앗 수 같은 것). 숫자가 아니면 1 |
 | 두는 쪽 | 후공 차례면 전부 1. 기물 이름은 절대값이라 누가 두는지를 따로 알려 줍니다 |
 | `observe()` | 판에 안 보이는 정보 (게임이 줄 때만) |

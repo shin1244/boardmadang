@@ -844,6 +844,7 @@ def main():
     net = net.to(args.device)
     opt = torch.optim.Adam(net.parameters(), lr=args.lr, weight_decay=1e-4)
     first = 1
+    prior = None  # 이어서 학습하면(--resume) 앞 학습까지의 분 (model.pt의 minutes)
     if args.eval_only and not (out / "model.pt").exists():
         pool.close()
         raise SystemExit(f"no model to evaluate: {out / 'model.pt'}")
@@ -853,6 +854,7 @@ def main():
         net.load_state_dict(saved["state"])
         opt = torch.optim.Adam(net.parameters(), lr=args.lr, weight_decay=1e-4)
         first = saved["iteration"] + 1
+        prior = saved.get("minutes")
         print(f"loaded iteration {saved['iteration']}")
     infer = make_infer(net, args.device)
     if args.eval_only:
@@ -866,12 +868,17 @@ def main():
     log = open(out / "log.jsonl", "a", encoding="utf-8")
     if init:
         log.write(json.dumps({"initFrom": str(args.init_from), "init": r}) + "\n")
-    next_save = args.save_every  # 다음에 중간 모델을 남길 때 (분)
     last = first - 1  # 마지막으로 끝낸 반복
     evaluated = None
     snaps = Snapshots(out / "snapshots.json", info, args)
     since_eval = None  # 앞 스냅샷부터의 마지막 평가
     minutes = lambda: (time.monotonic() - t0) / 60  # noqa: E731
+    # model.pt와 중간 모델의 분은 앞 학습에 이어서 셉니다 (이름이 분 순서로 정렬되게).
+    # minutes가 없는 옛 model.pt면 학습 기록의 마지막 분으로 어림합니다
+    base = prior if prior is not None else snaps.base
+    total = lambda: base + minutes()  # noqa: E731
+    # 다음에 중간 모델을 남길 때 (분)
+    next_save = (int(base / args.save_every) + 1) * args.save_every if args.save_every > 0 else 0
     try:
         # 학습 전의 AI (무작위 신경망 + 탐색). 이어서 학습하면 앞 기록에 이어 붙입니다
         if snaps.empty:
@@ -937,10 +944,13 @@ def main():
                 evaluated = since_eval = entry["eval"] = evaluate(pool, infer, args, solvable)
             log.write(json.dumps(entry) + "\n")
             log.flush()
-            torch.save({"config": net.config, "state": net.state_dict(), "iteration": it, "info": info}, out / "model.pt")
-            if args.save_every > 0 and minutes() >= next_save:
+            m = total()
+            torch.save(
+                {"config": net.config, "state": net.state_dict(), "iteration": it, "info": info, "minutes": m},
+                out / "model.pt",
+            )
+            if args.save_every > 0 and m >= next_save:
                 # 학습 곡선용 중간 모델. 이름이 분 순서로 정렬됩니다
-                m = minutes()
                 (out / "checkpoints").mkdir(exist_ok=True)
                 torch.save(
                     {"config": net.config, "state": net.state_dict(), "iteration": it, "info": info, "minutes": m},

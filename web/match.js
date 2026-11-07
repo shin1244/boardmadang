@@ -23,7 +23,7 @@
 // 판 상태는 Worker에만 있고, 이 페이지는 행동을 넘겨 해시, 차례, 결과, 화면을 받습니다.
 // 서버 메시지는 받은 순서대로 하나씩 처리합니다 (Worker의 답을 기다리는 동안 온 relay가 앞지르지 않게).
 
-import { BoardView, PLAYER_COLORS } from '/sdk/playground/board.js';
+import { BoardView, PLAYER_COLORS, attachInput } from '/sdk/playground/board.js';
 import { NO_TIMER, gameLang, localize, timerOf } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { EMOTES, EMOTE_EVERY, emoteLabel, emoteSvg, emotesMuted, popEmote, setEmotesMuted } from './emotes.js';
@@ -650,27 +650,22 @@ function fit() {
 function setupBoard() {
   const canvas = $('#board');
   board = new BoardView(canvas, runner.info.board, runner.info.pieces);
-  canvas.addEventListener('click', (e) => {
-    if (phase !== 'playing' || reported || offlineUntil) return;
-    const cell = board.cellAt(e, flip());
-    if (cell) send({ type: 'action', action: { kind: 'click', ...cell } });
-  });
-  canvas.addEventListener('mousemove', (e) => {
-    if (phase !== 'playing') return;
-    const cell = board.cellAt(e, flip());
-    const legal = cell && legalNow();
-    // legal()이 있으면 둘 수 있는 곳에만 호버를 보여줍니다.
-    const ok = cell && !reported && (legal ? legal.some((a) => sameClick(a, cell)) : true);
-    canvas.style.cursor = ok ? 'pointer' : 'default';
-    const next = ok ? cell : null;
-    if (next?.row !== hover?.row || next?.col !== hover?.col) {
-      hover = next;
+  attachInput(board, canvas, {
+    flip,
+    // legal()이 있으면 둘 수 있는 곳에만 호버를 보여줍니다
+    canHover: (cell) => {
+      if (phase !== 'playing' || reported) return false;
+      const legal = legalNow();
+      return legal ? legal.some((a) => sameClick(a, cell)) : true;
+    },
+    click: (cell) => {
+      if (phase !== 'playing' || reported || offlineUntil) return;
+      send({ type: 'action', action: { kind: 'click', ...cell } });
+    },
+    hover: (cell) => {
+      hover = cell;
       renderBoard();
-    }
-  });
-  canvas.addEventListener('mouseleave', () => {
-    hover = null;
-    renderBoard();
+    },
   });
 }
 

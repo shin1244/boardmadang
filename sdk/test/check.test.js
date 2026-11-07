@@ -133,10 +133,11 @@ test('썸네일 모양 검사', () => {
   assert.deepEqual(validateThumbnail(null), ['thumbnail: must be an object']);
 });
 
-test('썸네일의 테두리 두께와 선: hover가 있는 선은 빼고, 범위 밖의 두께는 막습니다', () => {
+test('썸네일의 테두리 두께와 선: hover가 있는 칠하기와 선은 빼고, 범위 밖의 두께는 막습니다', () => {
   const thumb = makeThumbnail(tictactoe, 0, {
     pieces: [],
     marks: [{ row: 0, col: 0, type: 'frame', color: 1, width: 4.5, extra: 1 }],
+    tint: [{ row: 0, col: 1, color: 0 }, { row: 2, col: 1, color: 1, hover: { row: 2, col: 2 } }],
     lines: [
       { from: { row: 0, col: 0 }, to: { row: 2, col: 2, extra: 1 }, color: '#2563eb', width: 12 },
       { from: { row: 1, col: 1 }, to: { row: 0, col: 1 }, hover: { row: 1, col: 1 } },
@@ -144,7 +145,10 @@ test('썸네일의 테두리 두께와 선: hover가 있는 선은 빼고, 범�
   });
   assert.deepEqual(thumb.view.marks, [{ row: 0, col: 0, type: 'frame', color: 1, width: 4.5 }]);
   assert.deepEqual(thumb.view.lines, [{ from: { row: 0, col: 0 }, to: { row: 2, col: 2 }, color: '#2563eb', width: 12 }]);
+  assert.deepEqual(thumb.view.tint, [{ row: 0, col: 1, color: 0 }]);
   assert.deepEqual(validateThumbnail(thumb), []);
+  // 썸네일을 직접 만든 경우: hover가 판 밖이면 막습니다
+  assert.match(validateThumbnail({ ...thumb, view: { ...thumb.view, tint: [{ row: 0, col: 0, color: 0, hover: { row: 3, col: 0 } }] } })[0], /thumbnail\.view\.tint/);
 
   const broken = (f) => validateThumbnail(f(structuredClone(thumb)));
   assert.match(broken((t) => { t.view.marks[0].width = 31; return t; })[0], /thumbnail\.view\.marks/);

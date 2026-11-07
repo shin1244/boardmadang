@@ -314,9 +314,9 @@ export function normalizeThumbnail(t) {
       return out;
     });
   }
-  if (v.tint) view.tint = v.tint.map((x) => ({ ...cell(x), color: x.color }));
+  // 마우스를 올렸을 때만 보이는 칠하기와 선(hover)은 썸네일에 넣지 않습니다
+  if (v.tint) view.tint = v.tint.filter((x) => x.hover === undefined).map((x) => ({ ...cell(x), color: x.color }));
   if (v.text) view.text = v.text.map((x) => ({ ...cell(x), text: x.text }));
-  // 마우스를 올렸을 때만 보이는 선(hover)은 썸네일에 넣지 않습니다
   if (v.lines) {
     view.lines = v.lines.filter((l) => l.hover === undefined).map((l) => {
       const out = { from: cell(l.from), to: cell(l.to) };
@@ -350,7 +350,7 @@ export function validateThumbnail(t) {
     && isWidth(m.width, FRAME_WIDTH))) {
     p.push('thumbnail.view.marks: each needs a place on the board and a known mark type');
   }
-  if (!(v.tint ?? []).every((x) => isCell(x, b) && isColor(x.color))) p.push('thumbnail.view.tint: each needs a place on the board and a color');
+  if (!(v.tint ?? []).every((x) => isCell(x, b) && isColor(x.color) && (x.hover === undefined || isCell(x.hover, b)))) p.push('thumbnail.view.tint: each needs a place on the board and a color');
   if (!(v.text ?? []).every((x) => isCell(x, b) && typeof x.text === 'string' && x.text.length <= 8)) {
     p.push('thumbnail.view.text: each needs a place on the board and up to 8 characters');
   }

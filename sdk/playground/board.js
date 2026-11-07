@@ -91,6 +91,9 @@ export class BoardView {
   }
 
   draw(view, { flip = false, hover = null } = {}) {
+    // attachInput이 봅니다: 미리보기가 있는지, 지금 그려진 호버
+    this.view = view;
+    this.hover = hover;
     const { ctx, S, board } = this;
     const { rows, cols } = board;
     const look = LOOKS[board.look] ?? LOOKS.plain;
@@ -153,11 +156,15 @@ export class BoardView {
     const marks = view.marks ?? [];
     const marksOf = (type) => marks.filter((m) => m.type === type);
 
-    // 칸 칠하기와 바닥 표시 (말 아래)
+    // 칸 칠하기와 바닥 표시 (말 아래).
+    // hover가 있는 칠하기는 마우스가 그 칸에 있을 때만, 그 칸의 원래 칠하기 대신 연하게 그립니다 ("두면 이 칸이 이 색이 됨")
+    const onHover = (c) => hover !== null && hover.row === c.row && hover.col === c.col;
+    const previewed = new Set((view.tint ?? []).filter((t) => t.hover && onHover(t.hover)).map((t) => t.row * cols + t.col));
     for (const t of view.tint ?? []) {
+      if (t.hover ? !onHover(t.hover) : previewed.has(t.row * cols + t.col)) continue;
       const color = typeof t.color === 'number' ? PLAYER_COLORS[t.color] : t.color;
       const [x, y] = at(t.row, t.col);
-      ctx.globalAlpha = 0.55;
+      ctx.globalAlpha = t.hover ? 0.28 : 0.55;
       ctx.fillStyle = color;
       if (this.points) {
         this.circle(x, y, S * 0.48);
@@ -267,6 +274,14 @@ export class BoardView {
       ctx.fillStyle = '#1d1d1d';
       ctx.fillText(String(t.text), x, y);
     }
+    // 손가락으로 누르고 있는 칸: 손가락에 가려지므로 둘레에 큰 고리를 그립니다
+    if (hover?.touch) {
+      const [x, y] = at(hover.row, hover.col);
+      ctx.strokeStyle = 'rgba(20, 20, 20, 0.35)';
+      ctx.lineWidth = Math.max(2, S * 0.08);
+      this.circle(x, y, S * 1.05);
+      ctx.stroke();
+    }
   }
 
   drawLabels(flip) {
@@ -350,4 +365,101 @@ export class BoardView {
     this.ctx.beginPath();
     this.ctx.arc(x, y, r, 0, Math.PI * 2);
   }
+}
+
+const sameCell = (a, b) => !!a && !!b && a.row === b.row && a.col === b.col;
+
+/**
+ * 판의 마우스와 터치 입력. 대국, AI 대국, 등록 화면, 플레이그라운드가 같이 씁니다.
+ *
+ * 마우스: 칸에 올리면 호버(미리보기), 누르면 그 칸을 클릭합니다.
+ * 터치(펜): 손가락에는 호버가 없어서 리체스처럼 "끌어서 놓기"로 미리보기를 보여 줍니다.
+ *   - 톡 치면 바로 클릭합니다 (확인 탭 없음).
+ *   - 누른 채로 밀면 손가락 아래 칸이 호버가 되고(미리보기, 둘레에 큰 고리), 손을 뗀 칸을 클릭합니다.
+ *     판 밖에서 떼거나 둘 수 없는 칸에서 떼면 아무것도 하지 않습니다.
+ *   - 미리보기가 없는 말을 누르면 누르는 순간 클릭합니다 (스플체스의 기물 고르기).
+ *     그 클릭으로 갈 칸의 미리보기가 생기면, 그대로 끌어서 갈 칸에 놓을 수 있습니다.
+ *     빈칸이나 미리보기가 있는 칸은 손을 뗄 때 클릭합니다 (개척 오목처럼 미리 보고 두기).
+ *
+ * opts
+ *   flip(): 판이 뒤집혔는지
+ *   canHover(cell): 이 칸에 호버를 보여도 되는지 (지금 둘 수 있는 칸. legal()이 있으면 그 안에 있는지)
+ *   click(cell): 칸 클릭 (보낼 수 있는지는 여기서 봅니다)
+ *   hover(cell | null): 호버가 바뀜. 손가락이면 cell.touch가 true입니다. board.draw의 hover로 넘기고 다시 그리면 됩니다
+ */
+export function attachInput(board, canvas, { flip, canHover, click, hover }) {
+  let press = null; // 누르고 있는 손가락 { id, start, clicked }
+  let touchedAt = -Infinity; // 터치 뒤에 브라우저가 따라 보내는 마우스 이벤트와 click은 버립니다
+  const fromTouch = (e) => e.timeStamp - touchedAt < 800;
+  const at = (e) => board.cellAt(e, flip());
+  const ok = (cell) => (cell && canHover(cell) ? cell : null);
+  // 지금 그려진 호버(board.hover)와 다를 때만 알립니다. 화면이 호버를 지우고 다시 그렸으면 같은 칸이라도 다시 알립니다
+  const show = (cell, touch = false) => {
+    const next = cell ? { row: cell.row, col: cell.col, ...(touch ? { touch: true } : {}) } : null;
+    const now = board.hover ?? null;
+    if (next === null ? now === null : sameCell(next, now) && !!next.touch === !!now.touch) return;
+    hover(next);
+  };
+  // 지금 화면에서 그 칸을 위한 미리보기가 있는지, 그 칸에 말이 있는지
+  const previewed = (cell) => {
+    const v = board.view ?? {};
+    return (v.tint ?? []).some((t) => sameCell(t.hover, cell)) || (v.lines ?? []).some((l) => sameCell(l.hover, cell));
+  };
+  const hasPiece = (cell) => (board.view?.pieces ?? []).some((p) => sameCell(p, cell));
+
+  // 판 위에서 끌어도 페이지가 스크롤되지 않고, 길게 눌러도 메뉴나 글자 선택이 뜨지 않도록
+  canvas.style.touchAction = 'none';
+  canvas.style.userSelect = 'none';
+  canvas.style.webkitUserSelect = 'none';
+  canvas.style.webkitTouchCallout = 'none';
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (press || fromTouch(e)) return;
+    const cell = ok(at(e));
+    canvas.style.cursor = cell ? 'pointer' : 'default';
+    show(cell);
+  });
+  canvas.addEventListener('mouseleave', () => {
+    if (!press) show(null);
+  });
+  canvas.addEventListener('click', (e) => {
+    if (fromTouch(e) || (e.pointerType && e.pointerType !== 'mouse')) return;
+    const cell = at(e);
+    if (cell) click(cell);
+  });
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' || press) return;
+    e.preventDefault();
+    try {
+      canvas.setPointerCapture(e.pointerId); // 손가락은 원래 누른 곳에 잡히지만, 펜도 판 밖까지 따라가게
+    } catch {
+      // 이미 떼었거나 잡을 수 없는 포인터: 판 안에서만 따라갑니다
+    }
+    const start = at(e);
+    const clicked = !!start && hasPiece(start) && !previewed(start);
+    press = { id: e.pointerId, start, clicked };
+    if (clicked) click(start);
+    show(ok(start), true);
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (press?.id === e.pointerId) show(ok(at(e)), true);
+  });
+  const release = (e, cancelled) => {
+    if (press?.id !== e.pointerId) return;
+    const { start, clicked } = press;
+    press = null;
+    touchedAt = e.timeStamp;
+    show(null);
+    const cell = cancelled ? null : at(e);
+    if (!cell) return;
+    // 누른 칸에서 그대로 떼면 톡 친 것: 아직 클릭하지 않았으면 클릭 (둘 수 없는 칸도. 고른 기물 취소 같은 것)
+    if (sameCell(cell, start)) {
+      if (!clicked) click(cell);
+    } else if (canHover(cell)) {
+      click(cell);
+    }
+  };
+  canvas.addEventListener('pointerup', (e) => release(e, false));
+  canvas.addEventListener('pointercancel', (e) => release(e, true));
 }

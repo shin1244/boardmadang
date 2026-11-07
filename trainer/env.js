@@ -206,6 +206,7 @@ export class Env {
     }
     ch += MARK_TYPES.length;
     for (const t of Array.isArray(view.tint) ? view.tint : []) {
+      if (t?.hover !== undefined) continue; // 마우스를 올렸을 때만 보이는 미리보기는 관측에 넣지 않습니다
       set(ch + (t?.color === 0 ? 0 : t?.color === 1 ? 1 : 2), t?.row, t?.col);
     }
     ch += 3;
