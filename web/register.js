@@ -183,8 +183,13 @@ function siteProblems(u) {
   const id = u.info?.id ?? '';
   if (id.length > MAX_ID) list.push(t('register.check.longId', { max: MAX_ID }));
   if (u.info && kindOf(u) === 'taken') list.push(t('register.check.taken', { id }));
-  if (u.info && kindOf(u) === 'new' && mine?.newLeft === 0) list.push(t('register.check.newLimit'));
+  if (newLimitHit(u)) list.push(t('register.check.newLimit'));
   return list;
+}
+
+/** 오늘 새 게임을 다 올려서 이 새 게임은 못 올리는지. 코드 문제가 아닙니다. 운영자는 하루 제한이 없습니다 */
+function newLimitHit(u) {
+  return !!u.info && kindOf(u) === 'new' && mine?.newLeft === 0 && !mine.unlimited;
 }
 
 function uploadProblemText(p) {
@@ -204,6 +209,7 @@ function thumbText(u) {
 
 /** 오늘 남은 등록 횟수. 새 게임은 하루에 하나라 다 쓰면 따로 알립니다 (server/internal/upload의 NewGamesPerDay) */
 function leftText(m) {
+  if (m.unlimited) return t('register.unlimited');
   if (m.left > 0 && m.newLeft === 0) return t('register.leftNoNew', { n: m.left });
   return t('register.left', { n: m.left });
 }
@@ -219,7 +225,7 @@ function renderUpload() {
     line.classList.add('bad');
   } else {
     line.textContent = mine ? leftText(mine) : '';
-    if (mine?.left === 0) line.classList.add('bad');
+    if (mine?.left === 0 && !mine.unlimited) line.classList.add('bad');
   }
 
   const box = $('#check');
@@ -246,7 +252,9 @@ function renderUpload() {
   status.className = 'status-line';
   status.textContent = '';
   if (u.state === 'done') {
-    status.textContent = t(found.length ? 'register.check.failed' : 'register.check.passed');
+    // 하루 제한만 걸렸으면 코드를 고치라고 하지 않습니다
+    const limitOnly = found.length === 1 && newLimitHit(u);
+    status.textContent = t(!found.length ? 'register.check.passed' : limitOnly ? 'register.check.limited' : 'register.check.failed');
     status.classList.add(found.length ? 'bad' : 'good');
   }
   const s = u.check?.stats;

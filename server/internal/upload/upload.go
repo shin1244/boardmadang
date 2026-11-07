@@ -56,8 +56,8 @@ const (
 	MaxDrafts       = 3 // 계정마다 남겨 두는 초안. 넘으면 오래된 것부터 지웁니다
 	DraftTTL        = 24 * time.Hour
 	DraftsPerHour   = 30
-	PublishesPerDay = 5  // 계정마다. 같은 zip을 다시 올려 등록해도 셉니다
-	NewGamesPerDay  = 1  // 계정마다 새 게임(처음 등록하는 id). 내 게임의 새 버전은 PublishesPerDay로만 셉니다
+	PublishesPerDay = 5  // 계정마다. 같은 zip을 다시 올려 등록해도 셉니다. 운영자는 없음
+	NewGamesPerDay  = 1  // 계정마다 새 게임(처음 등록하는 id). 내 게임의 새 버전은 PublishesPerDay로만 셉니다. 운영자는 없음
 	EditsPerHour    = 30 // 계정마다. 등록 정보만 고치기, 내리기, 다시 올리기 (Edit)
 )
 
@@ -322,10 +322,11 @@ func (s *Store) Publish(u identity.User, draftID string, req PublishRequest) (si
 	if (s.Reserved != nil && s.Reserved(id)) || (g != nil && g.Owner != u.ID) {
 		return site.Game{}, ErrTaken
 	}
-	if s.publishedToday(u.ID) >= PublishesPerDay {
+	// 하루 등록 횟수는 운영자(ADMIN_IDS)에게는 없습니다. 초안(DraftsPerHour)과 고치기(EditsPerHour)의 시간당 제한은 그대로입니다
+	if !u.Admin && s.publishedToday(u.ID) >= PublishesPerDay {
 		return site.Game{}, ErrTooMany
 	}
-	if g == nil && s.newToday(u.ID) >= NewGamesPerDay {
+	if !u.Admin && g == nil && s.newToday(u.ID) >= NewGamesPerDay {
 		return site.Game{}, ErrTooNew
 	}
 	clean, problems := CheckListing(req.Listing)
@@ -498,6 +499,8 @@ type Mine struct {
 	Left  int      `json:"left"` // 오늘 더 등록할 수 있는 횟수 (새 게임과 새 버전 모두)
 	// 오늘 더 올릴 수 있는 새 게임 수. Left를 넘지 않습니다
 	NewLeft int `json:"newLeft"`
+	// 운영자라 하루 등록 횟수 제한이 없음. 이때 Left, NewLeft는 세기만 하고 막지 않습니다 (Handler.ServeMine이 채움)
+	Unlimited bool `json:"unlimited,omitempty"`
 }
 
 // MyGame은 내가 올린 게임 하나입니다. 로비 항목(site.Game)에 마지막으로 등록한 때와 내렸는지를 더합니다.

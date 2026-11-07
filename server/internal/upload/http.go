@@ -44,7 +44,9 @@ func (h Handler) ServeMine(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, h.Store.Mine(u.ID))
+	m := h.Store.Mine(u.ID)
+	m.Unlimited = u.Admin
+	writeJSON(w, http.StatusOK, m)
 }
 
 func (h Handler) ServeNewDraft(w http.ResponseWriter, r *http.Request) {
