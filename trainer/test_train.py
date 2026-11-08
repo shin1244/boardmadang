@@ -25,6 +25,7 @@ from train import (
     export_onnx,
     fresh_loss,
     init_from,
+    train,
     unpack_game,
     versus_summary,
 )
@@ -63,6 +64,27 @@ class NetTest(unittest.TestCase):
         self.assertAlmostEqual(got["policy"], float(-(pi * torch.log_softmax(logits, 1)).sum(1).mean()), places=5)
         self.assertAlmostEqual(got["zero"], float((zs**2).mean()), places=6)
         self.assertIsNone(fresh_loss(net, (planes[:0], pis[:0], zs[:0]), "cpu"))
+
+    def test_value_options(self):
+        """--value-weight 0이나 가치를 배울 국면이 없으면 가치 머리의 끝(value_fc)은 그대로, 아니면 바뀝니다"""
+        rng = np.random.default_rng(0)
+        planes = rng.random((32, 14, 3, 3), dtype=np.float32)
+        pis = np.full((32, 9), 1 / 9, np.float32)
+        zs = rng.choice([-1.0, 1.0], 32).astype(np.float32)
+
+        def moved(buffer, **kw):
+            torch.manual_seed(0)
+            net = Net(channels=14, specials=0, blocks=1, filters=8)
+            before = [p.detach().clone() for p in net.value_fc.parameters()]
+            opt = torch.optim.SGD(net.parameters(), lr=0.1)
+            loss = train(net, opt, buffer, 3, 16, "cpu", np.random.default_rng(1), **kw)
+            self.assertTrue(np.isfinite(loss["value"]))
+            return any(not torch.equal(a, b) for a, b in zip(before, net.value_fc.parameters()))
+
+        self.assertTrue(moved([(planes, pis, zs)]))
+        self.assertFalse(moved([(planes, pis, zs)], value_weight=0.0))
+        self.assertFalse(moved([(planes, pis, zs, np.zeros(32, np.float32))]))
+        self.assertTrue(moved([(planes, pis, zs, (np.arange(32) % 4 == 0).astype(np.float32))]))
 
 
 class WorkerTest(unittest.TestCase):

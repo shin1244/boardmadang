@@ -228,10 +228,12 @@ def unpack_game(info, obj, data):
     return planes, pi, z
 
 
-def train(net, opt, buffer, steps, batch, device, rng):
+def train(net, opt, buffer, steps, batch, device, rng, value_weight=1.0):
+    """buffer의 항목은 (국면, 탐색 분포, 가치 정답) 또는 끝에 가치를 배울 국면 표시(0/1)가 붙은 넷입니다"""
     planes = np.concatenate([b[0] for b in buffer])
     pis = np.concatenate([b[1] for b in buffer])
     zs = np.concatenate([b[2] for b in buffer])
+    keep = np.concatenate([b[3] for b in buffer]) if len(buffer[0]) > 3 else None
     if len(zs) < 2:
         return None
     net.train()
@@ -243,9 +245,13 @@ def train(net, opt, buffer, steps, batch, device, rng):
         z = torch.from_numpy(zs[idx]).to(device)
         logits, v = net(x)
         lp = -(pi * F.log_softmax(logits, 1)).sum(1).mean()
-        lv = F.mse_loss(v, z)
+        if keep is None:
+            lv = F.mse_loss(v, z)
+        else:
+            k = torch.from_numpy(keep[idx]).to(device)
+            lv = ((v - z) ** 2 * k).sum() / k.sum().clamp(min=1)
         opt.zero_grad()
-        (lp + lv).backward()
+        (lp + value_weight * lv).backward()
         opt.step()
         total += [lp.item(), lv.item()]
     return {"policy": total[0] / steps, "value": total[1] / steps}
@@ -713,6 +719,13 @@ def main():
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--window", type=int, default=20, help="train on the last N iterations of self-play")
+    ap.add_argument("--value-weight", type=float, default=1.0, help="weight of the value loss (default 1)")
+    ap.add_argument(
+        "--value-keep",
+        type=float,
+        default=1.0,
+        help="share of positions whose game result is a value target; the rest train only the policy (default 1)",
+    )
     ap.add_argument("--eval-every", type=int, default=5)
     ap.add_argument("--eval-games", type=int, default=40)
     ap.add_argument(
@@ -910,9 +923,12 @@ def main():
             stats = pool.split(cmd, infer, on_game=lambda obj, data: games.append(unpack_game(info, obj, data)))
             new = tuple(np.concatenate([g[k] for g in games]) for k in range(3))
             fresh = fresh_loss(net, new, args.device)  # 버퍼에 넣기 전에 잽니다
+            if args.value_keep < 1:
+                # 한 판의 국면은 모두 같은 승패를 정답으로 가져서, 다 배우면 판을 외우기 쉽습니다. 일부만 가치를 배웁니다
+                new = new + ((rng.random(len(new[2])) < args.value_keep).astype(np.float32),)
             buffer.append(new)
             buffer = buffer[-args.window :]
-            loss = train(net, opt, buffer, args.steps, args.batch, args.device, rng)
+            loss = train(net, opt, buffer, args.steps, args.batch, args.device, rng, args.value_weight)
             n = sum(len(b[2]) for b in buffer)
             print(
                 f"iter {it:3d}  first/second/draw {stats['wins'][0]}/{stats['wins'][1]}/{stats['draws']}"
