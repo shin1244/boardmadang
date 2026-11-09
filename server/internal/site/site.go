@@ -1,5 +1,6 @@
 // Package site는 화면(web/), 게임 코드(games/), 화면과 실행기가 import하는 모듈(sdk/, trainer/의 몇 파일)을 내보내고,
 // 게임 목록(/api/games)과 화면 언어(/api/locale)를 알려 줍니다.
+// 검색 엔진이 읽을 게임 페이지, 소개 페이지, sitemap.xml, robots.txt는 pages.go에 있습니다.
 //
 // 개발 서버(sdk/playground/serve.js)가 하던 일을 운영에서는 Go 서버가 맡습니다. 두 곳의 응답 모양은 같아야 합니다.
 // 특히 게임 코드 버전(codeVersion)은 매칭 키와 기보에 들어가므로 계산법이 serve.js와 한 글자도 달라선 안 됩니다.
@@ -77,6 +78,9 @@ type Site struct {
 	Models interface{ Model(game string) *AIModel }
 	// Starred는 게임마다 별(즐겨찾기) 수입니다 (internal/star). 있으면 /api/games의 stars에 넣습니다.
 	Starred interface{ Stars(game string) int }
+	// PublicURL은 브라우저가 보는 사이트 주소입니다 (PUBLIC_URL). 게임 페이지와 sitemap.xml의 절대 주소에 씁니다 (pages.go).
+	// 비어 있으면 요청의 Host로 만듭니다.
+	PublicURL string
 }
 
 // AIModel은 브라우저에서 AI와 둘 때 쓰는 학습한 신경망입니다 (internal/ai, trainer/train.py --export-onnx).
@@ -116,9 +120,9 @@ func Open(dir string) (*Site, error) {
 	return &Site{fsys: fsys}, nil
 }
 
-// ServeHome은 첫 화면(로비)으로 보냅니다.
+// ServeHome은 첫 화면(로비)으로 보냅니다. 검색 엔진이 /와 /web/를 같은 페이지 하나로 보도록 영구 이동(301)입니다.
 func ServeHome(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/web/", http.StatusFound)
+	http.Redirect(w, r, "/web/", http.StatusMovedPermanently)
 }
 
 // ServeFile은 web/, games/ 아래의 파일과 modules, vendorFiles를 내보냅니다.
@@ -356,31 +360,13 @@ func readListing(fsys fs.FS, folder string) (json.RawMessage, string) {
 	return data, ""
 }
 
+// ServeGames는 레포 게임과 올린 게임의 목록입니다 (list).
 func (s *Site) ServeGames(w http.ResponseWriter, r *http.Request) {
-	list, err := s.Games()
+	list, err := s.list()
 	if err != nil {
 		log.Printf("게임 목록 실패: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server error"})
 		return
-	}
-	if s.Uploaded != nil {
-		for _, g := range s.Uploaded.Games() {
-			// 올린 뒤에 레포에 같은 id가 생기면 레포 게임만 보입니다
-			if !slices.ContainsFunc(list, func(x Game) bool { return x.ID == g.ID }) {
-				list = append(list, g)
-			}
-		}
-	}
-	for i := range list {
-		if s.Played != nil {
-			list[i].Plays = s.Played.Plays(list[i].ID)
-		}
-		if s.Models != nil {
-			list[i].AI = s.Models.Model(list[i].ID)
-		}
-		if s.Starred != nil {
-			list[i].Stars = s.Starred.Stars(list[i].ID)
-		}
 	}
 	writeJSON(w, http.StatusOK, list)
 }

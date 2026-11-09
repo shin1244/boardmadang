@@ -97,6 +97,7 @@ func main() {
 		pages.Played = records
 		pages.Models = models
 		pages.Starred = stars
+		pages.PublicURL = cfg.PublicURL
 		uploads.Reserved = pages.Has
 	}
 
@@ -179,6 +180,14 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 		mux.HandleFunc("GET /trainer/", pages.ServeFile) // 브라우저 AI가 실행기 안에서 쓰는 학습 도구 두 파일만
 		mux.HandleFunc("GET /games/", pages.ServeFile)
 		mux.HandleFunc("GET /api/games", pages.ServeGames)
+		// 검색 엔진이 읽을 페이지 (site/pages.go). /{lang}/make처럼 쓰면 /web/와 겹쳐서 언어마다 따로 적습니다
+		for _, lang := range []string{"ko", "en"} {
+			mux.HandleFunc("GET /"+lang+"/games/{game}", pages.ServeGamePage)
+			mux.HandleFunc("GET /"+lang+"/make", pages.ServeGuide)
+			mux.HandleFunc("GET /"+lang+"/ai", pages.ServeGuide)
+		}
+		mux.HandleFunc("GET /sitemap.xml", pages.ServeSitemap)
+		mux.HandleFunc("GET /robots.txt", pages.ServeRobots)
 	}
 	mux.HandleFunc("GET /api/me", ids.HandleMe)
 	mux.HandleFunc("GET /api/auth/providers", login.ServeProviders)

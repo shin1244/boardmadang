@@ -39,7 +39,7 @@ func TestSiteRoutes(t *testing.T) {
 		status   int
 		location string
 	}{
-		{"/", http.StatusFound, "/web/"},
+		{"/", http.StatusMovedPermanently, "/web/"},
 		{"/web", http.StatusMovedPermanently, "/web/"},
 		{"/games/tictactoe?lang=en", http.StatusMovedPermanently, "/games/tictactoe/?lang=en"},
 		{"/web/", http.StatusOK, ""},
@@ -59,6 +59,19 @@ func TestSiteRoutes(t *testing.T) {
 		{"/server/go.mod", http.StatusNotFound, ""},
 		{"/README.md", http.StatusNotFound, ""},
 		{"/api/locale", http.StatusOK, ""},
+		// 검색 엔진이 읽는 페이지 (internal/site/pages.go)
+		{"/ko/games/tictactoe", http.StatusOK, ""},
+		{"/en/games/tictactoe", http.StatusOK, ""},
+		{"/en/games/missing", http.StatusNotFound, ""},
+		{"/ko/make", http.StatusOK, ""},
+		{"/en/make", http.StatusOK, ""},
+		{"/ko/ai", http.StatusOK, ""},
+		{"/en/ai", http.StatusOK, ""},
+		{"/ja/make", http.StatusNotFound, ""},
+		{"/sitemap.xml", http.StatusOK, ""},
+		{"/robots.txt", http.StatusOK, ""},
+		{"/web/guide.js", http.StatusOK, ""},
+		{"/web/guide.css", http.StatusOK, ""},
 	}
 	for _, c := range cases {
 		res, err := client.Get(srv.URL + c.path)
@@ -93,7 +106,7 @@ func TestSiteRoutes(t *testing.T) {
 func TestRoutesWithoutSite(t *testing.T) {
 	srv := newTestServer()
 	defer srv.Close()
-	for path, want := range map[string]int{"/": http.StatusNotFound, "/web/": http.StatusNotFound, "/api/games": http.StatusNotFound, "/api/locale": http.StatusOK} {
+	for path, want := range map[string]int{"/": http.StatusNotFound, "/web/": http.StatusNotFound, "/api/games": http.StatusNotFound, "/api/locale": http.StatusOK, "/ko/make": http.StatusNotFound, "/sitemap.xml": http.StatusNotFound} {
 		res, err := http.Get(srv.URL + path)
 		if err != nil {
 			t.Fatal(err)

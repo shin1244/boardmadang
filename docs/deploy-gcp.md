@@ -41,6 +41,7 @@ GCP 프로젝트 `boardmadang`에 이렇게 놓았습니다. gcloud의 기본 �
 | VM 서비스 계정 | `boardmadang-vm` | 이미지 받기, 비밀값 읽기, 로그 쓰기만 |
 
 운영에서는 Go 서버 하나가 화면(`web/`), 게임 코드(`games/`), `/api/games`, `/api/locale`까지 전부 맡습니다 (`server/internal/site`).
+검색 엔진용 게임 페이지(`/ko/games/<id>`), 소개 페이지(`/ko/make`, `/ko/ai`), `/sitemap.xml`, `/robots.txt`도 이 서버가 만듭니다 ([protocol.md](protocol.md#http)).
 컨테이너 이미지에 같이 들어가므로 개발 서버(`sdk/playground/serve.js`)는 띄우지 않습니다.
 
 - **처음 한 번**: `deploy/setup-gcp.sh`. 위의 것을 만듭니다. 이미 있는 것은 건너뜁니다.
@@ -112,6 +113,12 @@ GCP 프로젝트 `boardmadang`에 이렇게 놓았습니다. gcloud의 기본 �
    ```bash
    gcloud secrets create admin-ids --project boardmadang --data-file=-
    ```
+
+7. **검색 엔진 등록**: 배포한 뒤 한 번만 합니다. `https://boardmadang.com/sitemap.xml`이 열리는지 먼저 봅니다.
+   - Google: [Search Console](https://search.google.com/search-console)에 도메인 속성 `boardmadang.com`을 더하고(DNS TXT로 소유 확인),
+     "Sitemaps"에 `sitemap.xml`을 제출합니다. 새 게임 페이지는 sitemap으로 알아서 찾습니다.
+   - 네이버: [서치어드바이저](https://searchadvisor.naver.com)에 `https://boardmadang.com`을 등록하고(HTML 메타 태그나 파일로 소유 확인),
+     "요청 → 사이트맵 제출"에 같은 주소를 넣습니다.
 
 ## 단일 인스턴스의 한계와 다음 단계
 

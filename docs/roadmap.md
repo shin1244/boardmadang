@@ -60,6 +60,8 @@
 
 - [x] 운영자 화면: 신고를 대상별로 묶어 보고 의견 가리기, 올린 게임 내리기, 계정 정지(1일, 7일, 30일, 영구) ([moderation.md](moderation.md))
   - 운영에 켜려면 Secret Manager에 `admin-ids`(내 계정 id)를 넣고 다시 배포
+- [x] 검색 엔진용 페이지: 게임 페이지(`/ko/games/<id>`), 소개 페이지(`/ko/make`, `/ko/ai`), `sitemap.xml`, `robots.txt` ([protocol.md](protocol.md#http))
+  - [ ] Google Search Console과 네이버 서치어드바이저에 sitemap 제출 ([deploy-gcp.md](deploy-gcp.md) 7번)
 - [ ] 장애 알림: GCP 가동 시간 확인(uptime check)과 메일 알림
 - [ ] 디스크 사용량과 스냅샷이 잘 쌓이는지 가끔 확인
 

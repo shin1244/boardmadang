@@ -1,0 +1,121 @@
+{{/* Make your own board game (/en/make). The Korean version is make.ko.html. Change both together. */}}
+{{define "body"}}
+<main class="guide">
+  <div class="guide-head">
+    <div class="guide-intro">
+      <h1>Make your own board game online</h1>
+      <p class="lead">Write the rules of your board game in JavaScript, and Boardmadang handles the board, online matches, replays, and an AI opponent.
+        It's free, and friends join with a single link, nothing to install.</p>
+      <ol class="hero-steps" aria-label="Write the rules, and the board, online matches, and an AI opponent come with it">
+        <li><span class="step-icon rules"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5"/></svg></span><span>Write rules</span></li>
+        <li class="step-arrow" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></li>
+        <li><span class="step-icon board"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M6 2v12M10 2v12M2 6h12M2 10h12"/></svg></span><span>Board</span></li>
+        <li><span class="step-icon match"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="5" cy="6" r="2.2"/><circle cx="11" cy="6" r="2.2"/><path d="M1.5 13c.5-1.9 1.8-3 3.5-3s3 1.1 3.5 3M7.5 13c.5-1.9 1.8-3 3.5-3s3 1.1 3.5 3"/></svg></span><span>Online play</span></li>
+        <li><span class="step-icon ai"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5"/><path d="M6.5 1.5v2.5M9.5 1.5v2.5M6.5 12v2.5M9.5 12v2.5M1.5 6.5h2.5M1.5 9.5h2.5M12 6.5h2.5M12 9.5h2.5"/></svg></span><span>AI opponent</span></li>
+      </ol>
+      <div class="hero-ctas">
+        <a class="btn hero-cta" href="https://github.com/shin1244/boardmadang/blob/main/sdk/README.md"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5"/></svg><span>Get started (SDK docs)</span></a>
+        <a class="btn ghost hero-cta" href="/web/register.html"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>Register a game</span></a>
+      </div>
+    </div>
+  </div>
+
+  <section>
+    <h2>How it works</h2>
+    <ol class="steps">
+      <li>
+        <h3>1. Write the rules</h3>
+        <p><code>npx boardmadang new my-game</code> creates a game folder that starts as tic-tac-toe.
+          In <code>index.js</code> you write the starting board, how a move changes it, whose turn it is, who won, and what to draw.
+          <code>npx boardmadang dev</code> shows both players' boards side by side, so you can play both sides and fix things as you go.</p>
+      </li>
+      <li>
+        <h3>2. Upload it</h3>
+        <p>Upload the zip from <code>npx boardmadang pack</code> on the <a href="/web/register.html">Register a game</a> page.
+          It checks that your code follows the rules every game must follow, plays 200 random games to look for errors, and checks the speed.
+          Win one game against yourself (the clear check), then add a name, a description, and the rulebook.</p>
+      </li>
+      <li>
+        <h3>3. Play together</h3>
+        <p>Your game shows up in the game list. Matchmaking, rooms, spectating, and replays work right away.
+          Press "Make an AI" on your profile to get <a href="/en/ai">an AI opponent and first-player win rates</a> too.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>What a game looks like</h2>
+    <p>A game is one object. You write only the rules, not the networking, the screen, or who the opponent is.</p>
+    <div class="code-card">
+      <div class="code-tab"><i></i>index.js</div>
+      <pre class="code"><span class="ln">1</span><span class="k">export default</span> {
+<span class="ln">2</span>  <span class="p">id</span>: <span class="s">'my-game'</span>,
+<span class="ln">3</span>  <span class="p">board</span>: { <span class="p">places</span>: <span class="s">'cells'</span>, <span class="p">rows</span>: <span class="n">3</span>, <span class="p">cols</span>: <span class="n">3</span> },
+<span class="ln">4</span>  <span class="p">pieces</span>: <span class="s">'xo'</span>,
+<span class="ln">5</span>  <span class="p">maxActions</span>: <span class="n">9</span>,
+<span class="ln">6</span>
+<span class="ln">7</span>  <span class="f">setup</span>(rng) { <span class="c">// starting state</span>
+<span class="ln">8</span>    <span class="k">return</span> { <span class="p">board</span>: <span class="f">Array</span>(<span class="n">9</span>).<span class="f">fill</span>(<span class="k">null</span>), <span class="p">turn</span>: <span class="n">0</span> };
+<span class="ln">9</span>  },
+<span class="ln">10</span>  <span class="f">play</span>(state, player, action) { <span class="c">// illegal move: return the same state</span>
+<span class="ln">11</span>    <span class="k">const</span> i = action.row * <span class="n">3</span> + action.col;
+<span class="ln">12</span>    <span class="k">if</span> (player !== state.turn || state.board[i] !== <span class="k">null</span>) <span class="k">return</span> state;
+<span class="ln">13</span>    <span class="k">const</span> board = state.board.<span class="f">slice</span>();
+<span class="ln">14</span>    board[i] = player;
+<span class="ln">15</span>    <span class="k">return</span> { board, <span class="p">turn</span>: <span class="n">1</span> - player };
+<span class="ln">16</span>  },
+<span class="ln">17</span>  <span class="f">turn</span>(state) { <span class="k">return</span> state.turn; }, <span class="c">// whose turn</span>
+<span class="ln">18</span>  <span class="f">result</span>(state) { <span class="k">return null</span>; },  <span class="c">// { winner } when it's over</span>
+<span class="ln">19</span>  <span class="f">view</span>(state, player) { <span class="c">/* pieces to draw */</span> },
+<span class="ln">20</span>};</pre>
+    </div>
+    <p>When someone clicks a square, both players' browsers feed the same move to <code>play()</code> in the same order.
+      So both always see the same board, and you never write a game server.</p>
+  </section>
+
+  <section>
+    <h2>What's different</h2>
+    <ul class="points">
+      <li><b>The code enforces the rules.</b> Illegal moves can't be made, and wins are decided automatically. With tools that only give you a board and pieces, players have to police the rules themselves.</li>
+      <li><b>Everything for online play is there.</b> Matchmaking, rooms, chess clocks, spectating, and replays are handled for you.</li>
+      <li><b>You get an AI opponent.</b> Play alone against an AI trained AlphaZero-style, and see from its self-play games whether the first or second player has the edge. <a href="/en/ai">About the AI</a></li>
+      <li><b>Free and open source.</b> The server and site are AGPL-3.0 and the SDK is MIT, on <a href="https://github.com/shin1244/boardmadang">GitHub</a>. You keep the copyright of the games you upload.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Games you can make</h2>
+    <ul class="points">
+      <li>One-on-one board games where two players take turns</li>
+      <li>Boards up to 32×32, placing in cells or on intersections</li>
+      <li>Chess pieces, go stones, X and O, and lettered tiles like janggi or shogi pieces</li>
+      <li>Placing, moving, capturing, painting, and special actions (buttons such as pass)</li>
+    </ul>
+  </section>
+
+  {{- if .Games}}
+  <section>
+    <h2>Games made on Boardmadang</h2>
+    <ul class="game-links">
+      {{- range .Games}}
+      <li><a href="{{.URL}}" lang="{{.NameLang}}">{{.Name}}</a>{{if .Desc}}<span lang="{{.DescLang}}">{{.Desc}}</span>{{end}}</li>
+      {{- end}}
+    </ul>
+  </section>
+  {{- end}}
+
+  <section>
+    <h2>FAQ</h2>
+    <dl class="faq">
+      <dt>Do I need to know how to code?</dt>
+      <dd>The rules are written in JavaScript. You can start by changing the tic-tac-toe in your new folder bit by bit, or give an AI coding tool the SDK docs and your rules to get a first draft.</dd>
+      <dt>Does it cost anything?</dt>
+      <dd>No. Boardmadang is a free site run by an individual. Players can also play as guests without logging in.</dd>
+      <dt>Who owns the games I upload?</dt>
+      <dd>You do. Boardmadang uses them only as far as the service needs, such as matches, spectating, replays, and AI opponents. See the <a href="/web/legal.html">terms</a> for details.</dd>
+      <dt>Can I make games for three or more players?</dt>
+      <dd>Not yet. Only games where two players take turns are supported.</dd>
+    </dl>
+  </section>
+</main>
+{{end}}

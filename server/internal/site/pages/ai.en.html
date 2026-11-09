@@ -1,0 +1,94 @@
+{{/* AI opponent (/en/ai). The Korean version is ai.ko.html. Change both together. Keep the training description in line with trainer/README.md. */}}
+{{define "body"}}
+<main class="guide">
+  <div class="guide-head">
+    <div class="guide-intro">
+      <h1>Play your own board game against an AI</h1>
+      <p class="lead">Upload your game to Boardmadang and ask for an AI, and you get an opponent that learned your rules by playing itself.
+        Playtest alone, and see in numbers whether the first or second player has the edge.</p>
+      <div class="hero-ctas">
+        <a class="btn hero-cta" href="/en/make"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>Make a game</span></a>
+        {{- if .Games}}
+        <a class="btn ghost hero-cta" href="#games"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5"/><path d="M6.5 1.5v2.5M9.5 1.5v2.5M6.5 12v2.5M9.5 12v2.5M1.5 6.5h2.5M1.5 9.5h2.5M12 6.5h2.5M12 9.5h2.5"/></svg><span>Games with an AI</span></a>
+        {{- end}}
+      </div>
+    </div>
+  </div>
+
+  <section>
+    <h2>How it learns</h2>
+    <p>It works like AlphaZero. A neural network guesses where to play and who is ahead, Monte Carlo tree search (MCTS) reads a few moves ahead,
+      and the AI plays tens of thousands of games against itself, learning again from the games it just played.</p>
+    <p>Each game is trained on its own rules code, so the AI can learn a game nobody has ever played before.
+      The trained AI runs in your browser, so there is no waiting on a server, and it plays at three levels: easy, normal, and hard.</p>
+  </section>
+
+  <section>
+    <h2>From request to first game</h2>
+    <ol class="steps">
+      <li><h3>1. Upload your game</h3><p>Write the rules and upload the game. See <a href="/en/make">Make your own board game online</a>.</p></li>
+      <li><h3>2. Make an AI</h3><p>Press "Make an AI" next to your game on your profile. Each account can ask once a week.</p></li>
+      <li><h3>3. Training</h3><p>A moderator trains each game for about an hour and uploads the AI. Requests are handled in order.</p></li>
+      <li><h3>4. Play</h3><p>"Play the AI" appears on the game, along with the first- and second-player win rates.</p></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>First vs. second player</h2>
+    <p>From the games the AI played against itself near the end of training, you see how often the first player won, how often it was a draw, and how often the second player won.
+      These are training games, so they aren't the same as people playing, but a game that strongly favors one side shows up right away.
+      When it does, try a rule change, such as giving the second player something extra or changing the starting board, train again, and see how the numbers move.</p>
+  </section>
+
+  <section>
+    <h2>Find loopholes in the training record</h2>
+    <p>You can replay the games the AI played while training. Only the creator and moderators can see them.
+      The AI tries anything to win, so it often finds games that never end or gaps in the rules before people do.</p>
+  </section>
+
+  <section>
+    <h2>Games the AI learns well</h2>
+    <ul class="points">
+      <li>Two players taking turns (games where both move at once can't be learned)</li>
+      <li>Games played from what's on the board. Anything not on the board, like a ko point in go or castling rights in chess, goes in <code>observe()</code></li>
+      <li>Giving the list of legal moves (<code>legal()</code>) makes it learn faster</li>
+      <li>Training time is fixed, so bigger boards and longer games end up weaker in the same time</li>
+    </ul>
+  </section>
+
+  {{- if .Games}}
+  <section id="games">
+    <h2>Games with an AI</h2>
+    <ul class="game-links">
+      {{- range .Games}}
+      <li>
+        <a href="{{.URL}}" lang="{{.NameLang}}">{{.Name}}</a>
+        {{- with .Balance}}
+        <div class="balance-bar" role="img" aria-label="{{.Label}}">
+          {{- if .First}}<span class="first" style="flex-grow: {{.First}}"></span>{{end}}
+          {{- if .Draw}}<span class="draw" style="flex-grow: {{.Draw}}"></span>{{end}}
+          {{- if .Second}}<span class="second" style="flex-grow: {{.Second}}"></span>{{end}}
+        </div>
+        <span>{{.Label}}</span>
+        {{- else}}
+        {{- if .Desc}}<span lang="{{.DescLang}}">{{.Desc}}</span>{{end}}
+        {{- end}}
+      </li>
+      {{- end}}
+    </ul>
+  </section>
+  {{- end}}
+
+  <section>
+    <h2>FAQ</h2>
+    <dl class="faq">
+      <dt>How strong is the AI?</dt>
+      <dd>It trains for a fixed time, so it depends on the game. Small games like tic-tac-toe get good enough to draw every game against a perfect player, while people can still beat it in bigger games.</dd>
+      <dt>Does it cost anything?</dt>
+      <dd>No. Uploading games and making an AI are both free.</dd>
+      <dt>What happens to the AI when I change the rules?</dt>
+      <dd>If the board and actions keep the same shape, the old AI keeps playing, and the win rates note that it was trained on an earlier version of the code. Ask for an AI again to train on the new rules.</dd>
+    </dl>
+  </section>
+</main>
+{{end}}
