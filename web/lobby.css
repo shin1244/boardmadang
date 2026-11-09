@@ -1092,11 +1092,17 @@ fieldset .bars-chip, .bars-chip { width: 44px; padding: 0; justify-content: cent
 /* ---- 좁은 화면 (휴대폰) ---- */
 
 @media (max-width: 760px) {
-  .topbar { position: relative; height: 56px; gap: 8px; padding: 0 12px 0 16px; }
+  /* 상단 줄에는 로고, 테마, 언어, 내 기록, 로그인이 한 줄로 들어가야 합니다 (영어 360px 휴대폰에서도).
+     그래서 간격과 글자를 조금 줄이고, 언어 버튼은 테마 버튼처럼 지구본만 둡니다 */
+  .topbar { position: relative; height: 56px; gap: 6px; padding: 0 12px; }
   .login-box { position: static; }
   .login-menu { top: 100%; left: 16px; right: 16px; width: auto; max-width: none; }
-  .logo { white-space: nowrap; }
+  .logo { gap: 8px; font-size: 16px; white-space: nowrap; }
   .theme-btn { margin-left: auto; }
+  /* 지금 언어는 버튼의 aria-label과 펼친 목록의 ✓로 알 수 있습니다 */
+  .lang-button { width: 34px; height: 34px; justify-content: center; gap: 0; padding: 0; border-radius: 8px; font-size: 0; }
+  .lang-button::after { display: none; }
+  .login { padding: 6px 10px; font-size: 14px; }
   .me {
     flex: none;
     width: 34px;
@@ -1184,4 +1190,18 @@ fieldset .bars-chip, .bars-chip { width: 44px; padding: 0; justify-content: cent
   .card-meta .langs { display: none; }
   .add-card { min-height: 0; padding: 24px 8px; }
   .app > .site-footer { padding: 20px 16px; }
+}
+
+/* 아주 좁은 휴대폰 (360px 아래): 상단 줄에 로고 글자까지는 들어가지 않아서 그림만 둡니다.
+   글자는 화면 읽기 프로그램이 읽도록 .sr-only처럼 남깁니다 */
+@media (max-width: 359px) {
+  .logo [data-i18n="site.name"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 }
