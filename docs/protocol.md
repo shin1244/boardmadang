@@ -140,6 +140,19 @@ AI 모델을 올리면(`PUT /api/admin/ai/{game}`) 그 게임의 열린 요청�
   Go 서버는 화면(`/web/`), 화면이 import하는 SDK 모듈(`/sdk/playground/`의 `board.js`, `listing.js`, `platform.js`), 게임 코드(`/games/`)도 내보냅니다.
   테스트 파일과 점으로 시작하는 파일은 내보내지 않습니다. 개발 서버에만 있는 것은 플레이그라운드 화면과 `PUT /api/games/<id>/listing`(등록창 저장), `PUT /api/games/<id>/thumbnail`(썸네일 저장)입니다.
   플레이그라운드는 게임 제작자가 자기 컴퓨터에서 쓰는 도구라 사이트의 메뉴와 버튼에는 없습니다.
+- 검색 엔진이 읽을 페이지는 Go 서버에만 있습니다 ([server/internal/site/pages.go](../server/internal/site/pages.go)).
+  로비는 스크립트가 게임 목록을 채우는 화면이라, 서버가 `listing.json`의 이름, 소개, 룰북을 HTML에 직접 넣은 페이지를 언어마다 따로 내줍니다.
+
+  | 주소 | 내용 |
+  |---|---|
+  | `GET /ko/games/{id}`, `/en/games/{id}` | 게임 페이지: 룰북, 판 정보, 선공·후공 승률(AI가 있으면), 두러 가기. 등록 정보나 이름이 없는 게임은 `404` |
+  | `GET /ko/make`, `/en/make` | 보드게임 만들기 소개와 게임 목록 |
+  | `GET /ko/ai`, `/en/ai` | AI 상대 소개와 AI와 둘 수 있는 게임 목록 |
+  | `GET /sitemap.xml` | 로비, 소개 페이지, 게임 페이지. 언어별 주소를 `xhtml:link`(hreflang, x-default는 영어)로 묶습니다. `games/private/`의 게임은 뺍니다 |
+  | `GET /robots.txt` | `/auth/`, `/drafts/`, 운영자 화면만 막고 sitemap 주소를 알립니다 |
+
+  페이지와 sitemap의 절대 주소는 `PUBLIC_URL`, 없으면 요청의 Host로 만듭니다. `/`는 `/web/`로 `301`입니다.
+  개인 화면(`history.html`, `signup.html`, `training.html`, `admin.html`)은 HTML의 `<meta name="robots" content="noindex">`로 뺍니다.
 
 # 웹소켓
 

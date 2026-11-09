@@ -1,0 +1,92 @@
+{{/* 게임 페이지 (/ko/games/<id>). 모양은 로비의 게임 창(web/index.html의 #game)과 같은 타일, 룰북, 승률 막대를 씁니다. */}}
+{{define "body"}}
+{{- $T := .T}}
+{{- with .Game}}
+<main class="guide">
+  <nav class="crumbs" aria-label="{{$T.crumbs}}">
+    <a href="/web/">{{$T.games}}</a><span aria-hidden="true">/</span><span aria-current="page" lang="{{.NameLang}}">{{.Name}}</span>
+  </nav>
+
+  <div class="guide-head">
+    {{- if .Thumb}}
+    <div class="gp-thumb"><canvas data-thumb="{{.Thumb}}" role="img" aria-label="{{.ThumbLabel}}"></canvas></div>
+    {{- else if .Module}}
+    <div class="gp-thumb"><canvas data-module="{{.Module}}" data-lang="{{.GameLang}}" role="img" aria-label="{{.ThumbLabel}}"></canvas></div>
+    {{- end}}
+    <div class="guide-intro">
+      <h1 lang="{{.NameLang}}">{{.Name}}</h1>
+      {{- if .Desc}}
+      <p class="lead" lang="{{.DescLang}}">{{.Desc}}</p>
+      {{- end}}
+      <div class="hero-ctas">
+        <a class="btn hero-cta" href="{{.PlayURL}}"><svg viewBox="0 0 16 16" aria-hidden="true"><path class="fill" d="M5 3.5v9l7-4.5z"/></svg><span>{{$T.play}}</span></a>
+        {{- if .AIURL}}
+        <a class="btn ghost hero-cta" href="{{.AIURL}}"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5"/><path d="M6.5 1.5v2.5M9.5 1.5v2.5M6.5 12v2.5M9.5 12v2.5M1.5 6.5h2.5M1.5 9.5h2.5M12 6.5h2.5M12 9.5h2.5"/></svg><span>{{$T.playAI}}</span></a>
+        {{- end}}
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sr-only">{{$T.info}}</h2>
+  <div class="gd-tiles">
+    {{- if .Board}}
+    <div class="gd-tile">
+      {{- if .Points}}<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5h12M2 11h12M5 2v12M11 2v12"/><circle class="fill" cx="11" cy="5" r="2"/></svg>
+      {{- else}}<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M8 2v12M2 8h12"/><rect class="fill" x="9.5" y="3.5" width="3" height="3"/></svg>
+      {{- end}}<b>{{.Board}}</b><span>{{if .Points}}{{$T.points}}{{else}}{{$T.cells}}{{end}}</span>
+    </div>
+    {{- end}}
+    <div class="gd-tile"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1.5"/></svg><b>{{.Timer}}</b><span>{{.TimerNote}}</span></div>
+    {{- if .Difficulty}}
+    <div class="gd-tile"><span class="bars {{if eq .Difficulty "easy"}}d1{{else if eq .Difficulty "normal"}}d2{{else}}d3{{end}}" aria-hidden="true"><i></i><i></i><i></i></span><b>{{.DifficultyLabel}}</b><span>{{$T.difficulty}}</span></div>
+    {{- end}}
+    {{- if .Langs}}
+    <div class="gd-tile"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2.2 2 2.2 10 0 12M8 2c-2.2 2-2.2 10 0 12"/></svg><b>{{.Langs}}</b><span>{{$T.langs}}</span></div>
+    {{- end}}
+  </div>
+
+  {{- if .Rulebook}}
+  <section>
+    <h2>{{$T.rulebook}}</h2>
+    <div class="rulebook-text" lang="{{.RulebookLang}}">
+      {{- range .Rulebook}}
+      <p>{{.}}</p>
+      {{- end}}
+    </div>
+  </section>
+  {{- end}}
+
+  {{- with .Balance}}
+  <section>
+    <h2>{{$T.balance}}</h2>
+    <div class="balance-bar" role="img" aria-label="{{.Label}}">
+      {{- if .First}}<span class="first" style="flex-grow: {{.First}}"></span>{{end}}
+      {{- if .Draw}}<span class="draw" style="flex-grow: {{.Draw}}"></span>{{end}}
+      {{- if .Second}}<span class="second" style="flex-grow: {{.Second}}"></span>{{end}}
+    </div>
+    <ul class="balance-legend">
+      <li><i class="swatch first"></i>{{$T.first}} {{.FirstPct}}%</li>
+      {{- if .Draw}}
+      <li><i class="swatch draw"></i>{{$T.draw}} {{.DrawPct}}%</li>
+      {{- end}}
+      <li><i class="swatch second"></i>{{$T.second}} {{.SecondPct}}%</li>
+    </ul>
+    <p class="muted">{{.Note}}</p>
+  </section>
+  {{- end}}
+
+  {{- if .Author}}
+  <section class="guide-row">
+    <h2>{{$T.author}}</h2>
+    <span>{{.Author}}</span>
+  </section>
+  {{- end}}
+
+  <section class="guide-next">
+    <h2>{{$T.madeTitle}}</h2>
+    <p>{{$T.madeBody}}</p>
+    <p><a href="/{{$.Lang}}/make">{{$T.madeLink}} →</a></p>
+  </section>
+</main>
+{{- end}}
+{{end}}

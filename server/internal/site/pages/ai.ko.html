@@ -1,0 +1,94 @@
+{{/* AI 상대 소개 (/ko/ai). 영어판은 ai.en.html. 내용을 바꾸면 두 언어를 같이 고칩니다. 학습 방식은 trainer/README.md와 맞춥니다. */}}
+{{define "body"}}
+<main class="guide">
+  <div class="guide-head">
+    <div class="guide-intro">
+      <h1>내가 만든 보드게임을 AI와 두기</h1>
+      <p class="lead">보드마당에 올린 게임에 AI 만들기를 요청하면, 그 게임의 규칙으로 스스로 두며 배운 AI 상대가 생깁니다.
+        혼자서도 플레이테스트를 하고, 선공과 후공 중 누가 유리한지도 숫자로 봅니다.</p>
+      <div class="hero-ctas">
+        <a class="btn hero-cta" href="/ko/make"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>게임 만들기</span></a>
+        {{- if .Games}}
+        <a class="btn ghost hero-cta" href="#games"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5"/><path d="M6.5 1.5v2.5M9.5 1.5v2.5M6.5 12v2.5M9.5 12v2.5M1.5 6.5h2.5M1.5 9.5h2.5M12 6.5h2.5M12 9.5h2.5"/></svg><span>AI와 둘 수 있는 게임</span></a>
+        {{- end}}
+      </div>
+    </div>
+  </div>
+
+  <section>
+    <h2>어떻게 배우나요</h2>
+    <p>AlphaZero 방식입니다. 신경망이 어디에 둘지와 누가 유리한지를 어림하고, 몬테카를로 트리 탐색(MCTS)으로 몇 수 앞을 읽으면서
+      자기 자신과 수만 판을 둡니다. 그렇게 둔 판에서 다시 배우기를 되풀이합니다.</p>
+    <p>게임마다 그 게임의 규칙 코드로 따로 학습하므로, 세상에 처음 나온 창작 게임도 배울 수 있습니다.
+      학습한 AI는 내 브라우저에서 돌아서 서버를 기다리지 않고, 쉬움, 보통, 어려움 세 단계로 둡니다.</p>
+  </section>
+
+  <section>
+    <h2>요청에서 대국까지</h2>
+    <ol class="steps">
+      <li><h3>1. 게임 올리기</h3><p>규칙을 써서 게임을 올립니다. <a href="/ko/make">온라인 보드게임 만들기</a>를 보세요.</p></li>
+      <li><h3>2. AI 만들기</h3><p>내 프로필의 "내가 올린 게임"에서 "AI 만들기"를 누릅니다. 요청은 계정마다 일주일에 한 번입니다.</p></li>
+      <li><h3>3. 학습</h3><p>운영자가 게임마다 한 시간쯤 학습해서 올립니다. 요청이 많으면 차례로 합니다.</p></li>
+      <li><h3>4. 두기</h3><p>게임 창에 "AI와 두기"가 생기고, 선공·후공 승률이 같이 나옵니다.</p></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>선공·후공 승률</h2>
+    <p>학습 마지막 구간에 AI끼리 둔 판에서 선공이 이긴 비율, 무승부, 후공이 이긴 비율을 보여 줍니다.
+      학습용 대국이라 사람끼리 둘 때와 똑같지는 않지만, 한쪽이 크게 유리한 게임은 바로 드러납니다.
+      그럴 때는 후공에게 무언가를 더 주거나 시작 판을 바꾸는 식으로 규칙을 고쳐 보고, 다시 학습해서 숫자가 어떻게 바뀌는지 봅니다.</p>
+  </section>
+
+  <section>
+    <h2>학습 기록으로 허점 찾기</h2>
+    <p>학습하는 동안 AI가 둔 판을 다시보기로 볼 수 있습니다. 게임을 올린 제작자와 운영자만 봅니다.
+      AI는 이기려고 무엇이든 해 보기 때문에, 끝나지 않는 판이나 사람이 놓친 규칙의 빈틈을 먼저 찾아내기도 합니다.</p>
+  </section>
+
+  <section>
+    <h2>AI가 잘 배우는 게임</h2>
+    <ul class="points">
+      <li>두 사람이 번갈아 두는 게임 (동시에 두는 게임은 배울 수 없습니다)</li>
+      <li>판에 보이는 것으로 두는 게임. 판에 안 보이는 정보(바둑의 패 자리, 체스의 캐슬링 권리 같은 것)는 <code>observe()</code>로 알려 줍니다</li>
+      <li>둘 수 있는 수의 목록(<code>legal()</code>)을 주면 더 빨리 배웁니다</li>
+      <li>학습 시간이 정해져 있어서, 판이 크고 한 판이 길수록 같은 시간에 덜 강해집니다</li>
+    </ul>
+  </section>
+
+  {{- if .Games}}
+  <section id="games">
+    <h2>AI와 둘 수 있는 게임</h2>
+    <ul class="game-links">
+      {{- range .Games}}
+      <li>
+        <a href="{{.URL}}" lang="{{.NameLang}}">{{.Name}}</a>
+        {{- with .Balance}}
+        <div class="balance-bar" role="img" aria-label="{{.Label}}">
+          {{- if .First}}<span class="first" style="flex-grow: {{.First}}"></span>{{end}}
+          {{- if .Draw}}<span class="draw" style="flex-grow: {{.Draw}}"></span>{{end}}
+          {{- if .Second}}<span class="second" style="flex-grow: {{.Second}}"></span>{{end}}
+        </div>
+        <span>{{.Label}}</span>
+        {{- else}}
+        {{- if .Desc}}<span lang="{{.DescLang}}">{{.Desc}}</span>{{end}}
+        {{- end}}
+      </li>
+      {{- end}}
+    </ul>
+  </section>
+  {{- end}}
+
+  <section>
+    <h2>자주 묻는 질문</h2>
+    <dl class="faq">
+      <dt>AI는 얼마나 강한가요?</dt>
+      <dd>정해진 시간만큼만 학습해서 게임마다 다릅니다. 틱택토처럼 작은 게임은 완벽한 상대와 모두 비길 만큼 배우고, 큰 게임은 아직 사람이 이길 수 있습니다.</dd>
+      <dt>돈이 드나요?</dt>
+      <dd>아니요. 게임을 올리는 것도, AI 만들기도 무료입니다.</dd>
+      <dt>규칙을 고치면 AI는 어떻게 되나요?</dt>
+      <dd>판과 행동의 모양이 같으면 예전 AI를 그대로 쓰고, 승률 아래에 다른 버전의 코드로 학습했다고 알려 줍니다. 새 규칙으로 다시 학습하려면 AI 만들기를 다시 요청합니다.</dd>
+    </dl>
+  </section>
+</main>
+{{end}}

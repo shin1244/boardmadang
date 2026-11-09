@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="{{.Lang}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} · {{.T.site}}</title>
+  <meta name="description" content="{{.Description}}">
+  <link rel="canonical" href="{{.Canonical}}">
+  {{- range .Alternates}}
+  <link rel="alternate" hreflang="{{.Lang}}" href="{{.URL}}">
+  {{- end}}
+  <!-- 링크 미리보기(카톡, 디스코드 등). 미리보기 봇은 스크립트를 돌리지 않아서 HTML에 적고, 그림은 절대 주소로 둡니다 -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="{{.T.site}}">
+  <meta property="og:title" content="{{.Title}}">
+  <meta property="og:description" content="{{.Description}}">
+  <meta property="og:url" content="{{.Canonical}}">
+  <meta property="og:image" content="{{.Origin}}/web/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/web/icon-32.png" sizes="32x32">
+  <link rel="icon" href="/web/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/web/icon-180.png">
+  <script src="/web/theme.js"></script>
+  <link rel="stylesheet" href="/web/lobby.css">
+  <link rel="stylesheet" href="/web/guide.css">
+</head>
+<body class="page">
+  <!-- 서버가 만든 페이지 (server/internal/site/pages.go). 상단 메뉴와 바닥글은 약관 페이지(web/legal.html)와 같습니다.
+       글자는 이 페이지의 언어로 적어 두고, guide.js가 같은 언어로 로그인과 언어 메뉴를 붙입니다. -->
+  <header class="topbar">
+    <a class="logo" href="/web/">
+      <span class="logo-mark" aria-hidden="true"></span>
+      <span data-i18n="site.name">{{.T.site}}</span>
+    </a>
+    <nav class="menu" data-i18n-attr="aria-label:menu.label" aria-label="{{.T.menu}}">
+      <a href="/web/" data-i18n="menu.games">{{.T.games}}</a>
+      <a href="/web/rooms.html" data-i18n="menu.rooms">{{.T.rooms}}</a>
+      <span class="soon" data-i18n="menu.ranking" data-i18n-attr="title:soon" title="{{.T.soon}}">{{.T.ranking}}</span>
+      <a href="/web/register.html" data-i18n="menu.register">{{.T.register}}</a>
+    </nav>
+    <div class="langs">
+      <button class="lang-button" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="{{.T.langLabel}}">{{.T.langCode}}</button>
+    </div>
+    <a class="me" href="/web/history.html" hidden></a>
+    <button class="logout" type="button" data-i18n="logout" hidden>{{.T.logout}}</button>
+    <div class="login-box">
+      <button class="login" type="button" aria-haspopup="menu" aria-expanded="false" disabled data-i18n="login">{{.T.login}}</button>
+      <div class="login-menu" role="menu" hidden></div>
+    </div>
+  </header>
+
+  {{template "body" .}}
+
+  <footer class="site-footer">
+    <a href="/web/legal.html" data-i18n="footer.legal">{{.T.legal}}</a>
+    <a href="https://github.com/shin1244/boardmadang" data-i18n="footer.source">{{.T.source}}</a>
+    <a href="https://discord.gg/ayJzfmtXJ" data-i18n="footer.discord">{{.T.discord}}</a>
+    <a href="mailto:shincl1244@gmail.com" data-i18n="footer.contact">{{.T.contact}}</a>
+  </footer>
+
+  <script type="module" src="/web/guide.js"></script>
+</body>
+</html>

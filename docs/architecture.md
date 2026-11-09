@@ -80,7 +80,7 @@
 
 업로드된 게임 코드는 남의 코드입니다.
 
-- 브라우저: 사이트 화면(로비, 대전, 관전, 다시보기, 등록창)은 게임 코드를 직접 불러오지 않고 **게임 실행기**([web/engine.js](../web/engine.js))를 거칩니다.
+- 브라우저: 사이트 화면(로비, 게임 페이지, 대전, 관전, 다시보기, 등록창)은 게임 코드를 직접 불러오지 않고 **게임 실행기**([web/engine.js](../web/engine.js))를 거칩니다.
   - 실행기는 `sandbox="allow-scripts"` iframe([web/runner/frame.html](../web/runner/frame.html)) 안에 게임마다 Worker를 하나씩 띄우고,
     판 상태는 그 Worker 안에만 둡니다. 화면은 "이 수를 둬라", "지금 판을 보여 달라"는 메시지로만 주고받습니다.
   - iframe은 출처가 없어서(opaque origin) 사이트의 쿠키, 저장소, 부모 화면에 손댈 수 없습니다.
