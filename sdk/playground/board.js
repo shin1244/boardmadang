@@ -106,6 +106,8 @@ export class BoardView {
         if (!this.custom.has(name)) this.custom.set(name, { index, tile: typeof p === 'object' ? p : null });
       });
     }
+    // 글자 패를 쓰는 게임. 패는 칸을 거의 채우고 가장자리에 방향 삼각형이 있어서, 마지막 수와 고른 기물 표시를 패 바깥에 그립니다
+    this.tiled = [...this.custom.values()].some((c) => c.tile);
     this.flip = false;
     this.ctx = canvas.getContext('2d');
     this.points = board.places === 'points';
@@ -292,13 +294,22 @@ export class BoardView {
     }
     ctx.restore();
 
-    // 말 위 표시
+    // 말 위 표시.
+    // 글자 패는 칸의 84%를 채우고 가장자리 안쪽에 방향 삼각형, 가운데에 글자가 있습니다. 그래서 패 위에 겹쳐 그리면 가리므로,
+    // 글자 패 게임의 마지막 수와 패 칸의 고른 기물·갈 수 있는 곳 표시는 패와 칸 경계 사이의 여백(칸 한 변의 45~50%)에 그립니다
+    const outer = Math.max(2, S * 0.05); // 여백에 그리는 선의 굵기
+    const tiled = new Set((view.pieces ?? []).filter((p) => this.custom.get(p.piece)?.tile).map((p) => p.row * cols + p.col));
     for (const m of marksOf('last-move')) {
       const [x, y] = at(m.row, m.col);
       if (this.points) {
         ctx.fillStyle = MARK.lastPoint;
         const d = S * 0.16;
         ctx.fillRect(x - d / 2, y - d / 2, d, d);
+      } else if (this.tiled) {
+        const half = S / 2 - outer / 2 - 1;
+        ctx.strokeStyle = MARK.last;
+        ctx.lineWidth = outer;
+        ctx.strokeRect(x - half, y - half, half * 2, half * 2);
       } else {
         const inset = frameW + 3;
         ctx.strokeStyle = MARK.last;
@@ -309,6 +320,13 @@ export class BoardView {
     for (const m of marksOf('ring')) {
       const [x, y] = at(m.row, m.col);
       ctx.strokeStyle = MARK.ring;
+      if (!this.points && tiled.has(m.row * cols + m.col)) {
+        const half = S / 2 - outer / 2 - 1;
+        ctx.lineWidth = outer;
+        this.roundSquare(x, y, half, S * 0.12);
+        ctx.stroke();
+        continue;
+      }
       ctx.lineWidth = Math.max(2, S * 0.06);
       this.circle(x, y, S * 0.44);
       ctx.stroke();
@@ -316,11 +334,24 @@ export class BoardView {
     for (const m of marksOf('dot')) {
       const [x, y] = at(m.row, m.col);
       ctx.fillStyle = MARK.dot;
+      // 글자 패 위(잡을 수 있는 기물)에는 가운데 점이 글자를 가리므로, 패 바깥인 칸의 네 귀퉁이에 작은 삼각형을 그립니다
+      if (!this.points && tiled.has(m.row * cols + m.col)) {
+        const e = S / 2; // 칸 가운데에서 귀퉁이까지
+        const l = S * 0.16; // 삼각형 두 변의 길이. 패의 둥근 모서리에 닿지 않을 만큼
+        ctx.beginPath();
+        for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+          ctx.moveTo(x + sx * e, y + sy * e);
+          ctx.lineTo(x + sx * (e - l), y + sy * e);
+          ctx.lineTo(x + sx * e, y + sy * (e - l));
+          ctx.closePath();
+        }
+        ctx.fill();
+        continue;
+      }
       this.circle(x, y, S * 0.12);
       ctx.fill();
     }
     // 글자 패 위의 글자는 패 글자를 가리지 않게 칸의 오른쪽 아래 귀퉁이에 작게 씁니다 (손에 든 개수 같은 것)
-    const tiled = new Set((view.pieces ?? []).filter((p) => this.custom.get(p.piece)?.tile).map((p) => p.row * cols + p.col));
     for (const t of view.text ?? []) {
       let [x, y] = at(t.row, t.col);
       const corner = tiled.has(t.row * cols + t.col);
@@ -539,6 +570,18 @@ export class BoardView {
   circle(x, y, r) {
     this.ctx.beginPath();
     this.ctx.arc(x, y, r, 0, Math.PI * 2);
+  }
+
+  /** (x, y)가 가운데이고 한 변의 반이 h, 모서리 반지름이 r인 둥근 사각형 경로. ctx.roundRect가 없는 옛 브라우저도 그립니다 */
+  roundSquare(x, y, h, r) {
+    const { ctx } = this;
+    ctx.beginPath();
+    ctx.moveTo(x - h + r, y - h);
+    ctx.arcTo(x + h, y - h, x + h, y + h, r);
+    ctx.arcTo(x + h, y + h, x - h, y + h, r);
+    ctx.arcTo(x - h, y + h, x - h, y - h, r);
+    ctx.arcTo(x - h, y - h, x + h, y - h, r);
+    ctx.closePath();
   }
 }
 
