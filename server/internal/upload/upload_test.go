@@ -697,6 +697,36 @@ func TestCheckThumbnail(t *testing.T) {
 	if p != nil || string(out) != want {
 		t.Fatalf("선: %s %v", out, p)
 	}
+
+	// 판 밖 영역(areas): 판을 가운데에 남기고 겹치지 않게 (sdk/test/check.test.js와 같은 경우).
+	// 기물의 움직임(from)은 썸네일에 넣지 않습니다
+	board := func(areas string) string {
+		return `{"board":{"places":"cells","rows":13,"cols":12,"areas":` + areas + `},"pieces":"xo","player":0,"view":{"pieces":[]}}`
+	}
+	right := `{"side":"right","row":0,"col":8,"rows":4,"cols":4},{"side":"right","row":5,"col":8,"rows":2,"cols":4}`
+	areaCases := map[string]string{
+		`[` + right + `]`: "",
+		`[]`:              "",
+		`{}`:              "thumbnail.board.areas: must be a list of up to 8 areas",
+		`[{"side":"middle","row":0,"col":0,"rows":1,"cols":1}]`:             "thumbnail.board.areas[0]: needs side ('top', 'bottom', 'left', 'right') and row, col, rows, cols that stay inside the board",
+		`[{"side":"top","row":0,"col":10,"rows":1,"cols":3}]`:               "thumbnail.board.areas[0]: needs side ('top', 'bottom', 'left', 'right') and row, col, rows, cols that stay inside the board",
+		`[{"side":"top","row":0,"col":0,"rows":1.5,"cols":3}]`:              "thumbnail.board.areas[0]: needs side ('top', 'bottom', 'left', 'right') and row, col, rows, cols that stay inside the board",
+		`[{"side":"top","row":0,"col":0,"rows":13,"cols":12}]`:              "thumbnail.board.areas: leave the board in the middle (top areas above it, bottom below, left and right beside it)",
+		`[` + right + `,{"side":"top","row":0,"col":0,"rows":1,"cols":12}]`: "thumbnail.board.areas[0] and areas[2] overlap",
+	}
+	for areas, want := range areaCases {
+		_, p := CheckThumbnail([]byte(board(areas)))
+		if (want == "" && p != nil) || (want != "" && (len(p) == 0 || p[0] != want)) {
+			t.Errorf("영역 %s: %v, want %q", areas, p, want)
+		}
+	}
+	moved := `{"board":{"places":"cells","rows":13,"cols":12,"look":"wood","areas":[{"side":"right","row":0,"col":8,"rows":4,"cols":4,"extra":1}]},
+	  "pieces":"go-stones","player":0,"view":{"pieces":[{"row":12,"col":0,"piece":"black","from":{"row":0,"col":0}}]}}`
+	out, p = CheckThumbnail([]byte(moved))
+	want = `{"board":{"areas":[{"col":8,"cols":4,"row":0,"rows":4,"side":"right"}],"cols":12,"look":"wood","places":"cells","rows":13},"pieces":"go-stones","player":0,"view":{"pieces":[{"col":0,"piece":"black","row":12}]}}`
+	if p != nil || string(out) != want {
+		t.Fatalf("영역: %s %v", out, p)
+	}
 }
 
 // names는 테스트용 계정 저장소입니다.

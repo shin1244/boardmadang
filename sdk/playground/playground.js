@@ -8,8 +8,8 @@
 //
 // 실제 플랫폼과 다른 점: 게임 코드를 Web Worker가 아니라 이 페이지에서 바로 실행합니다.
 
-import { checkGame, checkMembers, checkThumbnail, findNonJson, makeThumbnail, sameAction } from '../check.js';
-import { BoardView, attachInput } from './board.js';
+import { checkGame, checkMembers, checkThumbnail, drawnPart, findNonJson, makeThumbnail, sameAction } from '../check.js';
+import { BoardView, attachInput, buttonsOf } from './board.js';
 import { LANGS, LANG_NAMES, fullLangs, localize } from './listing.js';
 import { hashOf, makeRng } from './platform.js';
 
@@ -150,7 +150,7 @@ function checkResult() {
 function checkLangs() {
   if (langs.length < 2) return;
   try {
-    const drawn = (p, l) => JSON.stringify({ ...game.view(state, p, l), message: undefined });
+    const drawn = (p, l) => JSON.stringify(drawnPart(game.view(state, p, l)));
     const winner = (l) => { const r = game.result(state, l); return r ? String(r.winner) : '-'; };
     for (const p of [0, 1]) {
       if (langs.some((l) => drawn(p, l) !== drawn(p, langs[0]))) {
@@ -275,6 +275,7 @@ function render() {
     boards[p].draw(view, { flip: game.board.flipForPlayer === p, hover: hover[p] });
     panel.querySelector('.message').textContent = view.message ?? '';
     for (const b of panel.querySelectorAll('button:not(.snapshot)')) b.disabled = !!ended;
+    renderSpecials(p, panel.querySelector('.specials'), view);
   }
 
   const status = $('#status');
@@ -328,6 +329,28 @@ function render() {
   }
 }
 
+/**
+ * 한 플레이어의 특수 행동 버튼. 사이트와 같은 규칙입니다 (board.js의 buttonsOf):
+ * view()의 buttons가 있으면 그 글자와 순서로, legal()에 없는 버튼은 흐리게. 없으면 특수 행동 이름 그대로.
+ * 버튼 목록(행동과 글자)이 바뀔 때만 다시 만듭니다 (호버마다 다시 그려도 누르던 버튼이 그대로 있게).
+ */
+function renderSpecials(p, box, view) {
+  const buttons = buttonsOf(game.specialActions ?? [], view, ended ? null : legalOf(p));
+  const key = JSON.stringify(buttons.map((b) => [b.kind, b.label]));
+  if (box.dataset.key !== key) {
+    box.dataset.key = key;
+    box.replaceChildren(...buttons.map(({ kind, label }) => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.addEventListener('click', () => dispatch(p, { kind }));
+      return b;
+    }));
+  }
+  buttons.forEach((x, i) => {
+    box.children[i].disabled = !!ended || x.disabled;
+  });
+}
+
 function buildPanels() {
   const wrap = $('#boards');
   for (const p of [0, 1]) {
@@ -340,12 +363,10 @@ function buildPanels() {
       <p class="message"></p>
       <div class="actions"></div>`;
     const actions = panel.querySelector('.actions');
-    for (const kind of game.specialActions ?? []) {
-      const b = document.createElement('button');
-      b.textContent = kind;
-      b.addEventListener('click', () => dispatch(p, { kind }));
-      actions.append(b);
-    }
+    // 특수 행동 버튼 자리. 버튼은 화면(view)의 buttons에 따라 renderSpecials가 채웁니다
+    const specials = document.createElement('span');
+    specials.className = 'specials';
+    actions.append(specials);
     const r = document.createElement('button');
     r.textContent = 'Resign';
     r.className = 'secondary';

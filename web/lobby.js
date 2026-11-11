@@ -80,7 +80,7 @@ function drawThumb(canvas, entry, size) {
     try {
       const board = new BoardView(canvas, shot.board, shot.pieces);
       board.resize(size);
-      board.draw(shot.view, { flip: shot.board.flipForPlayer === shot.player });
+      board.draw(shot.view, { flip: shot.board.flipForPlayer === shot.player, animate: false });
       return true;
     } catch {
       // 깨진 썸네일이면 시작 판을 그립니다
@@ -90,7 +90,7 @@ function drawThumb(canvas, entry, size) {
     const board = new BoardView(canvas, game.board, game.pieces);
     board.resize(size);
     const view = entry.startView ?? { pieces: [] };
-    board.draw({ ...view, marks: (view.marks ?? []).filter((m) => m.type !== 'last-move') });
+    board.draw({ ...view, marks: (view.marks ?? []).filter((m) => m.type !== 'last-move') }, { animate: false });
     return true;
   } catch {
     return false;

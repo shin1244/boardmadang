@@ -57,6 +57,7 @@ AI 모델을 올리면(`PUT /api/admin/ai/{game}`) 그 게임의 열린 요청�
   보드 크기 같은 규칙 정보는 넣지 않습니다. 브라우저가 `module`을 import해서 게임 모듈에서 직접 읽습니다.
 - `thumbnail`은 썸네일(`thumbnail.json`)입니다. 이미지가 아니라 혼자 두던 판을 그대로 찍은 데이터
   `{"board":{…},"pieces":"xo","player":0,"view":{"pieces":[…],"marks":[…]}}`이고, 화면이 보드 렌더러로 다시 그립니다.
+  `board`의 판 밖 영역(`areas`)은 남기고, 화면에만 쓰는 것(기물의 `from`, `aliases`, `buttons`, `hover`가 있는 선과 칠하기)은 서버와 SDK가 똑같이 뺍니다.
   없거나 깨졌으면 `null`이고 화면은 시작 판을 그립니다. 모양은 [sdk/game.d.ts](../sdk/game.d.ts)의 `Thumbnail`입니다.
 - `ai`는 그 게임의 AI 모델입니다. 없으면 빠집니다 ([trainer/README.md](../trainer/README.md#브라우저에서-ai와-두기)).
   `{"model":"/ai/tictactoe/<해시 16글자>.onnx","version":"3f1c…","lang":"en","rows":3,"cols":3,"channelNames":["piece:x","piece:o","mark:dot",…,"toPlay"],"specials":[],"nActions":9,"sims":200,"updated":"…"}`.

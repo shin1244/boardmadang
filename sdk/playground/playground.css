@@ -111,6 +111,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .player canvas { display: block; margin: 0 auto; border-radius: 4px; max-width: 100%; }
 .message { min-height: 1.5em; margin: 10px 0 8px; text-align: center; font-weight: 600; }
 .actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.actions .specials { display: contents; } /* 특수 행동 버튼도 다른 버튼과 같은 줄에 */
 
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .dot.p0 { background: var(--p0); }
