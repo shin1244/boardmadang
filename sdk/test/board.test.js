@@ -1,4 +1,4 @@
-// 렌더러(sdk/playground/board.js)에서 화면 없이 셀 수 있는 부분: 판 밖 영역의 배치, 클릭 옮기기(aliases), 버튼, 움직임
+// 렌더러(sdk/playground/board.js)에서 화면 없이 셀 수 있는 부분: 판 밖 영역의 배치, 클릭 옮기기(aliases), 버튼, 움직임, 효과
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BoardView, attachInput, buttonsOf, fieldOf } from '../playground/board.js';
@@ -165,4 +165,51 @@ test('움직임: 기물마다 따로 봐서, 새 from이 붙은 기물만 움직
   assert.equal(b.motions[1].keys.size, 1);
   const [, y] = b.movingAt(stone, false, t0 + 50);
   assert.ok(y < b.center(4, 0, false)[1]);
+});
+
+test('효과(effects): 같은 효과는 한 번만, animate: false면 보이지 않고, 모르는 종류와 그리지 않는 칸은 버립니다', () => {
+  const b = new BoardView(fakeCanvas(), { places: 'cells', rows: 3, cols: 3 }, 'go-stones');
+  b.resize(200);
+  const broke = { row: 1, col: 1, piece: 'white' };
+  b.draw({ pieces: [], effects: [broke] });
+  assert.equal(b.effects.length, 1);
+  assert.ok(b.busy());
+  // 내용이 같은 새 화면 (돌리기 같은 행동 뒤): 다시 보여 주지 않고, 보이던 효과는 이어서 보입니다
+  b.draw({ pieces: [], effects: [broke] });
+  assert.equal(b.effects.length, 1);
+  // 같은 칸 · 같은 기물이라도 id가 다르면 새 효과입니다
+  b.draw({ pieces: [], effects: [{ ...broke, id: 7 }] });
+  assert.equal(b.effects.length, 2);
+  // 끝난 효과는 지웁니다
+  b.draw({ pieces: [], effects: [{ ...broke, id: 7 }] });
+  b.effects.forEach((x) => { x.until = 0; });
+  b.draw({ pieces: [] });
+  assert.equal(b.effects.length, 0);
+  assert.ok(!b.busy());
+  b.draw({ pieces: [], effects: [{ ...broke, id: 8 }] }, { animate: false });
+  assert.equal(b.effects.length, 0);
+  b.draw({ pieces: [], effects: [{ ...broke, id: 9, type: 'explode' }, { row: 5, col: 0, piece: 'black' }] });
+  assert.equal(b.effects.length, 0);
+});
+
+test('효과(effects): 금이 가는 동안과 조각이 튀는 동안 그 칸에 기물을 그립니다', () => {
+  const canvas = fakeCanvas();
+  const b = new BoardView(canvas, { places: 'cells', rows: 3, cols: 3 }, 'go-stones');
+  b.resize(200);
+  b.draw({ pieces: [], effects: [{ row: 1, col: 1, piece: 'black' }] });
+  const fx = b.effects[0];
+  const arcs = () => canvas.calls.filter(([k]) => k === 'arc').length;
+  for (const k of [0.1, 0.6]) {
+    canvas.calls.length = 0;
+    b.drawEffect(fx, false, fx.t0 + 480 * k);
+    assert.ok(arcs() >= 1, `k=${k}`);
+  }
+  // 조각은 네 개라 부채꼴(clip)이 네 번
+  canvas.calls.length = 0;
+  b.drawEffect(fx, false, fx.t0 + 480 * 0.6);
+  assert.equal(canvas.calls.filter(([k]) => k === 'clip').length, 4);
+  // 끝난 뒤에는 그리지 않습니다
+  canvas.calls.length = 0;
+  b.drawEffect(fx, false, fx.t0 + 480);
+  assert.equal(canvas.calls.length, 0);
 });

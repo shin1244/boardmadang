@@ -23,7 +23,7 @@
 //   g.close();
 // look = { players: [0, 1], lang, legalFor: 0 | 1 | null }
 
-import { fieldOf } from '/sdk/playground/board.js';
+import { EFFECT_TYPES, fieldOf } from '/sdk/playground/board.js';
 
 const FRAME = '/web/runner/frame.html';
 const LOAD_MS = 10_000;
@@ -191,6 +191,17 @@ function cleanView(v, board) {
       if (isStr(b.label, 40)) o.label = b.label;
       return o;
     });
+  }
+  // effects: 한 번 보이고 끝나는 효과 (잡혀서 없어진 기물이 갈라지는 것 등). 모르는 종류는 버립니다
+  if (Array.isArray(v.effects)) {
+    out.effects = list(v.effects)
+      .filter((e) => e && cell(e) && isStr(e.piece, 32) && EFFECT_TYPES.includes(e.type ?? 'shatter')
+        && (e.id === undefined || isStr(e.id, 32) || Number.isSafeInteger(e.id)))
+      .map((e) => {
+        const o = { row: e.row, col: e.col, piece: e.piece, type: e.type ?? 'shatter' };
+        if (e.id !== undefined) o.id = e.id;
+        return o;
+      });
   }
   if (isStr(v.message, 200)) out.message = v.message;
   return out;

@@ -186,6 +186,32 @@ function motionOf(dx, dy) {
 /** 움직임을 줄이도록 설정한 사람(운영체제의 동작 줄이기)에게는 움직이지 않습니다 */
 const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+// ---- 효과 (view의 effects) ----
+// 잡혀서 없어지는 기물처럼 화면에서 사라지는 것을 한 번 보여 줍니다. 효과는 그 칸에 기물을 그려 놓고 모양을 바꿔 가며 지웁니다.
+//   shatter: 기물에 금이 가고, 몇 조각으로 갈라져 바깥으로 튀면서 흐려집니다.
+
+/** 렌더러가 그릴 줄 아는 효과. type을 빼면 shatter입니다 */
+export const EFFECT_TYPES = ['shatter'];
+/** 효과 하나를 알아보는 이름: 칸, 기물, 종류, id가 모두 같으면 같은 효과입니다 */
+const effectKey = (e) => `${e.row},${e.col},${e.piece},${e.type ?? 'shatter'},${e.id ?? ''}`;
+/** 효과 하나가 보이는 시간(ms) */
+const EFFECT_MS = 480;
+/** 금이 가는 동안 (효과 시간 가운데 앞쪽 비율) */
+const CRACK = 0.2;
+
+/** 글자에서 정한 0~1 숫자 n개. 같은 효과는 늘 같은 모양으로 갈라집니다 */
+function seeded(text, n) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    h = Math.imul(h ^ (h >>> 15), 2246822519) >>> 0;
+    h = Math.imul(h ^ (h >>> 13), 3266489917) >>> 0;
+    out.push((h ^ (h >>> 16)) / 4294967296);
+  }
+  return out;
+}
+
 // ---- 특수 행동 버튼 (view.buttons) ----
 
 /**
@@ -243,6 +269,8 @@ export class BoardView {
     this.placed = [null, null]; // 칸 자리 (resize에서 다시 구함)
     this.motions = []; // 움직이는 중인 것들 [{ t0, until, keys: 움직이는 기물들 }]
     this.seen = new Set(); // 마지막으로 그린 화면의 움직임들 (같은 움직임을 두 번 보여 주지 않게)
+    this.effects = []; // 보이는 중인 효과들 [{ t0, until, key, e }]
+    this.seenEffects = new Set(); // 마지막으로 그린 화면의 효과들 (같은 효과를 두 번 보여 주지 않게)
     this.raf = 0;
   }
 
@@ -367,6 +395,7 @@ export class BoardView {
     const shown = (c) => this.isShown(c.row, c.col);
     const now = performance.now();
     this.updateMotion(view, animate, now);
+    this.updateEffects(view, animate, now);
 
     ctx.clearRect(0, 0, this.width, this.height);
     this.drawBackground(look, flip);
@@ -456,6 +485,8 @@ export class BoardView {
       const [x, y] = at(m.row, m.col);
       if (m.piece) this.drawPiece(m.piece, x, y, 0.4);
     }
+    // 효과: 말 위에 그려서, 그 칸으로 내려오거나 들어오는 말이 있어도 갈라지는 모습이 보이게 합니다
+    for (const fx of this.effects) this.drawEffect(fx, flip, now);
 
     // 선: 두 칸의 가운데를 잇는 반투명한 선. hover가 있으면 마우스가 그 칸에 있을 때만 그립니다.
     ctx.save();
@@ -559,12 +590,93 @@ export class BoardView {
       ctx.stroke();
     }
 
-    // 움직이는 중이면 다음 장면을 그립니다 (같은 화면, 같은 설정으로)
-    if (this.motions.length && !this.raf && typeof requestAnimationFrame === 'function') {
+    // 움직이거나 효과가 보이는 중이면 다음 장면을 그립니다 (같은 화면, 같은 설정으로)
+    if (this.busy() && !this.raf && typeof requestAnimationFrame === 'function') {
       this.raf = requestAnimationFrame(() => {
         this.raf = 0;
-        if (this.motions.length) this.draw(this.view, this.opts);
+        if (this.busy()) this.draw(this.view, this.opts);
       });
+    }
+  }
+
+  /** 움직이는 기물이나 보이는 중인 효과가 있는지 */
+  busy() {
+    return this.motions.length > 0 || this.effects.length > 0;
+  }
+
+  /**
+   * 새 화면에서 처음 보는 효과를 시작하고, 끝난 효과는 지웁니다. 움직임(updateMotion)과 같은 규칙입니다:
+   * 직전에 그린 화면에 같은 효과가 있었으면 다시 보여 주지 않고, animate가 false이거나 움직임 줄이기면 보여 주지 않습니다.
+   * 새 효과는 같은 화면의 움직임과 함께 바로 시작합니다.
+   */
+  updateEffects(view, animate, now) {
+    const { rows, cols } = this.board;
+    const fresh = new Map();
+    for (const e of Array.isArray(view.effects) ? view.effects : []) {
+      if (!e || typeof e.piece !== 'string' || !EFFECT_TYPES.includes(e.type ?? 'shatter')) continue;
+      if (!Number.isInteger(e.row) || !Number.isInteger(e.col) || e.row < 0 || e.row >= rows || e.col < 0 || e.col >= cols) continue;
+      if (!this.isShown(e.row, e.col)) continue;
+      fresh.set(effectKey(e), e);
+    }
+    const before = this.seenEffects;
+    this.seenEffects = new Set(fresh.keys());
+    const on = animate && !reducedMotion();
+    this.effects = on ? this.effects.filter((x) => now < x.until) : [];
+    if (!on) return;
+    for (const [key, e] of fresh) {
+      if (!before.has(key)) this.effects.push({ t0: now, until: now + EFFECT_MS, key, e });
+    }
+  }
+
+  /** 효과 하나의 지금 장면 (shatter: 금이 간 뒤 네 조각으로 갈라져 튀며 흐려짐) */
+  drawEffect(fx, flip, now) {
+    const k = (now - fx.t0) / EFFECT_MS;
+    if (k < 0 || k >= 1) return;
+    const { ctx, S } = this;
+    const { e } = fx;
+    const [x, y] = this.center(e.row, e.col, flip);
+    // 조각을 가르는 각도: 같은 효과는 늘 같은 모양
+    const n = 4;
+    const r = seeded(fx.key, n + 1);
+    const base = r[n] * Math.PI * 2;
+    const cuts = Array.from({ length: n }, (_, i) => base + ((i + 0.5 * (r[i] - 0.5)) * Math.PI * 2) / n);
+    if (k < CRACK) {
+      // 금: 가운데에서 가장자리로 뻗어 나갑니다
+      this.drawPiece(e.piece, x, y, 1);
+      const len = S * 0.44 * (k / CRACK);
+      ctx.save();
+      ctx.lineCap = 'round';
+      for (const [w, color] of [[Math.max(2, S * 0.07), 'rgb(255 255 255 / 0.55)'], [Math.max(1, S * 0.035), 'rgb(30 30 30 / 0.8)']]) {
+        ctx.lineWidth = w;
+        ctx.strokeStyle = color;
+        ctx.beginPath();
+        for (const a of cuts) {
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+      return;
+    }
+    // 조각: 가르는 각도 사이의 부채꼴을 바깥으로 밀고, 조금 돌리고, 아래로 떨어뜨리며 흐리게
+    const t = (k - CRACK) / (1 - CRACK);
+    const out = 1 - (1 - t) ** 2;
+    for (let i = 0; i < n; i++) {
+      const a0 = cuts[i];
+      const a1 = i + 1 < n ? cuts[i + 1] : cuts[0] + Math.PI * 2;
+      const mid = (a0 + a1) / 2;
+      ctx.save();
+      ctx.translate(x + Math.cos(mid) * S * 0.34 * out, y + Math.sin(mid) * S * 0.34 * out + S * 0.3 * t * t);
+      ctx.rotate((i % 2 ? 1 : -1) * (0.3 + 0.4 * r[i]) * out);
+      ctx.scale(1 - 0.3 * t, 1 - 0.3 * t);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, S * 0.75, a0, a1);
+      ctx.closePath();
+      ctx.clip();
+      this.drawPiece(e.piece, 0, 0, Math.max(0, 1 - t ** 1.5));
+      ctx.restore();
     }
   }
 

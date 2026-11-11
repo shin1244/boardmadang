@@ -251,3 +251,18 @@ test('버튼(buttons)의 글자는 언어마다 달라도 되고, specialActions
   });
   assert.ok(checkGame(swapped, opts).problems.some((x) => x.includes('view() changes more than the message')));
 });
+
+test('효과(effects): 아는 종류는 그대로 두고, 모르는 종류는 경고하며, 썸네일에는 넣지 않습니다', () => {
+  const withEffects = (type) => variant({
+    view: (s, p, lang) => ({ ...tictactoe.view(s, p, lang), effects: [{ row: 0, col: 0, piece: 'x', ...(type ? { type } : {}) }] }),
+  });
+  for (const type of [undefined, 'shatter']) {
+    const ok = checkGame(withEffects(type), opts);
+    assert.deepEqual(ok.problems, []);
+    assert.deepEqual(ok.warnings, []);
+  }
+  const r = checkGame(withEffects('explode'), opts);
+  assert.ok(r.warnings.some((w) => w.includes("view().effects has type 'explode'")), r.warnings.join('\n'));
+  const thumb = makeThumbnail(tictactoe, 0, { pieces: [], effects: [{ row: 0, col: 0, piece: 'x' }] });
+  assert.equal(thumb.view.effects, undefined);
+});

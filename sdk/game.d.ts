@@ -139,8 +139,27 @@ export interface View {
   aliases?: Alias[];
   /** 판 아래 특수 행동 버튼의 순서와 글자 (8개까지). 없으면 specialActions 전부를 이름 그대로 보여 줍니다 */
   buttons?: Button[];
+  /**
+   * 한 번 보이고 끝나는 효과. 잡혀서 없어진 기물처럼 이 화면에는 없는 기물을 그 칸에 그려 놓고 효과를 보여 줍니다.
+   * 같은 효과는 한 번만 보이므로 다음 수까지 같은 effects를 계속 줘도 됩니다.
+   * AI 관측과 썸네일에 들어가지 않습니다.
+   */
+  effects?: Effect[];
   /** 보드 위 안내 문구 */
   message?: string;
+}
+
+/**
+ * 효과 하나. 칸, 기물, 종류, id가 모두 같으면 같은 효과라 다시 보이지 않습니다.
+ * 같은 칸에서 같은 기물이 연달아 사라질 수 있으면 id(사라진 기물의 번호 같은 것)를 붙여 구별합니다.
+ */
+export interface Effect extends Cell {
+  /** 사라지는 기물 */
+  piece: string;
+  /** 'shatter': 금이 가고 조각으로 갈라져 튀며 흐려집니다. 없으면 'shatter' */
+  type?: 'shatter';
+  /** 같은 칸 · 기물의 효과를 구별하는 값 (32자까지의 글자나 정수) */
+  id?: string | number;
 }
 
 /** winner가 null이면 무승부입니다. */
