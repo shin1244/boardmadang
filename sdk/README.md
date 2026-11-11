@@ -221,7 +221,7 @@ view(state, player, lang) {
 or right of (`right`) the board (up to 8). Coordinates don't change, so `view()`, clicks, `legal()` and the AI use whole-grid coordinates exactly as without areas.
 The board is the rectangle left in the middle. Squares that are in neither the board nor an area (in the example, the right 4 squares of rows 4 and 7–12)
 aren't drawn and can't be pressed. If areas overlap or don't leave a board in the middle, `check` tells you, and the whole grid is drawn without areas.
-On a board flipped with `flipForPlayer`, the areas appear on the other side. Coordinate `labels` and default `starPoints` count only the board.
+On a board flipped with `flipForPlayer`, the areas appear on the other side. Coordinate `labels`, default `starPoints` and the board size shown in the lobby and on the game page (13×8 in the example) count only the board.
 
 **Buttons (`view().buttons`):** sets the order and text of the `specialActions` buttons. Write the text in `lang`.
 Only the listed buttons are shown, so you can leave out buttons that can't be used now. If your game has `legal()`, buttons not in `legal()` are dimmed and can't be pressed.

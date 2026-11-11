@@ -298,3 +298,18 @@ func TestBalanceVerdict(t *testing.T) {
 		t.Errorf("old version note = %q", b.Note)
 	}
 }
+
+// 판 밖 영역이 있으면 게임 페이지의 판 크기는 가운데 판만 셉니다 (낙석: 전체 13×16, 판 12×8)
+func TestFieldSize(t *testing.T) {
+	areas := []boardArea{
+		{Side: "top", Row: 0, Col: 4, Rows: 1, Cols: 8},
+		{Side: "left", Row: 1, Col: 0, Rows: 4, Cols: 4},
+		{Side: "right", Row: 1, Col: 12, Rows: 4, Cols: 4},
+	}
+	if r, c := fieldSize(13, 16, areas); r != 12 || c != 8 {
+		t.Errorf("fieldSize = %d×%d, want 12×8", r, c)
+	}
+	if r, c := fieldSize(8, 8, nil); r != 8 || c != 8 {
+		t.Errorf("no areas: %d×%d, want 8×8", r, c)
+	}
+}
