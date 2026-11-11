@@ -5,7 +5,7 @@
 // 썸네일도 여기서 검사합니다. 썸네일은 이미지가 아니라 혼자 두던 판을 그대로 찍은 데이터(thumbnail.json)이고,
 // 사이트가 보드 렌더러로 다시 그립니다. 판 설정과 기물 세트까지 들어 있어서 게임 코드 없이도 그릴 수 있습니다.
 
-import { EFFECT_TYPES, FRAME_WIDTH, LINE_WIDTH, TILE_ARROWS, fieldOf, pieceName } from './playground/board.js';
+import { EFFECT_TYPES, FRAME_WIDTH, LINE_WIDTH, TILE_ARROWS, fieldOf, knowsPiece, pieceName } from './playground/board.js';
 import { hashOf, makeRng } from './playground/platform.js';
 
 /** 업로드할 때 검사하는 상한 */
@@ -88,6 +88,10 @@ export function checkMembers(g) {
   if ('specialActions' in g
     && !(Array.isArray(g.specialActions) && g.specialActions.every((x) => typeof x === 'string' && x !== 'click'))) {
     p.push("specialActions: must be a list of names other than 'click'");
+  }
+  if ('playerPieces' in g && !(Array.isArray(g.playerPieces) && g.playerPieces.length === 2
+    && g.playerPieces.every((x) => knowsPiece(g.pieces, x)))) {
+    p.push("playerPieces: must be two piece names from pieces (the first player's, then the second player's), like ['black', 'white']");
   }
   return p;
 }

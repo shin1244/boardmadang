@@ -12,7 +12,7 @@
 // 게임 코드는 이 페이지가 아니라 게임 실행기(engine.js)의 샌드박스 Worker에서 돌립니다.
 // 모든 수의 상태는 Worker에 남기고, 이 페이지는 보고 있는 수의 판만 받아 와 그립니다.
 
-import { BoardView, PLAYER_COLORS, innerSize } from '/sdk/playground/board.js';
+import { BoardView, innerSize, paintPlayerDot } from '/sdk/playground/board.js';
 import { gameLang, localize } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { loadGame } from './engine.js';
@@ -204,7 +204,7 @@ function renderPlayers() {
   $('#players').hidden = !rec || !runner;
   if ($('#players').hidden) return;
   for (const p of [0, 1]) {
-    $(`#p${p}-dot`).style.background = PLAYER_COLORS[p];
+    paintPlayerDot($(`#p${p}-dot`), runner.info.pieces, runner.info.playerPieces, p);
     const name = $(`#p${p}-name`);
     name.textContent = playerName(p) + (rec.you.includes(p) ? ` (${t('match.you')})` : '');
     name.classList.toggle('winner', rec.winner === p);

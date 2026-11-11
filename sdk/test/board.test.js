@@ -1,7 +1,7 @@
-// 렌더러(sdk/playground/board.js)에서 화면 없이 셀 수 있는 부분: 판 밖 영역의 배치, 클릭 옮기기(aliases), 버튼, 움직임, 효과
+// 렌더러(sdk/playground/board.js)에서 화면 없이 셀 수 있는 부분: 판 밖 영역의 배치, 클릭 옮기기(aliases), 버튼, 움직임, 효과, 내 차례 테두리
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BoardView, attachInput, buttonsOf, fieldOf } from '../playground/board.js';
+import { BoardView, PLAYER_COLORS, attachInput, buttonsOf, fieldOf, knowsPiece, paintPlayerDot } from '../playground/board.js';
 
 // 캔버스 없이 BoardView를 만듭니다. 그리기 함수는 아무것도 하지 않고 부른 것만 적어 둡니다
 globalThis.window ??= { devicePixelRatio: 1 };
@@ -212,4 +212,73 @@ test('효과(effects): 금이 가는 동안과 조각이 튀는 동안 그 칸�
   canvas.calls.length = 0;
   b.drawEffect(fx, false, fx.t0 + 480);
   assert.equal(canvas.calls.length, 0);
+});
+
+test('내 차례(myTurn): 판 바탕 둘레 안쪽에 테두리 하나, 판 밖 영역은 빼고', () => {
+  const frames = (canvas) => canvas.calls.filter(([k]) => k === 'strokeRect');
+  const canvas = fakeCanvas();
+  const b = new BoardView(canvas, { places: 'cells', rows: 3, cols: 3 }, 'xo');
+  b.resize(200);
+  b.draw({ pieces: [] });
+  assert.equal(frames(canvas).length, 0);
+  b.draw({ pieces: [] }, { myTurn: true });
+  assert.equal(frames(canvas).length, 1);
+  const [[, x, y, w, h]] = frames(canvas);
+  // 캔버스 가장자리에 붙어서, 줄이 잘리지 않게 줄 굵기 절반만큼 안쪽
+  assert.ok(x > 0 && y > 0 && x + w < b.width && y + h < b.height);
+  assert.ok(x < 6 && b.width - (x + w) < 6 && b.height - (y + h) < 6);
+  // 영역이 있으면 판 바탕까지만 두르고 영역은 감싸지 않습니다
+  const c2 = fakeCanvas();
+  const t = new BoardView(c2, tall, 'go-stones');
+  t.resize(480);
+  t.draw({ pieces: [] }, { myTurn: true });
+  const [[, tx, , tw]] = frames(c2);
+  const P = t.place(false);
+  assert.ok(tx + tw > P.cx[7] && tx + tw < P.cx[8] - t.S / 2);
+});
+
+test('플레이어 기물(paintPlayerDot): 아는 기물이면 그 기물 그림, 아니면 플레이어 색 점', () => {
+  assert.ok(knowsPiece('go-stones', 'white') && knowsPiece('xo', 'x') && knowsPiece('chess', 'bQ'));
+  assert.ok(knowsPiece(['red', { name: 'K', text: '王' }], 'K'));
+  assert.ok(!knowsPiece('go-stones', 'red') && !knowsPiece('chess', 'bX') && !knowsPiece(['red'], 'blue') && !knowsPiece('xo', undefined));
+
+  const made = [];
+  const saved = globalThis.document;
+  globalThis.document = { createElement: () => { const c = fakeCanvas(); made.push(c); return c; } };
+  const dot = () => {
+    const classes = new Set();
+    return {
+      dataset: {},
+      style: {},
+      children: [],
+      classList: { toggle: (k, on) => (on ? classes.add(k) : classes.delete(k)), contains: (k) => classes.has(k) },
+      replaceChildren(...xs) { this.children = xs; },
+    };
+  };
+  try {
+    const el = dot();
+    paintPlayerDot(el, 'go-stones', ['black', 'white'], 1);
+    assert.ok(el.classList.contains('piece'));
+    assert.equal(el.style.background, 'none');
+    assert.equal(el.children.length, 1);
+    assert.ok(made[0].calls.some(([k]) => k === 'arc'), '돌을 그립니다');
+    // 같은 기물이면 캔버스를 새로 만들지 않습니다
+    paintPlayerDot(el, 'go-stones', ['black', 'white'], 1);
+    assert.equal(made.length, 1);
+
+    // playerPieces가 없거나 모르는 기물이면 플레이어 색 점
+    for (const playerPieces of [undefined, ['black', 'red']]) {
+      const plain = dot();
+      paintPlayerDot(plain, 'go-stones', playerPieces, 1);
+      assert.ok(!plain.classList.contains('piece'));
+      assert.equal(plain.style.background, PLAYER_COLORS[1]);
+      assert.equal(plain.children.length, 0);
+    }
+    // 그림이던 점도 색 점으로 돌아옵니다
+    paintPlayerDot(el, 'go-stones', null, 1);
+    assert.equal(el.style.background, PLAYER_COLORS[1]);
+    assert.equal(el.children.length, 0);
+  } finally {
+    globalThis.document = saved;
+  }
 });
