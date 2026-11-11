@@ -108,7 +108,7 @@ button:disabled { opacity: 0.4; cursor: default; }
   padding: 12px;
   min-width: 0;
 }
-.player canvas { display: block; margin: 0 auto; border-radius: 4px; max-width: 100%; }
+.player > canvas { display: block; margin: 0 auto; border-radius: 4px; max-width: 100%; }
 .message { min-height: 1.5em; margin: 10px 0 8px; text-align: center; font-weight: 600; }
 .actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 .actions .specials { display: contents; } /* 특수 행동 버튼도 다른 버튼과 같은 줄에 */
@@ -116,6 +116,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .dot.p0 { background: var(--p0); }
 .dot.p1 { background: var(--p1); }
+.dot.piece { width: 14px; height: 14px; vertical-align: -2px; filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.55)); }
 
 .panels {
   display: grid;

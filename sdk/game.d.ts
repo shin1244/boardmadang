@@ -259,6 +259,11 @@ export interface Game<S> {
    * 목록의 항목은 이름(원에 이름 앞 두 글자) 또는 글자 패(TilePiece)입니다.
    */
   pieces: 'chess' | 'go-stones' | 'xo' | Array<string | TilePiece>;
+  /**
+   * 플레이어마다 이름 옆에 보일 기물 [선공, 후공] (pieces에 있는 이름). 예: `['black', 'white']`.
+   * 없으면 플레이어 색 점(빨강, 파랑)이 보입니다.
+   */
+  playerPieces?: [string, string];
   /** 좌표가 아닌 행동 (8개까지). 플랫폼이 버튼으로 보여줍니다. 버튼 글자와 순서는 view()의 buttons로 정합니다. 기권은 플랫폼 기능이라 넣지 않습니다. */
   specialActions?: string[];
   /**

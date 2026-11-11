@@ -16,7 +16,7 @@
 // 자동 검사와 직접 깨기는 이 브라우저에서 돌기 때문에 서버는 결과를 믿지 않습니다 (모양만 봅니다).
 // 검사는 올리는 사람이 문제를 미리 알게 하려는 것이고, 클리어는 적어도 한 번은 끝까지 둘 수 있는 게임이라는 표시입니다.
 
-import { BoardView, PLAYER_COLORS, attachInput, buttonsOf } from '/sdk/playground/board.js';
+import { BoardView, attachInput, buttonsOf, paintPlayerDot } from '/sdk/playground/board.js';
 import { LANGS, LANG_NAMES, LIMITS, NO_TIMER, TIMER_MINUTES, fullLangs, gameLang, isRtl, localize, validateListing } from '/sdk/playground/listing.js';
 import { makeThumbnail, sameAction, validateThumbnail } from '/sdk/check.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
@@ -501,7 +501,8 @@ function drawBoard() {
     boardPx = px;
   }
   const view = play.look?.views[play.seat] ?? { pieces: [] };
-  board.draw(view, { flip: flipped(), hover: canPlay() ? hover : null });
+  // 시험 대국은 두는 쪽이 차례를 따라가므로 둘 수 있으면 늘 내 차례입니다
+  board.draw(view, { flip: flipped(), hover: canPlay() ? hover : null, myTurn: canPlay() });
   canvas.classList.toggle('ended', !!play.ended);
   $('#play-message').textContent = view.message ?? '';
 }
@@ -533,7 +534,7 @@ function renderPlay() {
     const seat = Number(b.dataset.seat);
     b.setAttribute('aria-pressed', String(p?.seat === seat));
     b.disabled = !canPlay();
-    b.querySelector('.dot').style.background = PLAYER_COLORS[seat];
+    paintPlayerDot(b.querySelector('.dot'), info?.pieces, info?.playerPieces, seat);
   }
   // 특수 행동 버튼은 버튼 목록(행동과 글자)이 바뀔 때만 다시 만듭니다 (누른 버튼의 포커스가 남게).
   // 게임이 view()의 buttons로 글자와 순서를 정했으면 그대로, 아니면 특수 행동 이름 그대로 (board.js의 buttonsOf)

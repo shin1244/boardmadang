@@ -12,7 +12,7 @@
 //     무한 루프에 화면이 멈추는 것만 막지 못합니다.
 //
 // 판 상태는 Worker 안에만 있습니다. 화면은 start/play로 판을 진행하고 look으로 결과, 화면(view), 둘 수 있는 수를 받습니다.
-//   const g = await loadGame(entry);       // g.info: { id, board, pieces, specialActions, maxActions, turn, legal }
+//   const g = await loadGame(entry);       // g.info: { id, board, pieces, specialActions, maxActions, playerPieces, turn, legal }
 //   const s = await g.start(seed, look);   // { hash, turn, look }
 //   const r = await g.play([{ player, action }], look);  // { steps: [{ hash, changed, turn }], look }
 //   const l = await g.look(look, at);      // { result, views: { 0: view, 1: view }, legal }
@@ -23,7 +23,7 @@
 //   g.close();
 // look = { players: [0, 1], lang, legalFor: 0 | 1 | null }
 
-import { EFFECT_TYPES, fieldOf } from '/sdk/playground/board.js';
+import { EFFECT_TYPES, fieldOf, knowsPiece } from '/sdk/playground/board.js';
 
 const FRAME = '/web/runner/frame.html';
 const LOAD_MS = 10_000;
@@ -140,6 +140,9 @@ function cleanInfo(v) {
     pieces,
     specialActions: specials.filter((k) => isStr(k, 24) && k && k !== 'click').slice(0, 8),
     maxActions: isInt(v.maxActions, 1, 2000) ? v.maxActions : 2000,
+    // 플레이어마다 이름 옆에 보일 기물. 없거나 틀리면 플레이어 색 점
+    playerPieces: Array.isArray(v.playerPieces) && v.playerPieces.length === 2
+      && v.playerPieces.every((x) => isStr(x, 32) && knowsPiece(pieces, x)) ? [...v.playerPieces] : null,
     turn: v.turn === true,
     legal: v.legal === true,
   };

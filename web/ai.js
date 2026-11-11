@@ -7,7 +7,7 @@
 // 모델은 운영자가 학습해 올린 것입니다 (/api/games의 ai, server/internal/ai). 관측과 행동의 모양이 지금 게임 코드와 같아야 씁니다.
 // 난이도는 한 수마다의 탐색 횟수만 다릅니다 (LEVELS). 보통이 모델에 적힌 sims이고, 시험할 때는 주소에 ?sims=을 붙여 바꿀 수 있습니다.
 
-import { BoardView, PLAYER_COLORS, attachInput, buttonsOf, innerSize } from '/sdk/playground/board.js';
+import { BoardView, attachInput, buttonsOf, innerSize, paintPlayerDot } from '/sdk/playground/board.js';
 import { gameLang, localize } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { loadGame, modelFits } from './engine.js';
@@ -262,8 +262,9 @@ function renderPlayers() {
   const show = seat !== null && (phase === 'playing' || phase === 'ended');
   $('#players').hidden = !show;
   if (!show) return;
-  $('#my-dot').style.background = PLAYER_COLORS[seat];
-  $('#ai-dot').style.background = PLAYER_COLORS[aiSeat()];
+  const { pieces, playerPieces } = runner.info;
+  paintPlayerDot($('#my-dot'), pieces, playerPieces, seat);
+  paintPlayerDot($('#ai-dot'), pieces, playerPieces, aiSeat());
   $('#my-name').textContent = `${displayName(me)} (${t('match.you')})`;
   $('#my-seat').textContent = t(seat === 0 ? 'match.first' : 'match.second');
   $('#ai-seat').textContent = `${t(seat === 0 ? 'match.second' : 'match.first')} · ${levelName()}`;
@@ -284,7 +285,7 @@ function renderBoard() {
   if (!show) return;
   const view = snap.views[seat] ?? { pieces: [] };
   const mine = phase === 'playing' && turn === seat;
-  board.draw(view, { flip: flip(), hover: mine ? hover : null });
+  board.draw(view, { flip: flip(), hover: mine ? hover : null, myTurn: mine });
   $('#message').textContent = phase === 'playing' ? view.message ?? '' : '';
 }
 

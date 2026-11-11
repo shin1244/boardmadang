@@ -23,7 +23,7 @@
 // 판 상태는 Worker에만 있고, 이 페이지는 행동을 넘겨 해시, 차례, 결과, 화면을 받습니다.
 // 서버 메시지는 받은 순서대로 하나씩 처리합니다 (Worker의 답을 기다리는 동안 온 relay가 앞지르지 않게).
 
-import { BoardView, PLAYER_COLORS, attachInput, buttonsOf } from '/sdk/playground/board.js';
+import { BoardView, attachInput, buttonsOf, paintPlayerDot } from '/sdk/playground/board.js';
 import { NO_TIMER, gameLang, localize, timerOf } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { EMOTES, EMOTE_EVERY, emoteLabel, emoteSvg, emotesMuted, popEmote, setEmotesMuted } from './emotes.js';
@@ -441,7 +441,7 @@ function renderLog() {
     n.textContent = String(i + 1);
     const dot = document.createElement('i');
     dot.className = 'dot';
-    dot.style.background = PLAYER_COLORS[h.player];
+    paintPlayerDot(dot, runner.info.pieces, runner.info.playerPieces, h.player);
     const text = document.createElement('span');
     text.textContent = h.labels.join(' → ');
     li.append(n, dot, text);
@@ -588,8 +588,9 @@ function renderPlayers() {
   const show = seat !== null && (phase === 'playing' || phase === 'ended');
   $('#players').hidden = !show;
   if (!show) return;
-  $('#my-dot').style.background = PLAYER_COLORS[seat];
-  $('#opp-dot').style.background = PLAYER_COLORS[1 - seat];
+  const { pieces, playerPieces } = runner.info;
+  paintPlayerDot($('#my-dot'), pieces, playerPieces, seat);
+  paintPlayerDot($('#opp-dot'), pieces, playerPieces, 1 - seat);
   $('#my-name').textContent = `${displayName(me)} (${t('match.you')})`;
   $('#opp-name').textContent = displayName(opponent);
   $('#my-seat').textContent = t(seat === 0 ? 'match.first' : 'match.second');
@@ -607,7 +608,7 @@ function renderBoard() {
   $('#board-wrap').hidden = !show;
   if (!show) return;
   const view = snap.views[seat] ?? { pieces: [] };
-  board.draw(view, { flip: flip(), hover: phase === 'playing' ? hover : null });
+  board.draw(view, { flip: flip(), hover: phase === 'playing' ? hover : null, myTurn: phase === 'playing' && turn === seat });
   $('#message').textContent = phase === 'playing' ? view.message ?? '' : '';
 }
 

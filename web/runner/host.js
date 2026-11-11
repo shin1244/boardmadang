@@ -77,6 +77,7 @@ export function createHost() {
         pieces: plain(game.pieces),
         specialActions: plain(game.specialActions ?? []),
         maxActions: game.maxActions,
+        playerPieces: plain(game.playerPieces),
         turn: typeof game.turn === 'function',
         legal: typeof game.legal === 'function',
       };

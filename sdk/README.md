@@ -168,6 +168,8 @@ so players can pick a piece and drag it to where it should go (like on Lichess).
 **Pieces:** use a built-in set (`'xo'`, `'go-stones'`, `'chess'`) or list your own names, like `['red', 'blue']`.
 Your own names are drawn as circles, colored by their order in the list, with the first two characters of the name.
 
+The site puts a red (first player) or blue (second player) dot next to each player's name. Give each player a piece, first player then second, like `playerPieces: ['black', 'white']`, and the site draws that piece instead of the dot, so everyone sees who plays which stones.
+
 To draw pieces like janggi or shogi pieces, put a **lettered tile** in the list instead of a name. It is a square tile with a character on it, and small triangles on its edges show the directions it can move.
 
 ```js

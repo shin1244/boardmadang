@@ -155,6 +155,7 @@ fieldset[aria-invalid="true"], #langs[aria-invalid="true"] { border-color: var(-
 .seats { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
 .seats-label { margin-right: 4px; color: var(--muted); font-size: 13px; }
 .seat .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; }
+.seat .dot.piece { width: 14px; height: 14px; vertical-align: -3px; filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.55)); }
 .seat:disabled { cursor: not-allowed; opacity: 0.5; }
 .play-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .play-buttons:empty { display: none; }

@@ -9,7 +9,7 @@
 // 실제 플랫폼과 다른 점: 게임 코드를 Web Worker가 아니라 이 페이지에서 바로 실행합니다.
 
 import { checkGame, checkMembers, checkThumbnail, drawnPart, findNonJson, makeThumbnail, sameAction } from '../check.js';
-import { BoardView, attachInput, buttonsOf } from './board.js';
+import { BoardView, attachInput, buttonsOf, paintPlayerDot } from './board.js';
 import { LANGS, LANG_NAMES, fullLangs, localize } from './listing.js';
 import { hashOf, makeRng } from './platform.js';
 
@@ -272,7 +272,7 @@ function render() {
     } catch (e) {
       warn(`view() threw an error: ${e.message}`);
     }
-    boards[p].draw(view, { flip: game.board.flipForPlayer === p, hover: hover[p] });
+    boards[p].draw(view, { flip: game.board.flipForPlayer === p, hover: hover[p], myTurn: !ended && turnOf(state) === p });
     panel.querySelector('.message').textContent = view.message ?? '';
     for (const b of panel.querySelectorAll('button:not(.snapshot)')) b.disabled = !!ended;
     renderSpecials(p, panel.querySelector('.specials'), view);
@@ -362,6 +362,7 @@ function buildPanels() {
       <canvas></canvas>
       <p class="message"></p>
       <div class="actions"></div>`;
+    paintPlayerDot(panel.querySelector('.dot'), game.pieces, game.playerPieces, p);
     const actions = panel.querySelector('.actions');
     // 특수 행동 버튼 자리. 버튼은 화면(view)의 buttons에 따라 renderSpecials가 채웁니다
     const specials = document.createElement('span');
@@ -380,7 +381,7 @@ function buildPanels() {
     actions.append(shot);
     wrap.append(panel);
 
-    const canvas = panel.querySelector('canvas');
+    const canvas = panel.querySelector(':scope > canvas'); // 제목의 플레이어 기물 그림(캔버스)이 아니라 판
     const board = new BoardView(canvas, game.board, game.pieces);
     const flip = game.board.flipForPlayer === p;
     attachInput(board, canvas, {

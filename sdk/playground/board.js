@@ -30,6 +30,7 @@ const MARK = {
   finger: 'rgb(1 22 39 / 0.35)', // 손가락으로 누르고 있는 칸의 고리
   danger: '224, 82, 79',
   ink: '#262b36', // frame, lines의 기본 색
+  myTurn: '#3fc06a', // 내 차례일 때 판 둘레
 };
 
 /** 흰 · 검은 기물과 돌: 같은 굵기의 테두리와 면 */
@@ -70,6 +71,15 @@ const TILE_FONT = '"Noto Serif KR", "Noto Serif CJK KR", Batang, "Songti SC", Si
 
 /** 기물 목록의 한 항목 → 이름. 이름 문자열이거나 글자 패 { name, text, player, arrows } 입니다 */
 export const pieceName = (p) => (typeof p === 'string' ? p : p?.name);
+
+/** 이 기물 묶음(pieces)에 그 이름의 기물이 있는지. 기본 묶음은 그릴 줄 아는 이름, 직접 정의한 묶음은 목록의 이름 */
+export function knowsPiece(pieceSet, name) {
+  if (typeof name !== 'string') return false;
+  if (pieceSet === 'xo') return name === 'x' || name === 'o';
+  if (pieceSet === 'go-stones') return name === 'black' || name === 'white';
+  if (pieceSet === 'chess') return /^[wb][KQRBNP]$/.test(name);
+  return Array.isArray(pieceSet) && pieceSet.some((p) => pieceName(p) === name);
+}
 const COL_LABELS = 'abcdefghijklmnopqrstuvwxyzABCDEF';
 
 /** frame 테두리와 선(lines)의 두께. 칸 한 변에 대한 %입니다 (sdk/check.js, web/engine.js와 같은 범위) */
@@ -381,13 +391,14 @@ export class BoardView {
    * 화면 하나를 그립니다.
    * animate: 기물의 from(어디서 왔는지)을 움직여 보여 줄지. 다시보기에서 뒤로 갈 때처럼 움직임이 맞지 않으면 false로 줍니다.
    * 같은 움직임(from이 있는 기물들)은 한 번만 보여 주므로, 호버나 언어가 바뀌어 다시 그려도 다시 움직이지 않습니다.
+   * myTurn: 이 화면을 보는 사람이 둘 차례인지. 그러면 판 둘레를 초록 테두리로 그립니다 (게임과 상관없이 플랫폼이 정함).
    */
-  draw(view, { flip = false, hover = null, animate = true } = {}) {
+  draw(view, { flip = false, hover = null, animate = true, myTurn = false } = {}) {
     // attachInput이 봅니다: 미리보기가 있는지, 지금 그려진 호버, 클릭을 옮길 칸(aliases)
     this.view = view;
     this.hover = hover;
     this.flip = flip; // 글자 패가 어느 쪽을 보고 서는지 정할 때 씁니다
-    this.opts = { flip, hover, animate }; // 움직이는 동안 다음 장면을 같은 설정으로 그립니다
+    this.opts = { flip, hover, animate, myTurn }; // 움직이는 동안 다음 장면을 같은 설정으로 그립니다
     const { ctx, S, board } = this;
     const { cols } = board;
     const look = LOOKS[board.look] ?? LOOKS.plain;
@@ -453,6 +464,8 @@ export class BoardView {
     }
     // 줄은 칸 색칠 위에 그립니다. 칠한 칸이 옆 줄을 덮어 줄마다 진하기가 달라 보이지 않게
     this.drawGrid(look, flip);
+    // 내 차례: 판 둘레를 초록으로. 기물보다 먼저 그려서 가장자리 칸의 기물을 가리지 않습니다
+    if (myTurn) this.drawTurnFrame(flip);
     // 테두리: 칸 가장자리를 따라 굵게. 교차점 모드는 점 둘레의 사각형입니다.
     // 두께는 width(칸 한 변의 %, 1~30)로 정하고, 없으면 칸의 9%(적어도 3px)입니다.
     const frameW = Math.max(3, Math.round(S * 0.09));
@@ -766,6 +779,30 @@ export class BoardView {
     }
   }
 
+  /** 내 차례 테두리: 판 바탕(판 밖 영역은 빼고)의 둘레 안쪽에 초록 줄 */
+  drawTurnFrame(flip) {
+    const { ctx, S } = this;
+    let x = 0;
+    let y = 0;
+    let w = this.width;
+    let h = this.height;
+    if (this.areas.length) {
+      // drawBackground가 판 바탕을 칠한 자리와 같습니다
+      const P = this.place(flip);
+      const m = this.m;
+      x = P.x0 - m - this.lab;
+      y = P.y0 - m;
+      w = P.x1 - P.x0 + m * 2 + this.lab;
+      h = P.y1 - P.y0 + m * 2 + this.lab;
+    }
+    const lw = Math.max(3, Math.round(S * 0.12));
+    ctx.save();
+    ctx.strokeStyle = MARK.myTurn;
+    ctx.lineWidth = lw;
+    ctx.strokeRect(x + lw / 2, y + lw / 2, w - lw, h - lw);
+    ctx.restore();
+  }
+
   /** 판의 줄 (칸 모드는 칸 경계, 교차점 모드는 놓는 줄과 화점). 줄은 화면 픽셀에 맞춰 모두 같은 굵기로. 판 밖 영역에는 줄이 없습니다 */
   drawGrid(look, flip) {
     const { ctx, S, board } = this;
@@ -985,6 +1022,38 @@ export class BoardView {
     ctx.arcTo(x, y, x + w, y, r);
     ctx.closePath();
   }
+}
+
+/** 기물 하나를 px × px 캔버스에 그립니다 (판 위와 같은 그림, 바탕 없음) */
+export function pieceIcon(pieceSet, name, px = 48) {
+  const canvas = document.createElement('canvas');
+  canvas.width = px;
+  canvas.height = px;
+  const view = new BoardView(canvas, { rows: 1, cols: 1 }, pieceSet);
+  view.S = px / 0.9; // 돌 · 체스 기물이 캔버스를 거의 채우는 칸 크기
+  view.drawPiece(name, px / 2, px / 2, 1);
+  return canvas;
+}
+
+/**
+ * 플레이어 표시 점(사이트의 이름 옆 점)을 그 플레이어의 기물 그림으로 바꿉니다. 게임이 playerPieces를 주지 않았거나
+ * 모르는 기물이면 플레이어 색 점(PLAYER_COLORS) 그대로입니다. 그림은 점 요소 크기에 맞춰 늘어나므로 크기는 CSS가 정합니다.
+ */
+export function paintPlayerDot(el, pieceSet, playerPieces, player) {
+  const name = Array.isArray(playerPieces) ? playerPieces[player] : null;
+  const piece = knowsPiece(pieceSet, name);
+  const key = piece ? `piece:${name}` : `color:${player}`;
+  if (el.dataset.mark === key) return; // 다시 그릴 때마다 캔버스를 새로 만들지 않게
+  el.dataset.mark = key;
+  el.classList.toggle('piece', piece);
+  el.style.background = piece ? 'none' : PLAYER_COLORS[player];
+  if (!piece) {
+    el.replaceChildren();
+    return;
+  }
+  const icon = pieceIcon(pieceSet, name);
+  icon.style.cssText = 'display: block; width: 100%; height: 100%';
+  el.replaceChildren(icon);
 }
 
 /**

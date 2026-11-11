@@ -266,3 +266,14 @@ test('효과(effects): 아는 종류는 그대로 두고, 모르는 종류는 �
   const thumb = makeThumbnail(tictactoe, 0, { pieces: [], effects: [{ row: 0, col: 0, piece: 'x' }] });
   assert.equal(thumb.view.effects, undefined);
 });
+
+test('플레이어 기물(playerPieces): 기물 세트에 있는 이름 두 개, 선공 · 후공 순서', () => {
+  assert.deepEqual(checkMembers(variant({ pieces: 'go-stones', playerPieces: ['black', 'white'] })), []);
+  assert.deepEqual(checkMembers(variant({ pieces: 'xo', playerPieces: ['x', 'o'] })), []);
+  assert.deepEqual(checkMembers(variant({ pieces: 'chess', playerPieces: ['wK', 'bK'] })), []);
+  assert.deepEqual(checkMembers(variant({ pieces: ['red', { name: 'K', text: '王' }], playerPieces: ['K', 'red'] })), []);
+  for (const bad of [['black'], ['black', 'white', 'black'], ['black', 'red'], 'black', [1, 2], null]) {
+    assert.match(checkMembers(variant({ pieces: 'go-stones', playerPieces: bad })).join(), /playerPieces: must be/, JSON.stringify(bad));
+  }
+  assert.match(checkMembers(variant({ pieces: 'chess', playerPieces: ['wK', 'bX'] })).join(), /playerPieces: must be/);
+});
