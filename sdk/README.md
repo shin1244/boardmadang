@@ -189,7 +189,7 @@ You can mix names and tiles in one list. `text` on a cell with a tile is drawn s
 ## Panels, buttons and motion
 
 Things that aren't part of the board, like a piece picker, pieces in hand or a preview of the next piece, don't have to sit in board squares.
-All four parts below are optional. Without them, everything is drawn as before.
+All five parts below are optional. Without them, everything is drawn as before.
 
 ```js
 board: {
@@ -213,6 +213,8 @@ view(state, player, lang) {
     aliases: [{ from: { row: 0, col: 6 }, to: { row: 0, col: 5 } }, { from: { row: 0, col: 7 }, to: { row: 0, col: 5 } }],
     // the text and order of the buttons below the board
     buttons: [{ kind: 'rotate', label: lang === 'ko' ? '↻ 돌리기' : '↻ Rotate' }],
+    // a stone that was just captured: shown breaking apart on its square
+    effects: [{ row: 11, col: 3, piece: 'white', id: 42 }],
   };
 },
 ```
@@ -235,7 +237,12 @@ Use it in games where "the column you press is the piece's left edge", so pressi
 Pieces that go straight down the screen fall and speed up; others slide. Motion is tracked per piece. Each motion is shown only once, so you can keep returning the same `from` until the next move, and if you give another piece (one in hand, say) a new `from` in the meantime, only that piece moves.
 Pieces jump straight to their place when the viewer has asked their system for reduced motion, or when a replay skips several moves.
 
-`areas` are kept in thumbnails. `from`, `aliases` and `buttons` are not part of what the AI sees and aren't saved in thumbnails.
+**Effects (`view().effects`):** one-off effects. Give a piece that isn't in this view anymore, like one that was just captured, as `{ row, col, piece }`,
+and boardmadang draws it on that square, cracks it, and breaks it into four pieces that fly apart and fade (`type: 'shatter'`, the only one for now, and the default).
+Each effect is shown only once, so you can keep returning the same `effects` until the next move. If the same piece can vanish from the same square twice in a row, tell them apart with `id` (the piece's number, say).
+Effects start together with motion, so the pieces fly apart while the stones above come down. They aren't shown when the viewer has asked for reduced motion, or when a replay skips several moves.
+
+`areas` are kept in thumbnails. `from`, `aliases`, `buttons` and `effects` are not part of what the AI sees and aren't saved in thumbnails.
 
 ## Thumbnail
 
