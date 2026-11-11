@@ -2,7 +2,7 @@
 // 이름, 소개, 룰북, 난이도, 지원 언어, 타이머는 등록 정보(listing)에서, 보드 모양은 게임 모듈에서 읽어 옵니다.
 // 썸네일은 게임의 setup()이 만든 시작 화면을 플랫폼 렌더러로 그린 것입니다.
 
-import { BoardView, PLAYER_COLORS, innerSize } from '/sdk/playground/board.js';
+import { BoardView, PLAYER_COLORS, fieldOf, innerSize } from '/sdk/playground/board.js';
 import { loadGame, modelFits } from './engine.js';
 import { LANGS, LANG_NAMES, NO_TIMER, fullLangs, gameLang, isRtl, localize, timerOf } from '/sdk/playground/listing.js';
 import { applyStatic, byLangOrder, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
@@ -18,8 +18,20 @@ const sdkDocs = () => `https://github.com/shin1244/boardmadang/blob/main/sdk/REA
 /** 썸네일이 없는 게임의 시작 판에 쓸 고정 시드. 랜덤이 있는 게임도 매번 같은 그림이 나옵니다. */
 const THUMB_SEED = 1;
 
+/** 판 크기 { rows, cols }. 판 밖 영역(board.areas)이 있으면 영역을 뺀 가운데 판만 셉니다 */
+function fieldSize(board) {
+  const { field } = fieldOf(board);
+  return { rows: field.bottom - field.top, cols: field.right - field.left };
+}
+/** 화면에 보일 판 크기 글자 ("8×8") */
+const dimsOf = (board) => {
+  const { rows, cols } = fieldSize(board);
+  return `${rows}×${cols}`;
+};
+
 function sizeClass(board) {
-  const n = Math.max(board.rows, board.cols);
+  const { rows, cols } = fieldSize(board);
+  const n = Math.max(rows, cols);
   if (n <= 5) return 'small';
   if (n <= 10) return 'medium';
   return 'large';
@@ -176,7 +188,7 @@ function cardMeta(entry) {
     s.title = title;
     row.append(s);
   };
-  const dims = `${game.board.rows}×${game.board.cols}`;
+  const dims = dimsOf(game.board);
   const points = game.board.places === 'points';
   item(points ? ICONS.points : ICONS.cells, dims, `${t(points ? 'tag.points' : 'tag.cells')} · ${dims}`);
   if (listing) {
@@ -414,7 +426,7 @@ function fillDialog() {
   addBadges(name, entry);
   $('#gd-thumb').classList.toggle('no-thumb', !drawThumb($('#gd-thumb canvas'), entry, 220));
   requestAnimationFrame(() => current === entry && fitThumb($('#gd-thumb'), $('#gd-thumb canvas'), entry));
-  const meta = [`${game.board.rows}×${game.board.cols}`, t('tag.players')];
+  const meta = [dimsOf(game.board), t('tag.players')];
   if (listing) meta.push(t('tag.difficulty', { d: t(`difficulty.${listing.difficulty}`) }));
   $('#gd-meta').textContent = meta.join(' · ');
   fillStar($('#gd-star'), entry);
@@ -506,7 +518,7 @@ function fillTiles(entry) {
     tiles.push(d);
   };
   const points = game.board.places === 'points';
-  tile(points ? ICONS.points : ICONS.cells, `${game.board.rows}×${game.board.cols}`, t(points ? 'tag.points' : 'tag.cells'));
+  tile(points ? ICONS.points : ICONS.cells, dimsOf(game.board), t(points ? 'tag.points' : 'tag.cells'));
   const timer = timerOfEntry(entry);
   const none = timer.minutes === null;
   tile(ICONS.clock, none ? '—' : t('timer.short', { m: timer.minutes }),

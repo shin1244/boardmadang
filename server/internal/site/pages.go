@@ -236,10 +236,12 @@ func view(g Game, lang string) (gameView, bool) {
 			Board struct {
 				Places     string `json:"places"`
 				Rows, Cols int
+				Areas      []boardArea `json:"areas"`
 			} `json:"board"`
 		}
 		if json.Unmarshal(g.Thumbnail, &shot) == nil && shot.Board.Rows > 0 && shot.Board.Cols > 0 {
-			v.Board = fmt.Sprintf("%d×%d", shot.Board.Rows, shot.Board.Cols)
+			rows, cols := fieldSize(shot.Board.Rows, shot.Board.Cols, shot.Board.Areas)
+			v.Board = fmt.Sprintf("%d×%d", rows, cols)
 			v.Points = shot.Board.Places == "points"
 			v.Thumb = string(g.Thumbnail)
 		}
@@ -280,6 +282,34 @@ func view(g Game, lang string) (gameView, bool) {
 		v.Balance = balanceOf(g, lang)
 	}
 	return v, true
+}
+
+// boardArea는 썸네일 판 설정의 판 밖 영역 하나입니다 (sdk/game.d.ts의 Area)
+type boardArea struct {
+	Side                 string
+	Row, Col, Rows, Cols int
+}
+
+// fieldSize는 판 밖 영역을 뺀 가운데 판의 크기입니다 (sdk/playground/board.js의 fieldOf).
+// 썸네일은 올릴 때 영역이 맞는지 검사해서 맞는 영역만 남기므로 여기서는 다시 검사하지 않습니다.
+func fieldSize(rows, cols int, areas []boardArea) (int, int) {
+	top, bottom, left, right := 0, rows, 0, cols
+	for _, a := range areas {
+		switch a.Side {
+		case "top":
+			top = max(top, a.Row+a.Rows)
+		case "bottom":
+			bottom = min(bottom, a.Row)
+		case "left":
+			left = max(left, a.Col+a.Cols)
+		case "right":
+			right = min(right, a.Col)
+		}
+	}
+	if top >= bottom || left >= right {
+		return rows, cols
+	}
+	return bottom - top, right - left
 }
 
 // balanceOf는 선공·후공 승률입니다. 풀이는 로비의 게임 창(web/lobby.js의 fillBalance)과 같습니다.
