@@ -43,6 +43,7 @@ let final = null; // 마지막 수 뒤의 판 (끝난 이유를 쓰려고)
 let moves = 0; // 둔 수: 차례가 넘어간 행동 수 (maxActions 무승부를 알아보려고)
 let pos = 0;
 let viewAs = 0;
+let drawnPos = null; // 마지막으로 그린 판의 위치 (움직임을 보여 줄지 정함)
 let timer = null;
 let problem = '';
 let snapshot = null; // 학습 기록의 스냅샷 (mode가 'training'일 때)
@@ -217,7 +218,10 @@ function renderBoard() {
   // 받아 오는 동안은 앞서 그리던 판을 그대로 둡니다
   if (shown?.pos !== pos || shown.lang !== playLang()) loadView(pos);
   const view = shown?.look.views[viewAs] ?? { pieces: [] };
-  board.draw(view, { flip: flip() });
+  // 기물의 움직임(from)은 한 수 앞으로 갈 때만 보여 줍니다. 뒤로 가거나 건너뛰면 그 판에 맞지 않는 움직임입니다
+  const animate = shown?.pos === drawnPos + 1;
+  if (shown) drawnPos = shown.pos;
+  board.draw(view, { flip: flip(), animate });
   $('#message').textContent = view.message ?? '';
 }
 

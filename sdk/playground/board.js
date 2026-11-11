@@ -10,11 +10,14 @@ export const PLAYER_COLORS = ['#e0524f', '#4a7fdc'];
 /** 게임이 color에 쓸 수 있는 이름 (tint, frame, lines). '#rrggbb'도 되지만 판 팔레트와 맞추려면 이름을 씁니다 */
 export const NAMED_COLORS = { green: '#8cc65a', yellow: '#e8b04a', gray: '#7d8fa3' };
 
+// tray: 판 밖 영역(board.areas)의 바탕. 판과 같은 계열에서 조금 어둡게 해서 판과 구별되게
 const LOOKS = {
-  plain: { bg: '#dde5ef', line: '#4b6479' },
-  checker: { bg: '#dde5ef', dark: '#8ea6be', line: '#4b6479' },
-  wood: { bg: '#d6bf93', line: '#5b4a2f' },
+  plain: { bg: '#dde5ef', line: '#4b6479', tray: '#c3cfdc' },
+  checker: { bg: '#dde5ef', dark: '#8ea6be', line: '#4b6479', tray: '#c3cfdc' },
+  wood: { bg: '#d6bf93', line: '#5b4a2f', tray: '#bfa577' },
 };
+/** 판 밖 영역의 칸 하나하나(주머니)의 색 */
+const POCKET = 'rgb(255 255 255 / 0.28)';
 
 /** 판 위 표시의 색 */
 const MARK = {
@@ -93,6 +96,118 @@ function defaultStars(rows, cols) {
   return [];
 }
 
+// ---- 판 밖 영역 (board.areas) ----
+// 게임이 판 전체 칸(rows × cols) 가운데 몇 개의 직사각형을 "판 밖 영역"이라고 정하면, 그 칸들을 판에서 떼어
+// 판의 위 · 아래 · 왼쪽 · 오른쪽에 따로 떨어진 패널로 그립니다 (기물 고르기 패널, 손에 든 기물 같은 것).
+// 좌표는 그대로라서 클릭, legal(), AI의 행동과 관측, 서버는 영역이 없는 게임과 똑같습니다. 그리기만 다릅니다.
+
+/** 판 밖 영역이 붙을 수 있는 쪽 (sdk/check.js, web/engine.js, 서버의 thumbnail.go와 같은 목록) */
+export const AREA_SIDES = ['top', 'bottom', 'left', 'right'];
+/** 판 밖 영역의 최대 개수 (서버의 thumbnail.go와 같은 값) */
+export const MAX_AREAS = 8;
+
+/**
+ * 판 밖 영역(board.areas)을 검사하고, 영역을 뺀 가운데 판(field)을 구합니다.
+ * 판은 top 영역들의 아래, bottom 영역들의 위, left 영역들의 오른쪽, right 영역들의 왼쪽 사이의 직사각형입니다.
+ * 판에도 영역에도 들지 않는 칸은 그리지 않고 누를 수도 없습니다.
+ * 문제가 있으면 problems에 글(영어, check.js가 그대로 보여 줌)을 넣고 areas는 비웁니다 (그러면 판 전체를 예전처럼 그립니다).
+ * board의 rows, cols는 이미 검사한 값이어야 합니다.
+ * @returns {{ field: { top: number, bottom: number, left: number, right: number },
+ *   areas: { side: string, row: number, col: number, rows: number, cols: number }[], problems: string[] }}
+ *   field의 bottom, right는 판 바로 다음 줄 · 칸 번호입니다
+ */
+export function fieldOf(board) {
+  const { rows, cols } = board;
+  const whole = { top: 0, bottom: rows, left: 0, right: cols };
+  if (board.areas === undefined) return { field: whole, areas: [], problems: [] };
+  const fail = (msg) => ({ field: whole, areas: [], problems: [msg] });
+  const list = board.areas;
+  if (!Array.isArray(list) || list.length > MAX_AREAS) return fail(`areas: must be a list of up to ${MAX_AREAS} areas`);
+  const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+  const areas = [];
+  for (const [i, a] of list.entries()) {
+    if (!a || typeof a !== 'object' || !AREA_SIDES.includes(a.side)
+      || !int(a.row, 0, rows - 1) || !int(a.col, 0, cols - 1) || !int(a.rows, 1, rows - a.row) || !int(a.cols, 1, cols - a.col)) {
+      return fail(`areas[${i}]: needs side ('top', 'bottom', 'left', 'right') and row, col, rows, cols that stay inside the board`);
+    }
+    areas.push({ side: a.side, row: a.row, col: a.col, rows: a.rows, cols: a.cols });
+  }
+  const field = { ...whole };
+  for (const a of areas) {
+    if (a.side === 'top') field.top = Math.max(field.top, a.row + a.rows);
+    if (a.side === 'bottom') field.bottom = Math.min(field.bottom, a.row);
+    if (a.side === 'left') field.left = Math.max(field.left, a.col + a.cols);
+    if (a.side === 'right') field.right = Math.min(field.right, a.col);
+  }
+  if (field.top >= field.bottom || field.left >= field.right) {
+    return fail('areas: leave the board in the middle (top areas above it, bottom below, left and right beside it)');
+  }
+  // 영역은 쪽마다 판 바깥에 있으므로 판과는 겹치지 않습니다. 영역끼리만 봅니다
+  const overlap = (a, b) => a.row < b.row + b.rows && b.row < a.row + a.rows && a.col < b.col + b.cols && b.col < a.col + a.cols;
+  for (let i = 0; i < areas.length; i++) {
+    for (let j = i + 1; j < areas.length; j++) {
+      if (overlap(areas[i], areas[j])) return fail(`areas[${i}] and areas[${j}] overlap`);
+    }
+  }
+  return { field, areas, problems: [] };
+}
+
+/**
+ * 한 축(가로 또는 세로)의 배치. 기기 픽셀 단위입니다.
+ * 화면 순서로 [앞 영역들] 틈 [앞 좌표 글자] 여백 [판] 여백 [뒤 좌표 글자] 틈 [뒤 영역들]이고, 영역이 없는 쪽은 틈도 없습니다.
+ * n은 칸 수, f0 ~ f1(f1은 다음 칸)은 판의 화면 순서 범위입니다.
+ * c[i]: 화면 순서 i번째 칸의 가운데, start · end: 판의 첫 칸과 끝 칸의 경계(칸 모드) 또는 첫 줄과 끝 줄(교차점 모드), size: 전체 길이
+ */
+function axisLayout(n, f0, f1, { sd, m, gap, pad, points, labBefore, labAfter }) {
+  const c = new Array(n);
+  const start = (f0 > 0 ? pad * 2 + f0 * sd + gap : 0) + labBefore + m;
+  const end = start + (points ? f1 - f0 - 1 : f1 - f0) * sd;
+  const half = points ? 0 : sd / 2;
+  for (let i = 0; i < f0; i++) c[i] = pad + i * sd + sd / 2;
+  for (let i = f0; i < f1; i++) c[i] = start + (i - f0) * sd + half;
+  const after = end + m + labAfter + gap + pad; // 뒤 영역의 첫 칸 경계
+  for (let i = f1; i < n; i++) c[i] = after + (i - f1) * sd + sd / 2;
+  return { c, start, end, size: f1 < n ? after + (n - f1) * sd + pad : end + m + labAfter };
+}
+
+// ---- 움직임 (view의 pieces[].from) ----
+// 기물에 from이 있으면 "방금 그 칸에서 이 칸으로 왔다"는 뜻이라, 새 화면을 처음 그릴 때 from에서 미끄러져 오게 그립니다.
+// 화면에서 곧게 아래로 내려오는 움직임은 떨어지듯 점점 빠르게, 그 밖은 처음에 빠르고 끝에서 부드럽게 멈춥니다.
+
+/** 움직임 하나를 알아보는 이름: 칸, from, 기물이 모두 같으면 같은 움직임입니다 */
+const motionKey = (p) => `${p.row},${p.col},${p.from.row},${p.from.col},${p.piece}`;
+
+/** 한 기물의 움직임 시간(ms)과 빠르기 곡선. dx, dy는 화면에서 움직이는 칸 수입니다 */
+function motionOf(dx, dy) {
+  if (dx === 0 && dy > 0) return { ms: 70 + 90 * Math.sqrt(dy), ease: (k) => k * k };
+  return { ms: Math.min(400, 110 + 45 * Math.hypot(dx, dy)), ease: (k) => 1 - (1 - k) ** 3 };
+}
+
+/** 움직임을 줄이도록 설정한 사람(운영체제의 동작 줄이기)에게는 움직이지 않습니다 */
+const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// ---- 특수 행동 버튼 (view.buttons) ----
+
+/**
+ * 판 아래에 보일 특수 행동 버튼 [{ kind, label, disabled }]. 대국, AI 대국, 등록 화면, 플레이그라운드가 같이 씁니다.
+ * view.buttons가 있으면 그 순서와 글자로 거기 적힌 버튼만 보입니다 (specialActions에 없는 행동은 버립니다).
+ * 그때 게임에 legal()이 있으면 legal()에 없는 버튼은 누를 수 없게 흐리게 보입니다.
+ * view.buttons가 없으면 예전처럼 specialActions 전부를 이름 그대로 보여 줍니다.
+ * @param {string[]} specials 게임의 specialActions
+ * @param {object} view 이 플레이어의 view()
+ * @param {object[] | null} legal 이 플레이어가 지금 둘 수 있는 행동 (legal()이 없으면 null)
+ */
+export function buttonsOf(specials, view, legal) {
+  if (!Array.isArray(view?.buttons)) return specials.map((kind) => ({ kind, label: kind, disabled: false }));
+  const out = [];
+  for (const b of view.buttons) {
+    if (!b || !specials.includes(b.kind) || out.some((x) => x.kind === b.kind)) continue;
+    const label = typeof b.label === 'string' && b.label.trim() ? b.label : b.kind;
+    out.push({ kind: b.kind, label, disabled: Array.isArray(legal) && !legal.some((a) => a?.kind === b.kind) });
+  }
+  return out;
+}
+
 export class BoardView {
   constructor(canvas, board, pieceSet) {
     this.canvas = canvas;
@@ -111,6 +226,29 @@ export class BoardView {
     this.flip = false;
     this.ctx = canvas.getContext('2d');
     this.points = board.places === 'points';
+    // 판 밖 영역과 가운데 판. 영역 설정이 틀렸으면 영역 없이 판 전체를 그립니다 (검사는 check.js와 실행기가 합니다)
+    const { field, areas } = fieldOf(board);
+    this.field = field;
+    this.areas = areas;
+    // 그리는 칸 (판과 영역). 영역이 없으면 모든 칸입니다
+    this.shown = null;
+    if (areas.length) {
+      this.shown = new Uint8Array(board.rows * board.cols);
+      const mark = (r0, r1, c0, c1) => {
+        for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) this.shown[r * board.cols + c] = 1;
+      };
+      mark(field.top, field.bottom, field.left, field.right);
+      for (const a of areas) mark(a.row, a.row + a.rows, a.col, a.col + a.cols);
+    }
+    this.placed = [null, null]; // 칸 자리 (resize에서 다시 구함)
+    this.motions = []; // 움직이는 중인 것들 [{ t0, until, keys: 움직이는 기물들 }]
+    this.seen = new Set(); // 마지막으로 그린 화면의 움직임들 (같은 움직임을 두 번 보여 주지 않게)
+    this.raf = 0;
+  }
+
+  /** 이 칸을 그리는지 (판이나 판 밖 영역) */
+  isShown(row, col) {
+    return !this.shown || this.shown[row * this.board.cols + col] === 1;
   }
 
   /**
@@ -122,12 +260,19 @@ export class BoardView {
     const { rows, cols, labels } = this.board;
     const dpr = window.devicePixelRatio || 1;
     const span = (n) => (this.points ? n - 1 + 1.2 : n); // 교차점 모드는 양옆에 0.6칸씩 여백
-    const lines = (n) => (this.points ? n - 1 : n);
     // 칸 크기(화면 픽셀)를 큰 것부터 줄여 가며 판 전체가 maxPx에 들어가는 첫 값을 찾습니다
     const layout = (sd) => {
       const lab = labels ? Math.round(Math.max(14, (sd / dpr) * 0.35) * dpr) : 0;
       const m = this.points ? Math.round(sd * 0.6) : Math.round(2 * dpr);
-      return { sd, lab, m, w: lab + m * 2 + lines(cols) * sd, h: lab + m * 2 + lines(rows) * sd };
+      // 판과 판 밖 영역 사이의 틈, 영역 패널의 안쪽 여백
+      const gap = Math.round(sd * 0.35);
+      const pad = Math.round(sd * 0.1);
+      const L = { sd, lab, m, gap, pad, points: this.points };
+      // 전체 크기는 뒤집어도 같습니다 (앞뒤의 영역이 자리만 바꿈)
+      const f = this.field;
+      L.w = axisLayout(cols, f.left, f.right, { ...L, labBefore: lab, labAfter: 0 }).size;
+      L.h = axisLayout(rows, f.top, f.bottom, { ...L, labBefore: 0, labAfter: lab }).size;
+      return L;
     };
     const limit = maxPx * dpr;
     const smallest = Math.ceil(16 * dpr);
@@ -135,12 +280,13 @@ export class BoardView {
     let L = layout(Math.max(sd, smallest));
     while (L.sd > smallest && (L.w > limit || L.h > limit)) L = layout(L.sd - 1);
 
+    this.L = L;
+    this.placed = [null, null]; // 뒤집지 않은 화면, 뒤집은 화면의 칸 자리 (place)
     this.dpr = dpr;
     this.S = L.sd / dpr;
     this.lab = L.lab / dpr;
     this.m = L.m / dpr;
-    this.x0 = this.lab + this.m;
-    this.y0 = this.m;
+    this.pad = L.pad / dpr;
     this.width = L.w / dpr;
     this.height = L.h / dpr;
     // 줄 굵기: 화면 픽셀로 정수 (보통 1, 배율이 2배쯤이면 2)
@@ -153,6 +299,27 @@ export class BoardView {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
+  /**
+   * 칸 자리 (CSS 픽셀). cx[dc], cy[dr]는 화면 순서 dc열, dr줄의 가운데이고, x0 · y0 · x1 · y1은 판의 처음과 끝
+   * (칸 모드는 칸 경계, 교차점 모드는 첫 줄과 끝 줄), fx · fy는 판의 화면 순서 범위입니다.
+   * 영역이 없으면 예전과 같은 자리입니다 (x0 = 좌표 글자 + 여백, y0 = 여백).
+   */
+  place(flip) {
+    const k = flip ? 1 : 0;
+    if (this.placed[k]) return this.placed[k];
+    const { rows, cols } = this.board;
+    const f = this.field;
+    const fx = flip ? [cols - f.right, cols - f.left] : [f.left, f.right];
+    const fy = flip ? [rows - f.bottom, rows - f.top] : [f.top, f.bottom];
+    const x = axisLayout(cols, fx[0], fx[1], { ...this.L, labBefore: this.L.lab, labAfter: 0 });
+    const y = axisLayout(rows, fy[0], fy[1], { ...this.L, labBefore: 0, labAfter: this.L.lab });
+    const d = this.dpr;
+    this.placed[k] = {
+      cx: x.c.map((v) => v / d), cy: y.c.map((v) => v / d), x0: x.start / d, x1: x.end / d, y0: y.start / d, y1: y.end / d, fx, fy,
+    };
+    return this.placed[k];
+  }
+
   /** 칸 경계(CSS 픽셀) → 그 경계에서 시작하는 줄의 가운데. 줄이 화면 픽셀에 딱 맞게 */
   edge(v) {
     return (Math.round(v * this.dpr) + this.lw / 2) / this.dpr;
@@ -161,45 +328,56 @@ export class BoardView {
   /** 논리 좌표 → 화면상의 중심점 (뒤집기 반영) */
   center(row, col, flip) {
     const { rows, cols } = this.board;
-    const dr = flip ? rows - 1 - row : row;
-    const dc = flip ? cols - 1 - col : col;
-    const half = this.points ? 0 : this.S / 2;
-    return [this.x0 + dc * this.S + half, this.y0 + dr * this.S + half];
+    const P = this.place(flip);
+    return [P.cx[flip ? cols - 1 - col : col], P.cy[flip ? rows - 1 - row : row]];
   }
 
-  /** 마우스 이벤트 → 논리 좌표. 보드 밖이면 null */
+  /** 마우스 이벤트 → 논리 좌표. 보드 밖이거나 그리지 않는 칸이면 null */
   cellAt(event, flip) {
     const rect = this.canvas.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) * this.width) / rect.width - this.x0;
-    const y = ((event.clientY - rect.top) * this.height) / rect.height - this.y0;
-    const pick = this.points ? Math.round : Math.floor;
-    const dc = pick(x / this.S);
-    const dr = pick(y / this.S);
+    const x = ((event.clientX - rect.left) * this.width) / rect.width;
+    const y = ((event.clientY - rect.top) * this.height) / rect.height;
+    const P = this.place(flip);
+    // 칸 모드는 칸 안, 교차점 모드는 가장 가까운 교차점 (가운데에서 반 칸 안)
+    const half = this.S / 2;
+    const pick = (cs, v) => cs.findIndex((c) => v >= c - half && v < c + half);
+    const dc = pick(P.cx, x);
+    const dr = pick(P.cy, y);
+    if (dr < 0 || dc < 0) return null;
     const { rows, cols } = this.board;
-    if (dr < 0 || dr >= rows || dc < 0 || dc >= cols) return null;
-    return flip ? { row: rows - 1 - dr, col: cols - 1 - dc } : { row: dr, col: dc };
+    const cell = flip ? { row: rows - 1 - dr, col: cols - 1 - dc } : { row: dr, col: dc };
+    return this.isShown(cell.row, cell.col) ? cell : null;
   }
 
-  draw(view, { flip = false, hover = null } = {}) {
-    // attachInput이 봅니다: 미리보기가 있는지, 지금 그려진 호버
+  /**
+   * 화면 하나를 그립니다.
+   * animate: 기물의 from(어디서 왔는지)을 움직여 보여 줄지. 다시보기에서 뒤로 갈 때처럼 움직임이 맞지 않으면 false로 줍니다.
+   * 같은 움직임(from이 있는 기물들)은 한 번만 보여 주므로, 호버나 언어가 바뀌어 다시 그려도 다시 움직이지 않습니다.
+   */
+  draw(view, { flip = false, hover = null, animate = true } = {}) {
+    // attachInput이 봅니다: 미리보기가 있는지, 지금 그려진 호버, 클릭을 옮길 칸(aliases)
     this.view = view;
     this.hover = hover;
     this.flip = flip; // 글자 패가 어느 쪽을 보고 서는지 정할 때 씁니다
+    this.opts = { flip, hover, animate }; // 움직이는 동안 다음 장면을 같은 설정으로 그립니다
     const { ctx, S, board } = this;
-    const { rows, cols } = board;
+    const { cols } = board;
     const look = LOOKS[board.look] ?? LOOKS.plain;
     const at = (r, c) => this.center(r, c, flip);
+    const shown = (c) => this.isShown(c.row, c.col);
+    const now = performance.now();
+    this.updateMotion(view, animate, now);
 
     ctx.clearRect(0, 0, this.width, this.height);
-    ctx.fillStyle = look.bg;
-    ctx.fillRect(0, 0, this.width, this.height);
+    this.drawBackground(look, flip);
 
-    // 판 (체크무늬)
+    // 판 (체크무늬). 판의 왼쪽 위 칸이 밝은 칸입니다
+    const f = this.field;
     if (!this.points && look.dark) {
       ctx.fillStyle = look.dark;
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          if ((r + c) % 2 === 1) {
+      for (let r = f.top; r < f.bottom; r++) {
+        for (let c = f.left; c < f.right; c++) {
+          if ((r - f.top + c - f.left) % 2 === 1) {
             const [x, y] = at(r, c);
             ctx.fillRect(x - S / 2, y - S / 2, S, S);
           }
@@ -209,7 +387,7 @@ export class BoardView {
 
     if (board.labels) this.drawLabels(flip);
 
-    const marks = view.marks ?? [];
+    const marks = (view.marks ?? []).filter(shown);
     const marksOf = (type) => marks.filter((m) => m.type === type);
 
     // 칸 칠하기와 바닥 표시 (말 아래).
@@ -217,6 +395,7 @@ export class BoardView {
     const onHover = (c) => hover !== null && hover.row === c.row && hover.col === c.col;
     const previewed = new Set((view.tint ?? []).filter((t) => t.hover && onHover(t.hover)).map((t) => t.row * cols + t.col));
     for (const t of view.tint ?? []) {
+      if (!shown(t)) continue;
       if (t.hover ? !onHover(t.hover) : previewed.has(t.row * cols + t.col)) continue;
       const color = colorOf(t.color, MARK.ink);
       const [x, y] = at(t.row, t.col);
@@ -267,9 +446,10 @@ export class BoardView {
       }
     }
 
-    // 말
+    // 말. 움직이는 중인 말은 from에서 제자리로 가는 길 위에 그립니다
     for (const p of view.pieces ?? []) {
-      const [x, y] = at(p.row, p.col);
+      if (!shown(p)) continue;
+      const [x, y] = this.motions.length ? this.movingAt(p, flip, now) : at(p.row, p.col);
       this.drawPiece(p.piece, x, y, 1);
     }
     for (const m of marksOf('ghost')) {
@@ -282,6 +462,7 @@ export class BoardView {
     ctx.globalAlpha = 0.6;
     ctx.lineCap = 'round';
     for (const l of view.lines ?? []) {
+      if (!shown(l.from) || !shown(l.to)) continue;
       if (l.hover && !(hover && hover.row === l.hover.row && hover.col === l.hover.col)) continue;
       const [x1, y1] = at(l.from.row, l.from.col);
       const [x2, y2] = at(l.to.row, l.to.col);
@@ -353,6 +534,7 @@ export class BoardView {
     }
     // 글자 패 위의 글자는 패 글자를 가리지 않게 칸의 오른쪽 아래 귀퉁이에 작게 씁니다 (손에 든 개수 같은 것)
     for (const t of view.text ?? []) {
+      if (!shown(t)) continue;
       let [x, y] = at(t.row, t.col);
       const corner = tiled.has(t.row * cols + t.col);
       if (corner) {
@@ -376,12 +558,109 @@ export class BoardView {
       this.circle(x, y, S * 1.05);
       ctx.stroke();
     }
+
+    // 움직이는 중이면 다음 장면을 그립니다 (같은 화면, 같은 설정으로)
+    if (this.motions.length && !this.raf && typeof requestAnimationFrame === 'function') {
+      this.raf = requestAnimationFrame(() => {
+        this.raf = 0;
+        if (this.motions.length) this.draw(this.view, this.opts);
+      });
+    }
   }
 
-  /** 판의 줄 (칸 모드는 칸 경계, 교차점 모드는 놓는 줄과 화점). 줄은 화면 픽셀에 맞춰 모두 같은 굵기로 */
+  /**
+   * 새 화면에서 처음 보는 움직임을 시작하고, 다 움직인 것은 끝냅니다.
+   * 움직임은 기물마다 따로 봅니다 (칸, from, 기물 이름이 모두 같으면 같은 움직임).
+   * 직전에 그린 화면에 같은 움직임이 있었으면 다시 움직이지 않으므로, 게임은 다음 수까지 같은 from을 계속 줘도 되고,
+   * 그 사이에 다른 기물에 새 from을 붙이면 그 기물만 움직입니다 (먼저 움직이던 기물은 그대로 이어서 움직임).
+   */
+  updateMotion(view, animate, now) {
+    const moving = new Map();
+    for (const p of view.pieces ?? []) {
+      if (p.from && (p.from.row !== p.row || p.from.col !== p.col)) moving.set(motionKey(p), p);
+    }
+    const fresh = [...moving].filter(([k]) => !this.seen.has(k));
+    this.seen = new Set(moving.keys());
+    const on = animate && !reducedMotion();
+    this.motions = on ? this.motions.filter((m) => now < m.until) : [];
+    if (on && fresh.length) {
+      // 함께 시작한 기물 가운데 가장 오래 걸리는 기물이 도착할 때 끝납니다
+      const ms = Math.max(...fresh.map(([, p]) => motionOf(...this.screenStep(p, this.flip)).ms));
+      this.motions.push({ t0: now, until: now + ms, keys: new Set(fresh.map(([k]) => k)) });
+    }
+  }
+
+  /** 기물이 화면에서 움직이는 칸 수 [가로, 세로] (from → 제자리, 뒤집기 반영) */
+  screenStep(p, flip) {
+    const s = flip ? -1 : 1;
+    return [(p.col - p.from.col) * s, (p.row - p.from.row) * s];
+  }
+
+  /** 움직이는 중인 기물의 지금 자리. 움직이지 않는 기물이거나 이미 도착했으면 제자리 */
+  movingAt(p, flip, now) {
+    const to = this.center(p.row, p.col, flip);
+    if (!p.from || (p.from.row === p.row && p.from.col === p.col)) return to;
+    const key = motionKey(p);
+    const m = this.motions.find((x) => x.keys.has(key));
+    if (!m) return to;
+    const { ms, ease } = motionOf(...this.screenStep(p, flip));
+    const k = Math.min(1, Math.max(0, (now - m.t0) / ms));
+    if (k >= 1) return to;
+    const from = this.center(p.from.row, p.from.col, flip);
+    const e = ease(k);
+    return [from[0] + (to[0] - from[0]) * e, from[1] + (to[1] - from[1]) * e];
+  }
+
+  /**
+   * 바탕. 영역이 없으면 캔버스 전체가 판입니다 (예전과 같음).
+   * 영역이 있으면 판(좌표 글자 자리까지)과 영역 패널만 칠하고 그 사이는 비워 둡니다 (페이지 바탕이 보임).
+   * 영역의 칸마다 옅은 주머니를 그려서 판의 칸과 다르게 보입니다.
+   */
+  drawBackground(look, flip) {
+    const { ctx, S } = this;
+    if (!this.areas.length) {
+      ctx.fillStyle = look.bg;
+      ctx.fillRect(0, 0, this.width, this.height);
+      return;
+    }
+    const P = this.place(flip);
+    const m = this.m;
+    // 판의 끝: 칸 모드는 끝 칸 경계, 교차점 모드는 끝 줄. 좌표 글자는 판의 왼쪽과 아래에 있습니다
+    ctx.fillStyle = look.bg;
+    ctx.fillRect(P.x0 - m - this.lab, P.y0 - m, P.x1 - P.x0 + m * 2 + this.lab, P.y1 - P.y0 + m * 2 + this.lab);
+
+    const { rows, cols } = this.board;
+    const pad = this.pad;
+    for (const a of this.areas) {
+      // 화면에서의 첫 칸과 끝 칸의 가운데. 위 · 아래 영역이 판 옆 영역의 열까지 걸치면 그 사이에 틈이 있어도 한 패널로 감쌉니다
+      const c0 = flip ? cols - a.col - a.cols : a.col;
+      const r0 = flip ? rows - a.row - a.rows : a.row;
+      const x = P.cx[c0] - S / 2 - pad;
+      const y = P.cy[r0] - S / 2 - pad;
+      const w = P.cx[c0 + a.cols - 1] - P.cx[c0] + S + pad * 2;
+      const h = P.cy[r0 + a.rows - 1] - P.cy[r0] + S + pad * 2;
+      ctx.fillStyle = look.tray;
+      this.roundRect(x, y, w, h, Math.min(S * 0.18, 10));
+      ctx.fill();
+      ctx.fillStyle = POCKET;
+      const inset = Math.max(1, S * 0.05);
+      for (let r = a.row; r < a.row + a.rows; r++) {
+        for (let c = a.col; c < a.col + a.cols; c++) {
+          const [cx, cy] = this.center(r, c, flip);
+          this.roundSquare(cx, cy, S / 2 - inset, S * 0.12);
+          ctx.fill();
+        }
+      }
+    }
+  }
+
+  /** 판의 줄 (칸 모드는 칸 경계, 교차점 모드는 놓는 줄과 화점). 줄은 화면 픽셀에 맞춰 모두 같은 굵기로. 판 밖 영역에는 줄이 없습니다 */
   drawGrid(look, flip) {
     const { ctx, S, board } = this;
-    const { rows, cols } = board;
+    const f = this.field;
+    const rows = f.bottom - f.top;
+    const cols = f.right - f.left;
+    const { x0, y0 } = this.place(flip);
     const e = (v) => this.edge(v);
     const lw = this.lw / this.dpr;
     ctx.strokeStyle = look.line;
@@ -389,33 +668,36 @@ export class BoardView {
     ctx.beginPath();
     if (this.points) {
       for (let i = 0; i < rows; i++) {
-        ctx.moveTo(this.x0, e(this.y0 + i * S));
-        ctx.lineTo(this.x0 + (cols - 1) * S + lw, e(this.y0 + i * S));
+        ctx.moveTo(x0, e(y0 + i * S));
+        ctx.lineTo(x0 + (cols - 1) * S + lw, e(y0 + i * S));
       }
       for (let i = 0; i < cols; i++) {
-        ctx.moveTo(e(this.x0 + i * S), this.y0);
-        ctx.lineTo(e(this.x0 + i * S), this.y0 + (rows - 1) * S + lw);
+        ctx.moveTo(e(x0 + i * S), y0);
+        ctx.lineTo(e(x0 + i * S), y0 + (rows - 1) * S + lw);
       }
     } else if (look.dark) {
       // 체크무늬 판은 테두리만
-      ctx.rect(this.x0 + lw / 2, this.y0 + lw / 2, cols * S - lw, rows * S - lw);
+      ctx.rect(x0 + lw / 2, y0 + lw / 2, cols * S - lw, rows * S - lw);
     } else {
       // 마지막 줄은 판 안쪽에 오도록 줄 굵기만큼 앞에서
       for (let i = 0; i <= rows; i++) {
-        const y = this.y0 + (i === rows ? rows * S - lw : i * S);
-        ctx.moveTo(this.x0, e(y));
-        ctx.lineTo(this.x0 + cols * S, e(y));
+        const y = y0 + (i === rows ? rows * S - lw : i * S);
+        ctx.moveTo(x0, e(y));
+        ctx.lineTo(x0 + cols * S, e(y));
       }
       for (let i = 0; i <= cols; i++) {
-        const x = this.x0 + (i === cols ? cols * S - lw : i * S);
-        ctx.moveTo(e(x), this.y0);
-        ctx.lineTo(e(x), this.y0 + rows * S);
+        const x = x0 + (i === cols ? cols * S - lw : i * S);
+        ctx.moveTo(e(x), y0);
+        ctx.lineTo(e(x), y0 + rows * S);
       }
     }
     ctx.stroke();
 
     if (this.points && board.starPoints) {
-      const stars = board.starPoints === true ? defaultStars(rows, cols) : board.starPoints;
+      // 기본 화점은 판(영역을 뺀 가운데) 크기로 정합니다
+      const stars = board.starPoints === true
+        ? defaultStars(rows, cols).map((p) => ({ row: p.row + f.top, col: p.col + f.left }))
+        : board.starPoints;
       ctx.fillStyle = look.line;
       for (const p of stars) {
         const [x, y] = this.center(p.row, p.col, flip);
@@ -425,21 +707,24 @@ export class BoardView {
     }
   }
 
+  /** 가장자리 좌표 (a~h, 1~8). 판의 아래와 왼쪽에, 판의 칸만 셉니다 */
   drawLabels(flip) {
-    const { ctx, board } = this;
-    const { rows, cols } = board;
+    const { ctx } = this;
+    const f = this.field;
+    const P = this.place(flip);
     ctx.fillStyle = '#5a4a36';
     ctx.font = `${Math.round(this.lab * 0.7)}px system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const bottom = this.height - this.lab / 2;
-    for (let c = 0; c < cols; c++) {
-      const [x] = this.center(0, c, flip);
-      ctx.fillText(COL_LABELS[c], x, bottom);
+    const bottom = P.y1 + this.m + this.lab / 2;
+    const left = P.x0 - this.m - this.lab / 2;
+    for (let c = f.left; c < f.right; c++) {
+      const [x] = this.center(f.top, c, flip);
+      ctx.fillText(COL_LABELS[c - f.left], x, bottom);
     }
-    for (let r = 0; r < rows; r++) {
-      const [, y] = this.center(r, 0, flip);
-      ctx.fillText(String(rows - r), this.lab / 2, y);
+    for (let r = f.top; r < f.bottom; r++) {
+      const [, y] = this.center(r, f.left, flip);
+      ctx.fillText(String(f.bottom - r), left, y);
     }
   }
 
@@ -574,13 +859,18 @@ export class BoardView {
 
   /** (x, y)가 가운데이고 한 변의 반이 h, 모서리 반지름이 r인 둥근 사각형 경로. ctx.roundRect가 없는 옛 브라우저도 그립니다 */
   roundSquare(x, y, h, r) {
+    this.roundRect(x - h, y - h, h * 2, h * 2, r);
+  }
+
+  /** 왼쪽 위가 (x, y)이고 폭 w, 높이 h, 모서리 반지름 r인 둥근 사각형 경로 */
+  roundRect(x, y, w, h, r) {
     const { ctx } = this;
     ctx.beginPath();
-    ctx.moveTo(x - h + r, y - h);
-    ctx.arcTo(x + h, y - h, x + h, y + h, r);
-    ctx.arcTo(x + h, y + h, x - h, y + h, r);
-    ctx.arcTo(x - h, y + h, x - h, y - h, r);
-    ctx.arcTo(x - h, y - h, x + h, y - h, r);
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
     ctx.closePath();
   }
 }
@@ -610,6 +900,8 @@ const sameCell = (a, b) => !!a && !!b && a.row === b.row && a.col === b.col;
  *   - 미리보기가 없는 말을 누르면 누르는 순간 클릭합니다 (스플체스의 기물 고르기).
  *     그 클릭으로 갈 칸의 미리보기가 생기면, 그대로 끌어서 갈 칸에 놓을 수 있습니다.
  *     빈칸이나 미리보기가 있는 칸은 손을 뗄 때 클릭합니다 (개척 오목처럼 미리 보고 두기).
+ * 지금 그려진 화면에 aliases가 있으면, 마우스나 손가락이 from 칸에 있을 때 to 칸에 있는 것으로 칩니다.
+ *   호버(미리보기)도 클릭도 to 칸입니다 (조각이 판 밖으로 넘치는 끝 칸을 눌러도 들어맞는 자리에 놓기, 열 아무 데나 눌러 그 열에 두기).
  *
  * opts
  *   flip(): 판이 뒤집혔는지
@@ -621,7 +913,12 @@ export function attachInput(board, canvas, { flip, canHover, click, hover }) {
   let press = null; // 누르고 있는 손가락 { id, start, clicked }
   let touchedAt = -Infinity; // 터치 뒤에 브라우저가 따라 보내는 마우스 이벤트와 click은 버립니다
   const fromTouch = (e) => e.timeStamp - touchedAt < 800;
-  const at = (e) => board.cellAt(e, flip());
+  // 누른 칸. 화면의 aliases에 있으면 옮길 칸 (한 번만 옮깁니다)
+  const aim = (cell) => {
+    const a = cell && (board.view?.aliases ?? []).find((x) => sameCell(x.from, cell));
+    return a ? { row: a.to.row, col: a.to.col } : cell;
+  };
+  const at = (e) => aim(board.cellAt(e, flip()));
   const ok = (cell) => (cell && canHover(cell) ? cell : null);
   // 지금 그려진 호버(board.hover)와 다를 때만 알립니다. 화면이 호버를 지우고 다시 그렸으면 같은 칸이라도 다시 알립니다
   const show = (cell, touch = false) => {

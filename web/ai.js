@@ -7,7 +7,7 @@
 // 모델은 운영자가 학습해 올린 것입니다 (/api/games의 ai, server/internal/ai). 관측과 행동의 모양이 지금 게임 코드와 같아야 씁니다.
 // 난이도는 한 수마다의 탐색 횟수만 다릅니다 (LEVELS). 보통이 모델에 적힌 sims이고, 시험할 때는 주소에 ?sims=을 붙여 바꿀 수 있습니다.
 
-import { BoardView, PLAYER_COLORS, attachInput, innerSize } from '/sdk/playground/board.js';
+import { BoardView, PLAYER_COLORS, attachInput, buttonsOf, innerSize } from '/sdk/playground/board.js';
 import { gameLang, localize } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { loadGame, modelFits } from './engine.js';
@@ -296,11 +296,13 @@ function renderActions() {
   const specials = $('#specials');
   specials.replaceChildren();
   if (!playing || turn !== seat) return;
-  for (const kind of runner.info.specialActions) {
+  // 게임이 view()의 buttons로 글자와 순서를 정했으면 그대로, 아니면 특수 행동 이름 그대로 (board.js의 buttonsOf)
+  for (const { kind, label, disabled } of buttonsOf(runner.info.specialActions, snap?.views[seat], legalNow())) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'btn ghost';
-    b.textContent = kind;
+    b.textContent = label;
+    b.disabled = disabled;
     b.addEventListener('click', () => humanAct({ kind }));
     specials.append(b);
   }

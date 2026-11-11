@@ -23,6 +23,8 @@
 //   g.close();
 // look = { players: [0, 1], lang, legalFor: 0 | 1 | null }
 
+import { fieldOf } from '/sdk/playground/board.js';
+
 const FRAME = '/web/runner/frame.html';
 const LOAD_MS = 10_000;
 const CALL_MS = 3_000; // 한 번 부를 때. play는 행동 수에 따라 늘립니다
@@ -97,6 +99,11 @@ function cleanBoard(b) {
     out.starPoints = b.starPoints.slice(0, 64).filter((c) => isInt(c?.row, 0, b.rows - 1) && isInt(c?.col, 0, b.cols - 1))
       .map(({ row, col }) => ({ row, col }));
   }
+  // 판 밖 영역: 렌더러와 같은 규칙(sdk/playground/board.js의 fieldOf)으로 보고, 틀렸으면 버립니다 (판 전체를 예전처럼 그림)
+  if (b.areas !== undefined) {
+    const { areas, problems } = fieldOf({ rows: b.rows, cols: b.cols, areas: b.areas });
+    if (!problems.length && areas.length) out.areas = areas;
+  }
   return out;
 }
 
@@ -145,7 +152,13 @@ function cleanView(v, board) {
   const cap = board.rows * board.cols * 4;
   const cell = (c) => c && isInt(c.row, 0, board.rows - 1) && isInt(c.col, 0, board.cols - 1);
   const list = (a) => (Array.isArray(a) ? a.slice(0, cap) : []);
-  out.pieces = list(v.pieces).filter((x) => cell(x) && isStr(x.piece, 32)).map(({ row, col, piece }) => ({ row, col, piece }));
+  const at = ({ row, col }) => ({ row, col });
+  // from: 이 기물이 방금 어느 칸에서 왔는지 (화면이 움직여 보여 줌)
+  out.pieces = list(v.pieces).filter((x) => cell(x) && isStr(x.piece, 32)).map((x) => {
+    const o = { row: x.row, col: x.col, piece: x.piece };
+    if (cell(x.from)) o.from = at(x.from);
+    return o;
+  });
   out.marks = list(v.marks).filter((m) => cell(m) && MARK_TYPES.includes(m.type)).map((m) => {
     const o = { row: m.row, col: m.col, type: m.type };
     if (isStr(m.piece, 32)) o.piece = m.piece;
@@ -153,7 +166,6 @@ function cleanView(v, board) {
     if (isWidth(m.width, FRAME_WIDTH)) o.width = m.width;
     return o;
   });
-  const at = ({ row, col }) => ({ row, col });
   // 칠하기와 선은 칸마다 여러 개(마우스를 올린 칸마다의 미리보기, 이웃 8칸 등)일 수 있어 상한을 두 배로 둡니다
   out.tint = (Array.isArray(v.tint) ? v.tint.slice(0, cap * 2) : []).filter((x) => cell(x) && isColor(x.color) && (x.hover === undefined || cell(x.hover))).map((x) => {
     const o = { row: x.row, col: x.col, color: x.color };
@@ -168,6 +180,18 @@ function cleanView(v, board) {
     if (cell(l.hover)) o.hover = at(l.hover);
     return o;
   });
+  // aliases: from 칸을 누르면 to 칸을 누른 것으로 (sdk/playground/board.js의 attachInput)
+  if (Array.isArray(v.aliases)) {
+    out.aliases = list(v.aliases).filter((a) => a && cell(a.from) && cell(a.to)).map((a) => ({ from: at(a.from), to: at(a.to) }));
+  }
+  // buttons: 판 아래 특수 행동 버튼의 순서와 글자. 없으면 예전처럼 specialActions 전부를 이름 그대로 보여 주므로 빈 목록과 구별합니다
+  if (Array.isArray(v.buttons)) {
+    out.buttons = v.buttons.slice(0, 8).filter((b) => b && isStr(b.kind, 24) && b.kind && b.kind !== 'click').map((b) => {
+      const o = { kind: b.kind };
+      if (isStr(b.label, 40)) o.label = b.label;
+      return o;
+    });
+  }
   if (isStr(v.message, 200)) out.message = v.message;
   return out;
 }

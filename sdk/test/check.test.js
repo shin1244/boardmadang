@@ -198,3 +198,56 @@ test('글자 패: { name, text, player, arrows }를 이름과 섞어 쓸 수 있
   assert.deepEqual(checkThumbnail(game, thumb), []);
   assert.deepEqual(validateThumbnail({ ...thumb, pieces: [{ name: 'x', text: '王', player: 3 }] }), ["thumbnail.pieces: must look like the game's pieces"]);
 });
+
+test('판 밖 영역(areas): 판을 가운데에 남기고 겹치지 않아야 하며, 썸네일에도 남습니다', () => {
+  // 13 × 12 판: 왼쪽 8열이 판, 오른쪽 4열에 영역 셋 (영역 사이의 빈 줄은 그리지 않는 칸)
+  const board = {
+    places: 'cells', rows: 13, cols: 12,
+    areas: [
+      { side: 'right', row: 0, col: 8, rows: 4, cols: 4 },
+      { side: 'right', row: 5, col: 8, rows: 2, cols: 4 },
+      { side: 'right', row: 8, col: 8, rows: 2, cols: 4 },
+    ],
+  };
+  const game = variant({ board });
+  assert.deepEqual(checkMembers(game), []);
+  const bad = [
+    [{ side: 'middle', row: 0, col: 0, rows: 1, cols: 1 }, /areas\[0\]: needs side/],
+    [{ side: 'top', row: 0, col: 0, rows: 14, cols: 1 }, /areas\[0\]: needs side/],
+    [{ side: 'top', row: 0, col: 10, rows: 1, cols: 3 }, /areas\[0\]: needs side/],
+    [{ side: 'top', row: 0, col: 0, rows: 13, cols: 12 }, /leave the board in the middle/],
+  ];
+  for (const [area, msg] of bad) assert.match(checkMembers(variant({ board: { ...board, areas: [area] } })).join(), msg);
+  assert.match(checkMembers(variant({ board: { ...board, areas: {} } })).join(), /board\.areas: must be a list/);
+  assert.match(checkMembers(variant({ board: { ...board, areas: Array(9).fill(board.areas[0]) } })).join(), /up to 8/);
+  // 위 영역이 오른쪽 영역의 열까지 걸치면 겹칩니다
+  const overlapping = [...board.areas, { side: 'top', row: 0, col: 0, rows: 1, cols: 12 }];
+  assert.match(checkMembers(variant({ board: { ...board, areas: overlapping } })).join(), /areas\[0\] and areas\[3\] overlap/);
+
+  const thumb = makeThumbnail(game, 0, { pieces: [{ row: 0, col: 9, piece: 'x', from: { row: 12, col: 0 } }] });
+  assert.deepEqual(thumb.board.areas, board.areas);
+  assert.deepEqual(thumb.view.pieces, [{ row: 0, col: 9, piece: 'x' }]); // 움직임(from)은 썸네일에 넣지 않습니다
+  assert.deepEqual(checkThumbnail(game, thumb), []);
+  const withArea = variant({ board: { ...tictactoe.board, areas: [{ side: 'bottom', row: 2, col: 0, rows: 1, cols: 3 }] } });
+  assert.match(checkThumbnail(tictactoe, makeThumbnail(withArea, 0, { pieces: [] }))[0], /board settings changed/);
+  assert.match(validateThumbnail({ ...thumb, board: { ...board, areas: [{ side: 'top' }] } })[0], /thumbnail\.board\.areas\[0\]/);
+});
+
+test('버튼(buttons)의 글자는 언어마다 달라도 되고, specialActions에 없는 버튼은 경고합니다', () => {
+  const words = { ko: '넘기기', en: 'Pass' };
+  const withButtons = (kinds) => variant({
+    specialActions: ['pass'],
+    view: (s, p, lang) => ({ ...tictactoe.view(s, p, lang), buttons: kinds.map((kind) => ({ kind, label: words[lang] })) }),
+  });
+  const ok = checkGame(withButtons(['pass']), opts);
+  assert.deepEqual(ok.problems, []);
+  assert.deepEqual(ok.warnings, []);
+  const r = checkGame(withButtons(['pass', 'undo']), opts);
+  assert.ok(r.warnings.some((w) => w.includes("view().buttons has 'undo'")), r.warnings.join('\n'));
+  // 버튼의 행동이 언어마다 다르면 판 그림이 다른 것으로 봅니다
+  const swapped = variant({
+    specialActions: ['pass', 'skip'],
+    view: (s, p, lang) => ({ ...tictactoe.view(s, p, lang), buttons: [{ kind: lang === 'ko' ? 'pass' : 'skip' }] }),
+  });
+  assert.ok(checkGame(swapped, opts).problems.some((x) => x.includes('view() changes more than the message')));
+});

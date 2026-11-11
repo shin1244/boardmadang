@@ -113,7 +113,7 @@ On the site your code runs in a sandbox, so `fetch`, storage, `eval`, and `Worke
 |---|---|
 | `legal(state, player)` | Return the moves allowed right now. Shows hover hints and helps the AI learn. |
 | `observe(state, player)` | Extra info you can't see on the board (like castling rights in chess), for the AI. |
-| `specialActions: ['pass']` | Moves that aren't on the board. Boardmadang shows them as buttons and sends `{ kind: 'pass' }`. |
+| `specialActions: ['pass']` | Moves that aren't on the board (up to 8). Boardmadang shows them as buttons below the board and sends `{ kind: 'pass' }`. You can set the button text [as shown below](#panels-buttons-and-motion). |
 
 Resigning is built into the site, so your game doesn't handle it.
 
@@ -185,6 +185,57 @@ pieces: [
 - `arrows` (optional): the direction marks. `'n'` is forward from the owner's side, then clockwise `'ne'`, `'e'`, `'se'`, `'s'`, `'sw'`, `'w'`, `'nw'`.
 
 You can mix names and tiles in one list. `text` on a cell with a tile is drawn small in the cell's corner so it doesn't cover the tile (a count of pieces in hand, for example).
+
+## Panels, buttons and motion
+
+Things that aren't part of the board, like a piece picker, pieces in hand or a preview of the next piece, don't have to sit in board squares.
+All four parts below are optional. Without them, everything is drawn as before.
+
+```js
+board: {
+  places: 'cells', rows: 13, cols: 12,
+  // take the right 4 columns off the board and draw them as two separate panels to its right
+  areas: [
+    { side: 'right', row: 0, col: 8, rows: 4, cols: 4 }, // preview of the picked piece
+    { side: 'right', row: 5, col: 8, rows: 2, cols: 4 }, // pieces you can pick
+  ],
+},
+specialActions: ['rotate'],
+
+view(state, player, lang) {
+  return {
+    pieces: [
+      // from: it just fell from row 0, so it is shown falling
+      { row: 12, col: 3, piece: 'black', from: { row: 0, col: 3 } },
+      { row: 5, col: 8, piece: 'black' },                              // panel squares work like any square
+    ],
+    // pressing the edge (columns 6 and 7) counts as pressing column 5, where the piece fits
+    aliases: [{ from: { row: 0, col: 6 }, to: { row: 0, col: 5 } }, { from: { row: 0, col: 7 }, to: { row: 0, col: 5 } }],
+    // the text and order of the buttons below the board
+    buttons: [{ kind: 'rotate', label: lang === 'ko' ? '↻ 돌리기' : '↻ Rotate' }],
+  };
+},
+```
+
+**Areas (`board.areas`):** pick rectangles of the whole grid and draw them as separate panels above (`top`), below (`bottom`), left of (`left`)
+or right of (`right`) the board (up to 8). Coordinates don't change, so `view()`, clicks, `legal()` and the AI use whole-grid coordinates exactly as without areas.
+The board is the rectangle left in the middle. Squares that are in neither the board nor an area (in the example, the right 4 squares of rows 4 and 7–12)
+aren't drawn and can't be pressed. If areas overlap or don't leave a board in the middle, `check` tells you, and the whole grid is drawn without areas.
+On a board flipped with `flipForPlayer`, the areas appear on the other side. Coordinate `labels` and default `starPoints` count only the board.
+
+**Buttons (`view().buttons`):** sets the order and text of the `specialActions` buttons. Write the text in `lang`.
+Only the listed buttons are shown, so you can leave out buttons that can't be used now. If your game has `legal()`, buttons not in `legal()` are dimmed and can't be pressed.
+Without `buttons`, every `specialActions` entry is shown with its name, as before.
+
+**Click aliases (`view().aliases`):** when the mouse or finger is on the `from` square, it counts as being on the `to` square, for clicks and `hover` previews alike.
+Use it in games where "the column you press is the piece's left edge", so pressing an edge square where the piece would stick out still drops it where it fits.
+`legal()` only needs the `to` square, so the AI doesn't see duplicate moves.
+
+**Motion (`pieces[].from`):** `from` on a piece means "it just came from that square". The first time boardmadang draws that view, it moves the piece from `from` to its place.
+Pieces that go straight down the screen fall and speed up; others slide. Motion is tracked per piece. Each motion is shown only once, so you can keep returning the same `from` until the next move, and if you give another piece (one in hand, say) a new `from` in the meantime, only that piece moves.
+Pieces jump straight to their place when the viewer has asked their system for reduced motion, or when a replay skips several moves.
+
+`areas` are kept in thumbnails. `from`, `aliases` and `buttons` are not part of what the AI sees and aren't saved in thumbnails.
 
 ## Thumbnail
 

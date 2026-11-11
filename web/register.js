@@ -16,7 +16,7 @@
 // 자동 검사와 직접 깨기는 이 브라우저에서 돌기 때문에 서버는 결과를 믿지 않습니다 (모양만 봅니다).
 // 검사는 올리는 사람이 문제를 미리 알게 하려는 것이고, 클리어는 적어도 한 번은 끝까지 둘 수 있는 게임이라는 표시입니다.
 
-import { BoardView, PLAYER_COLORS, attachInput } from '/sdk/playground/board.js';
+import { BoardView, PLAYER_COLORS, attachInput, buttonsOf } from '/sdk/playground/board.js';
 import { LANGS, LANG_NAMES, LIMITS, NO_TIMER, TIMER_MINUTES, fullLangs, gameLang, isRtl, localize, validateListing } from '/sdk/playground/listing.js';
 import { makeThumbnail, sameAction, validateThumbnail } from '/sdk/check.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
@@ -535,21 +535,25 @@ function renderPlay() {
     b.disabled = !canPlay();
     b.querySelector('.dot').style.background = PLAYER_COLORS[seat];
   }
-  // 특수 행동 버튼은 게임이 바뀔 때만 다시 만듭니다 (누른 버튼의 포커스가 남게)
+  // 특수 행동 버튼은 버튼 목록(행동과 글자)이 바뀔 때만 다시 만듭니다 (누른 버튼의 포커스가 남게).
+  // 게임이 view()의 buttons로 글자와 순서를 정했으면 그대로, 아니면 특수 행동 이름 그대로 (board.js의 buttonsOf)
   const specials = $('#play-specials');
-  const kinds = info?.specialActions ?? [];
-  if (specials.dataset.kinds !== kinds.join(' ')) {
-    specials.dataset.kinds = kinds.join(' ');
-    specials.replaceChildren(...kinds.map((kind) => {
+  const buttons = buttonsOf(info?.specialActions ?? [], p?.look?.views[p.seat], p?.look?.legal ?? null);
+  const key = JSON.stringify(buttons.map((b) => [b.kind, b.label]));
+  if (specials.dataset.kinds !== key) {
+    specials.dataset.kinds = key;
+    specials.replaceChildren(...buttons.map(({ kind, label }) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'btn ghost';
-      b.textContent = kind;
+      b.textContent = label;
       b.addEventListener('click', () => act({ kind }));
       return b;
     }));
   }
-  for (const b of specials.children) b.disabled = !canPlay();
+  buttons.forEach((x, i) => {
+    specials.children[i].disabled = !canPlay() || x.disabled;
+  });
   $('#play-undo').disabled = !p?.runner || p.busy || !!p.error || !p.moves.length;
   $('#play-restart').disabled = !p || p.busy;
   $('#play-note').textContent = p?.note ?? '';

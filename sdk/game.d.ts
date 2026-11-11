@@ -30,6 +30,41 @@ export interface BoardConfig {
   labels?: boolean;
   /** 이 플레이어의 화면은 180도 뒤집어서 보여줍니다 (체스의 흑) */
   flipForPlayer?: Player;
+  /**
+   * 판 밖 영역 (8개까지). 판 전체 칸 가운데 이 직사각형들을 판에서 떼어 판의 위 · 아래 · 옆에 따로 떨어진 패널로 그립니다.
+   * 기물 고르기 패널, 손에 든 기물, 지금 고른 조각의 미리보기 같은 것을 판 밖에 둘 때 씁니다.
+   * 좌표는 그대로라서 view(), 클릭, legal(), AI는 영역이 없을 때와 똑같이 rows × cols 좌표를 씁니다.
+   * 판은 영역을 뺀 가운데 직사각형입니다 (top 영역들의 아래, bottom 영역들의 위, left · right 영역들의 사이).
+   * 판에도 영역에도 들지 않는 칸은 그리지 않고 누를 수도 없습니다. 좌표 글자(labels)와 기본 화점은 판만 셉니다.
+   */
+  areas?: Area[];
+}
+
+/** 판 밖 영역 하나. row, col은 왼쪽 위 칸, rows, cols는 크기입니다 (판 전체 좌표) */
+export interface Area {
+  /** 판의 어느 쪽에 붙일지. flipForPlayer로 뒤집힌 화면에서는 반대쪽에 보입니다 */
+  side: 'top' | 'bottom' | 'left' | 'right';
+  row: number;
+  col: number;
+  rows: number;
+  cols: number;
+}
+
+/**
+ * 판 아래에 보일 특수 행동 버튼 하나. kind는 specialActions 가운데 하나입니다.
+ * view().buttons를 주면 거기 적은 버튼만 그 순서와 글자로 보이고, legal()이 있으면 legal()에 없는 버튼은 흐리게 눌리지 않습니다.
+ * 주지 않으면 예전처럼 specialActions 전부가 이름 그대로 보입니다.
+ */
+export interface Button {
+  kind: string;
+  /** 버튼 글자 (40자까지). lang으로 씁니다. 없으면 kind */
+  label?: string;
+}
+
+/** 클릭 옮기기: from 칸을 누르면(마우스를 올리면) to 칸을 누른(올린) 것으로 칩니다 */
+export interface Alias {
+  from: Cell;
+  to: Cell;
 }
 
 /**
@@ -77,7 +112,14 @@ export interface Line {
 
 /** 화면에 보일 것. 그리는 건 플랫폼이 합니다. */
 export interface View {
-  pieces: Array<Cell & { piece: string }>;
+  /**
+   * 기물. from이 있으면 "방금 그 칸에서 왔다"는 뜻이라, 플랫폼이 새 화면을 처음 그릴 때 from에서 제자리로 움직여 보여 줍니다.
+   * 화면에서 곧게 아래로 내려오면 떨어지듯 점점 빠르게, 그 밖은 미끄러지듯 움직입니다. 판 밖 영역에서 판으로 와도 됩니다.
+   * 움직임은 기물마다 따로 봅니다. 같은 움직임은 한 번만 보이므로 다음 수까지 같은 from을 계속 줘도 되고 (기물 고르기 같은 행동 뒤에 다시 움직이지 않음),
+   * 그 사이에 다른 기물에 새 from을 붙이면 그 기물만 움직입니다.
+   * from은 AI 관측과 썸네일에 들어가지 않습니다.
+   */
+  pieces: Array<Cell & { piece: string; from?: Cell }>;
   marks?: Mark[];
   /**
    * 칸 칠하기. 0 / 1이면 플레이어 색, 'green' · 'yellow' · 'gray'면 판 팔레트의 색, 아니면 '#rrggbb'.
@@ -89,6 +131,14 @@ export interface View {
   text?: Array<Cell & { text: string }>;
   /** 두 칸을 잇는 선 */
   lines?: Line[];
+  /**
+   * 클릭 옮기기. 마우스나 손가락이 from 칸에 있으면 to 칸에 있는 것으로 쳐서, 호버(미리보기)도 클릭도 to 칸입니다.
+   * 조각이 판 밖으로 넘치는 끝 칸을 눌러도 들어맞는 자리에 놓게 하거나, 열 아무 데나 눌러 그 열에 두게 할 때 씁니다.
+   * legal()에는 to 칸만 넣으면 되므로 AI가 보는 행동이 겹치지 않습니다. AI 관측과 썸네일에 들어가지 않습니다.
+   */
+  aliases?: Alias[];
+  /** 판 아래 특수 행동 버튼의 순서와 글자 (8개까지). 없으면 specialActions 전부를 이름 그대로 보여 줍니다 */
+  buttons?: Button[];
   /** 보드 위 안내 문구 */
   message?: string;
 }
@@ -190,7 +240,7 @@ export interface Game<S> {
    * 목록의 항목은 이름(원에 이름 앞 두 글자) 또는 글자 패(TilePiece)입니다.
    */
   pieces: 'chess' | 'go-stones' | 'xo' | Array<string | TilePiece>;
-  /** 좌표가 아닌 행동. 플랫폼이 버튼으로 보여줍니다. 기권은 플랫폼 기능이라 넣지 않습니다. */
+  /** 좌표가 아닌 행동 (8개까지). 플랫폼이 버튼으로 보여줍니다. 버튼 글자와 순서는 view()의 buttons로 정합니다. 기권은 플랫폼 기능이라 넣지 않습니다. */
   specialActions?: string[];
   /**
    * 둔 수가 이 횟수에 이르면 무승부로 끝납니다. 게임이 반드시 끝나게 하는 안전장치입니다.
@@ -215,7 +265,7 @@ export interface Game<S> {
    */
   result(state: S, lang: Lang): Result | null;
 
-  /** 이 플레이어 화면에 보일 것. message 같은 글자는 lang으로 씁니다 (result와 같은 규칙). 그 밖의 내용은 lang과 상관없이 같아야 합니다. */
+  /** 이 플레이어 화면에 보일 것. message와 buttons의 label 같은 글자는 lang으로 씁니다 (result와 같은 규칙). 그 밖의 내용은 lang과 상관없이 같아야 합니다. */
   view(state: S, player: Player, lang: Lang): View;
 
   /**

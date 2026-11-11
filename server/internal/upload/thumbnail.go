@@ -141,6 +141,10 @@ func CheckThumbnail(data []byte) (json.RawMessage, []string) {
 			board[k] = b[k]
 		}
 	}
+	// 판 밖 영역은 알려진 칸만 (boardProblems를 통과했으면 맞는 값입니다)
+	if areas, _ := areasOf(b); areas != nil {
+		board["areas"] = areas
+	}
 	out := map[string]any{}
 	pieces := []any{}
 	for _, x := range items("pieces") {
@@ -224,7 +228,72 @@ func boardProblems(v any, where string) []string {
 			p = append(p, fmt.Sprintf("%s.%s: must be a whole number from 1 to %d", where, k, boardSize))
 		}
 	}
+	// 판 밖 영역은 rows, cols가 맞을 때만 봅니다
+	if len(p) == 0 {
+		if _, msg := areasOf(b); msg != "" {
+			p = append(p, where+"."+msg)
+		}
+	}
 	return p
+}
+
+// 판 밖 영역(board.areas)이 붙는 쪽과 최대 개수 (sdk/playground/board.js의 AREA_SIDES, MAX_AREAS)
+var areaSides = []string{"top", "bottom", "left", "right"}
+
+const maxAreas = 8
+
+// areasOf는 판 밖 영역을 검사하고 알려진 칸만 남긴 목록을 돌려줍니다. 문제가 있으면 그 글(check.js와 같은 글)입니다.
+// sdk/playground/board.js의 fieldOf와 같은 규칙입니다: 판은 영역을 뺀 가운데 직사각형이고, 영역끼리 겹치면 안 됩니다.
+// rows, cols는 이미 검사한 값이어야 합니다. areas가 없으면 nil, "".
+func areasOf(b map[string]any) ([]any, string) {
+	if !has(b, "areas") {
+		return nil, ""
+	}
+	rows, cols := b["rows"].(float64), b["cols"].(float64)
+	list, ok := b["areas"].([]any)
+	if !ok || len(list) > maxAreas {
+		return nil, fmt.Sprintf("areas: must be a list of up to %d areas", maxAreas)
+	}
+	type rect struct{ row, col, rows, cols float64 }
+	var rects []rect
+	out := []any{}
+	top, bottom, left, right := 0.0, rows, 0.0, cols
+	for i, x := range list {
+		a, _ := x.(map[string]any)
+		side := str(a["side"])
+		r, okR := whole(a["row"])
+		c, okC := whole(a["col"])
+		h, okH := whole(a["rows"])
+		w, okW := whole(a["cols"])
+		if a == nil || !slices.Contains(areaSides, side) || !okR || !okC || !okH || !okW ||
+			r < 0 || r > rows-1 || c < 0 || c > cols-1 || h < 1 || h > rows-r || w < 1 || w > cols-c {
+			return nil, fmt.Sprintf("areas[%d]: needs side ('top', 'bottom', 'left', 'right') and row, col, rows, cols that stay inside the board", i)
+		}
+		switch side {
+		case "top":
+			top = math.Max(top, r+h)
+		case "bottom":
+			bottom = math.Min(bottom, r)
+		case "left":
+			left = math.Max(left, c+w)
+		case "right":
+			right = math.Min(right, c)
+		}
+		rects = append(rects, rect{r, c, h, w})
+		out = append(out, map[string]any{"side": side, "row": a["row"], "col": a["col"], "rows": a["rows"], "cols": a["cols"]})
+	}
+	if top >= bottom || left >= right {
+		return nil, "areas: leave the board in the middle (top areas above it, bottom below, left and right beside it)"
+	}
+	for i := range rects {
+		for j := i + 1; j < len(rects); j++ {
+			a, o := rects[i], rects[j]
+			if a.row < o.row+o.rows && o.row < a.row+a.rows && a.col < o.col+o.cols && o.col < a.col+a.cols {
+				return nil, fmt.Sprintf("areas[%d] and areas[%d] overlap", i, j)
+			}
+		}
+	}
+	return out, ""
 }
 
 func piecesOk(v any) bool {
