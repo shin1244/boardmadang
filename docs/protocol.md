@@ -153,7 +153,10 @@ AI 모델을 올리면(`PUT /api/admin/ai/{game}`) 그 게임의 열린 요청�
   | `GET /robots.txt` | `/auth/`, `/drafts/`, 운영자 화면만 막고 sitemap 주소를 알립니다 |
 
   페이지와 sitemap의 절대 주소는 `PUBLIC_URL`, 없으면 요청의 Host로 만듭니다. `/`는 `/web/`로 `301`입니다.
-  개인 화면(`history.html`, `signup.html`, `training.html`, `admin.html`)은 HTML의 `<meta name="robots" content="noindex">`로 뺍니다.
+  개인 화면(`history.html`, `signup.html`, `training.html`, `admin.html`)과, 쿼리가 있어야 도는 화면(`ai.html`, `match.html`, `replay.html`, `watch.html`)은
+  HTML의 `<meta name="robots" content="noindex">`로 뺍니다. 검색에는 그 대신 게임 페이지가 나옵니다.
+  나머지 화면(`index.html`, `rooms.html`, `register.html`, `legal.html`)은 HTML에 `<link rel="canonical">`을 `https://boardmadang.com/web/…` 절대 주소로 적어,
+  `/web/?game=…`이나 `/web/index.html`도 한 주소로 셉니다.
 
 # 웹소켓
 

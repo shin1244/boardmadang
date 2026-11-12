@@ -556,7 +556,7 @@ func (s *Site) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 
 // ServeRobots는 검색 엔진 로봇에게 주는 안내입니다. 화면이 쓰는 스크립트와 API는 막지 않습니다
 // (구글이 로비를 그릴 때 /api/games 같은 것을 불러야 합니다). 로그인, 등록 중인 초안, 운영자 화면만 막고,
-// 개인 화면(내 프로필 등)은 그 HTML의 noindex로 뺍니다.
+// 개인 화면(내 프로필 등)과 쿼리가 있어야 도는 화면(AI 대국, 대전, 기보, 관전)은 그 HTML의 noindex로 뺍니다.
 func (s *Site) ServeRobots(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
