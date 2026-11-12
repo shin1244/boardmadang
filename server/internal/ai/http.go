@@ -28,6 +28,8 @@ type Handler struct {
 	Known func(id string) bool
 	// Games는 올린 게임 쪽입니다 (upload.Store). nil이면 제작자 요청과 코드 받기가 꺼집니다
 	Games Games
+	// Plays는 AI 대국 수를 셉니다 (plays.go, stats.Tracker). nil이면 알려 줘도 세지 않습니다
+	Plays Plays
 }
 
 // Games는 올린 게임의 주인과 버전, 코드입니다 (upload.Store).

@@ -11,8 +11,9 @@ import (
 
 // GET /api/admin/stats?days=30 은 운영자 화면 위쪽의 숫자와 그래프입니다. 날짜는 모두 한국 날짜(KST)입니다.
 //
-// 방문(DAU, MAU)만 internal/stats가 새로 세고, 나머지는 원래 남기던 것에서 셉니다.
+// 방문(DAU, MAU)과 AI 대국은 internal/stats가 새로 세고, 나머지는 원래 남기던 것에서 셉니다.
 // 대국은 기보 저장소의 날마다 판 수(로비 인기순과 같은 기준), 등록은 올린 게임의 등록 기록, 가입은 계정의 가입 시각입니다.
+// AI 대국은 브라우저 안에서만 돌아 기보가 없으므로, AI 화면이 알려 준 판 수입니다 (stats의 ai.go).
 
 const (
 	DefaultStatsDays = 30  // days를 안 주면
@@ -30,7 +31,7 @@ type Stats struct {
 	Playing     int       `json:"playing"`  // 지금 진행 중인 대국
 	Accounts    int       `json:"accounts"` // 지금 있는 계정 수
 	Uploads     int       `json:"uploads"`  // 지금까지 올린 게임 수 (내린 게임 포함)
-	Top         []TopGame `json:"top"`      // 이 기간에 많이 둔 게임 (TopGames개까지)
+	Top         []TopGame `json:"top"`      // 이 기간에 많이 둔 게임 (온라인 + AI, TopGames개까지)
 }
 
 // DayStats는 하루의 수입니다.
@@ -41,15 +42,20 @@ type DayStats struct {
 	MAU        int    `json:"mau"`        // 그날까지 30일 동안 온 사람
 	MAUMembers int    `json:"mauMembers"` // 그중 계정
 	Plays      int    `json:"plays"`      // 끝난 대국 (무효, 혼자 둔 대국, 한 수도 안 둔 대국은 빼고)
+	AIPlays    int    `json:"aiPlays"`    // AI와 둔 판 (사람이 한 수 이상 둔 판)
+	AIEnds     int    `json:"aiEnds"`     // 그중 끝까지 둔 판 (기권 포함)
+	AIWins     int    `json:"aiWins"`     // 끝난 판 중 사람이 이긴 판
+	AIDraws    int    `json:"aiDraws"`    // 끝난 판 중 비긴 판 (나머지는 AI가 이김)
 	NewGames   int    `json:"newGames"`   // 처음 등록된 게임
 	Updates    int    `json:"updates"`    // 이미 있던 게임을 다시 등록한 것 (새 버전이나 등록 정보)
 	Signups    int    `json:"signups"`    // 가입 (그 뒤 탈퇴한 계정은 빠집니다)
 }
 
-// TopGame은 기간 동안 둔 판 수가 많은 게임입니다.
+// TopGame은 기간 동안 둔 판 수가 많은 게임입니다. 온라인과 AI 판을 더한 수로 줄 세웁니다.
 type TopGame struct {
-	Game  string `json:"game"`
-	Plays int    `json:"plays"`
+	Game    string `json:"game"`
+	Plays   int    `json:"plays"`   // 온라인 대국
+	AIPlays int    `json:"aiPlays"` // AI와 둔 판
 }
 
 // Stats는 오늘까지 n일의 통계입니다. 저장소가 없는 칸은 0입니다.
@@ -64,6 +70,13 @@ func (h *Handler) Stats(n int) Stats {
 		index[d.Day] = d
 	}
 
+	top := make(map[string]*TopGame)
+	topOf := func(game string) *TopGame {
+		if top[game] == nil {
+			top[game] = &TopGame{Game: game}
+		}
+		return top[game]
+	}
 	if h.Visits != nil {
 		visits, since := h.Visits.Range(n)
 		out.VisitsSince = since
@@ -72,9 +85,23 @@ func (h *Handler) Stats(n int) Stats {
 				d.Visitors, d.Members, d.MAU, d.MAUMembers = v.Visitors, v.Members, v.MAU, v.MAUMembers
 			}
 		}
+		for day, games := range h.Visits.AIDaily(from) {
+			d := index[day]
+			if d == nil {
+				continue
+			}
+			for game, c := range games {
+				d.AIPlays += c.Plays
+				d.AIEnds += c.Ends
+				d.AIWins += c.Wins
+				d.AIDraws += c.Draws
+				if c.Plays > 0 {
+					topOf(game).AIPlays += c.Plays
+				}
+			}
+		}
 	}
 	if h.Records != nil {
-		top := make(map[string]int)
 		for day, games := range h.Records.Daily(from) {
 			d := index[day]
 			if d == nil {
@@ -82,17 +109,17 @@ func (h *Handler) Stats(n int) Stats {
 			}
 			for game, plays := range games {
 				d.Plays += plays
-				top[game] += plays
+				topOf(game).Plays += plays
 			}
 		}
-		for game, plays := range top {
-			out.Top = append(out.Top, TopGame{Game: game, Plays: plays})
-		}
-		slices.SortFunc(out.Top, func(a, b TopGame) int {
-			return cmp.Or(cmp.Compare(b.Plays, a.Plays), cmp.Compare(a.Game, b.Game))
-		})
-		out.Top = out.Top[:min(len(out.Top), TopGames)]
 	}
+	for _, g := range top {
+		out.Top = append(out.Top, *g)
+	}
+	slices.SortFunc(out.Top, func(a, b TopGame) int {
+		return cmp.Or(cmp.Compare(b.Plays+b.AIPlays, a.Plays+a.AIPlays), cmp.Compare(a.Game, b.Game))
+	})
+	out.Top = out.Top[:min(len(out.Top), TopGames)]
 	if h.Uploads != nil {
 		for _, r := range h.Uploads.Releases() {
 			if r.First {

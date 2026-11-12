@@ -1,4 +1,5 @@
 // AI와 두기: 학습한 AI와 혼자 둡니다 (?game=<id>). 서버와 웹소켓 없이 이 브라우저 안에서만 돌고, 기보와 랭킹에는 남기지 않습니다.
+// 운영 통계에 판 수만 알립니다 (report: 사람이 첫 수를 두면 play, 끝나면 end와 결과).
 //
 // 게임 코드와 AI의 탐색(trainer/mcts.js)은 게임 실행기(engine.js)의 샌드박스 Worker에서, 신경망은 사이트 쪽 Worker(ai-net.js)에서 돕니다.
 // AI 차례가 되면 실행기에 think를 부르고, 실행기가 신경망 계산을 부탁할 때마다(need) 관측을 ai-net.js에 넣어 결과를 answer로 돌려줍니다.
@@ -50,6 +51,7 @@ let hover = null;
 let round = 0; // 새 판마다 늘립니다. 앞 판의 AI가 늦게 돌아오면 버립니다
 let queue = Promise.resolve(); // 실행기 호출은 하나씩
 let level = savedLevel(); // easy | normal | hard. 판을 고르는 화면에서만 바꿀 수 있어 한 판 동안은 그대로입니다
+let told = { round: -1, end: false }; // 운영 통계에 play를 알린 판(round)과, 그 판의 끝도 알렸는지
 
 const aiSeat = () => 1 - seat;
 const playLang = () => gameLang(entry?.listing, lang);
@@ -150,7 +152,7 @@ async function newGame(side) {
   await aiTurns(my);
 }
 
-/** player가 행동 하나를 둡니다 */
+/** player가 행동 하나를 둡니다. 판이 바뀌었는지 돌려줍니다 */
 async function act(player, action) {
   const r = await runner.play([{ player, action }], lookOpts());
   const step = r.steps[0];
@@ -158,6 +160,7 @@ async function act(player, action) {
   turn = step.turn;
   snap = r.look;
   checkEnd();
+  return step.changed;
 }
 
 /** 끝났는지: 게임의 result(), 수 상한, 아무도 차례가 아님 (trainer/env.js의 outcome과 같음) */
@@ -166,7 +169,39 @@ function checkEnd() {
   if (snap?.result) ended = { winner: snap.result.winner, why: 'result' };
   else if (moves >= runner.info.maxActions) ended = { winner: null, why: 'maxActions' };
   else if (turn === null) ended = { winner: null, why: 'noTurn' };
-  if (ended) phase = 'ended';
+  if (ended) {
+    phase = 'ended';
+    reportEnd(round);
+  }
+}
+
+// ---- 운영 통계 ----
+// 누가 뒀는지와 둔 수는 보내지 않고, 실패해도 대국에는 상관없습니다 (POST /api/ai/{game}/plays, server/internal/ai/plays.go).
+// 한 수도 안 둔 판과 AI가 멈춘 판(aiStuck)은 알리지 않습니다. ?sims=로 시험하는 판도 알리지 않습니다.
+
+function report(body) {
+  if (testSims !== null) return;
+  fetch(`/api/ai/${encodeURIComponent(gameId)}/plays`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    keepalive: true, // 끝나자마자 화면을 닫아도 갑니다
+  }).catch(() => {});
+}
+
+/** 사람이 판 my의 첫 수를 뒀으면 한 판으로 알립니다 (판마다 한 번) */
+function reportPlay(my) {
+  if (told.round === my) return;
+  told = { round: my, end: false };
+  report({ event: 'play' });
+}
+
+/** 판 my가 끝났으면 사람 쪽 결과로 알립니다 (play를 알린 판만, 한 번) */
+function reportEnd(my) {
+  if (told.round !== my || told.end || !ended) return;
+  told.end = true;
+  const { winner } = ended;
+  report({ event: 'end', result: winner === null ? 'draw' : winner === seat ? 'win' : 'lose' });
 }
 
 /** AI 차례가 끝날 때까지 둡니다 (선택 → 이동처럼 한 차례에 여러 행동일 수 있음) */
@@ -203,7 +238,10 @@ function humanAct(action) {
   const my = round;
   enqueue(async () => {
     if (my !== round || phase !== 'playing' || turn !== seat) return;
-    await act(seat, action);
+    if (await act(seat, action)) {
+      reportPlay(my);
+      reportEnd(my); // 첫 수로 바로 끝난 판 (act 안의 checkEnd는 play를 알리기 전이라 못 알림)
+    }
     render();
     await aiTurns(my);
   });
@@ -365,9 +403,11 @@ function setupButtons() {
   for (const side of [0, 1]) $(`#as-${side}`).addEventListener('click', () => enqueue(() => newGame(side)));
   $('#resign').addEventListener('click', () => {
     if (phase !== 'playing' || !confirm(t('match.resign.confirm'))) return;
+    const my = round;
     round++; // 생각 중이던 AI는 버립니다
     ended = { winner: aiSeat(), why: 'resign' };
     phase = 'ended';
+    reportEnd(my);
     render();
   });
   $('#again').addEventListener('click', () => {

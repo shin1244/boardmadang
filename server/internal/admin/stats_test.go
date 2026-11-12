@@ -13,6 +13,7 @@ import (
 	"github.com/shin1244/boardmadang/server/internal/identity"
 	"github.com/shin1244/boardmadang/server/internal/protocol"
 	"github.com/shin1244/boardmadang/server/internal/record"
+	"github.com/shin1244/boardmadang/server/internal/stats"
 	"github.com/shin1244/boardmadang/server/internal/upload"
 )
 
@@ -66,6 +67,15 @@ func TestStats(t *testing.T) {
 	match("dots", time.Date(2026, 9, 1, 5, 0, 0, 0, time.UTC)) // 30일보다 전
 	f.h.Records = records
 	f.h.Live = func() (int, int) { return 3, 1 }
+	// AI 대국 수는 stats가 날마다 남긴 파일에서 읽습니다 (stats의 ai.go)
+	os.MkdirAll(filepath.Join(f.dir, "stats", "ai"), 0o755)
+	os.WriteFile(filepath.Join(f.dir, "stats", "ai", "2026-11-03.json"),
+		[]byte(`{"dots":{"plays":5,"ends":4,"wins":1,"draws":1},"maze":{"plays":1,"ends":0,"wins":0,"draws":0}}`), 0o644)
+	visits, err := stats.Open(f.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.h.Visits = visits
 
 	code, st := f.stats(t, "", &f.boss)
 	if code != http.StatusOK {
@@ -81,8 +91,11 @@ func TestStats(t *testing.T) {
 		}
 		return st.Days[i]
 	}
-	if d := day("2026-11-03"); d.Plays != 2 {
+	if d := day("2026-11-03"); d.Plays != 2 || d.AIPlays != 6 || d.AIEnds != 4 || d.AIWins != 1 || d.AIDraws != 1 {
 		t.Fatalf("11-03: %+v", d)
+	}
+	if d := day("2026-11-02"); d.AIPlays != 0 {
+		t.Fatalf("11-02: %+v", d)
 	}
 	if d := day("2026-11-01"); d.Plays != 1 || d.NewGames != 1 || d.Updates != 0 {
 		t.Fatalf("11-01: %+v", d)
@@ -96,12 +109,14 @@ func TestStats(t *testing.T) {
 	if st.Uploads != 2 || st.Accounts != 4 || st.Online != 3 || st.Playing != 1 {
 		t.Fatalf("totals: %+v", st)
 	}
-	if len(st.Top) != 2 || st.Top[0] != (TopGame{"tictactoe", 2}) || st.Top[1] != (TopGame{"dots", 1}) {
+	// 온라인과 AI 판을 더한 수로 줄 세웁니다: dots 1+5, tictactoe 2+0, maze 0+1
+	if len(st.Top) != 3 || st.Top[0] != (TopGame{"dots", 1, 5}) || st.Top[1] != (TopGame{"tictactoe", 2, 0}) || st.Top[2] != (TopGame{"maze", 0, 1}) {
 		t.Fatalf("top: %+v", st.Top)
 	}
 
+	// 11월 1일의 dots 한 판은 이틀 밖이라 빠집니다
 	if code, st := f.stats(t, "?days=2", &f.boss); code != http.StatusOK || len(st.Days) != 2 || st.Days[0].Day != "2026-11-02" ||
-		len(st.Top) != 1 || st.Days[0].NewGames != 0 {
+		len(st.Top) != 3 || st.Top[0] != (TopGame{"dots", 0, 5}) || st.Days[0].NewGames != 0 {
 		t.Fatalf("days=2: %d %+v", code, st)
 	}
 	for _, q := range []string{"?days=0", "?days=366", "?days=x"} {

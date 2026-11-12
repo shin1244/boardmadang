@@ -15,6 +15,7 @@
 //	POST   /api/ai/{game}/request           AI 만들기 요청 (내가 올린 게임만, 본문 {})
 //	DELETE /api/ai/{game}/request           기다리는 중인 요청 거두기
 //	GET    /api/ai/{game}/training          학습 기록 (게임 주인과 운영자만)
+//	POST   /api/ai/{game}/plays             AI 대국의 시작과 끝을 운영 통계에 셉니다 (plays.go, 누구나)
 //	GET    /api/admin/ai/requests           요청 목록 (운영자만, 아래 모두)
 //	POST   /api/admin/ai/{game}/code        올린 게임 코드 zip (본문 {}). 요청이 학습 중이 됩니다
 //	POST   /api/admin/ai/{game}/decline     요청 반려 {"note":"…"}

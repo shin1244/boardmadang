@@ -1,4 +1,4 @@
-// Package stats는 운영자 화면의 방문자 수(DAU, MAU)를 셉니다.
+// Package stats는 운영자 화면의 방문자 수(DAU, MAU)와 AI 대국 수(ai.go)를 셉니다.
 //
 // 하루는 한국 시각(KST) 0시부터입니다. GET /api/me를 부른 사람(계정이나 게스트)을 그날 한 번만 셉니다.
 // 화면마다 처음에 /api/me를 부르므로 사이트를 연 사람이 다 들어옵니다. 검색 로봇처럼 보이는 요청은 세지 않습니다.
@@ -12,6 +12,7 @@
 //	stats/key                 해시 키. 처음 켤 때 만듭니다
 //	stats/visits/<날짜>.log   그날 온 사람마다 한 줄 "m <해시>"(계정) 또는 "g <해시>"(게스트). 30일 동안만
 //	stats/days.jsonl          끝난 날의 수 {"day":"2026-11-03","visitors":12,"members":3,"mau":40,"mauMembers":10}
+//	stats/ai/<날짜>.json      그날 게임마다의 AI 대국 수 (ai.go)
 package stats
 
 import (
@@ -80,6 +81,9 @@ type Tracker struct {
 	today  string                     // 마지막으로 본 날짜. 바뀌면 끝난 날을 정리합니다 (roll)
 	days   map[string]map[string]bool // 날짜 → 해시 → 계정인지. 최근 Window일
 	closed map[string]Visits          // 끝난 날의 수 (days.jsonl)
+
+	ai      map[string]map[string]*AICount // 날짜 → 게임 → AI 대국 수 (ai.go). 지우지 않습니다
+	aiToday map[string]*aiPerson           // 오늘 사람(해시)마다 센 AI 대국. 날이 바뀌면 비웁니다
 }
 
 // Open은 dir/stats를 읽어 Tracker를 엽니다. 폴더와 키가 없으면 만듭니다.
@@ -89,10 +93,12 @@ func Open(dir string) (*Tracker, error) {
 
 func open(dir string, now func() time.Time) (*Tracker, error) {
 	t := &Tracker{
-		dir:    filepath.Join(dir, "stats"),
-		now:    now,
-		days:   make(map[string]map[string]bool),
-		closed: make(map[string]Visits),
+		dir:     filepath.Join(dir, "stats"),
+		now:     now,
+		days:    make(map[string]map[string]bool),
+		closed:  make(map[string]Visits),
+		ai:      make(map[string]map[string]*AICount),
+		aiToday: make(map[string]*aiPerson),
 	}
 	if err := os.MkdirAll(filepath.Join(t.dir, "visits"), 0o755); err != nil {
 		return nil, err
@@ -105,6 +111,9 @@ func open(dir string, now func() time.Time) (*Tracker, error) {
 		return nil, err
 	}
 	if err := t.loadVisits(); err != nil {
+		return nil, err
+	}
+	if err := t.loadAI(); err != nil {
 		return nil, err
 	}
 	t.mu.Lock()
@@ -181,6 +190,7 @@ func (t *Tracker) roll() {
 		return
 	}
 	t.today = today
+	clear(t.aiToday) // AI 대국의 하루 상한은 날마다 새로
 	// 오래된 날부터 남깁니다. 그날의 MAU는 그 앞 Window-1일의 파일로 세므로 지우기 전에 합니다
 	if len(t.days) > 0 {
 		for day := slices.Min(slices.Collect(maps.Keys(t.days))); day < today; day = AddDays(day, 1) {
