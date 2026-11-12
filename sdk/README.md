@@ -191,7 +191,7 @@ You can mix names and tiles in one list. `text` on a cell with a tile is drawn s
 ## Panels, buttons and motion
 
 Things that aren't part of the board, like a piece picker, pieces in hand or a preview of the next piece, don't have to sit in board squares.
-All five parts below are optional. Without them, everything is drawn as before.
+All six parts below are optional. Without them, everything is drawn as before.
 
 ```js
 board: {
@@ -227,6 +227,29 @@ The board is the rectangle left in the middle. Squares that are in neither the b
 aren't drawn and can't be pressed. If areas overlap or don't leave a board in the middle, `check` tells you, and the whole grid is drawn without areas.
 On a board flipped with `flipForPlayer`, the areas appear on the other side. Coordinate `labels`, default `starPoints` and the board size shown in the lobby and on the game page (13×8 in the example) count only the board.
 
+**Lists (`board.lists`, `view().lists`):** small panels outside the grid that only show things, like the order of upcoming pieces (up to 4).
+They take no squares of the grid, so they can't be pressed and don't make the board, the AI's input or its moves any bigger.
+
+```js
+board: {
+  // ...
+  // 20 rows × 10 columns at 0.4 of the square size, starting at the top-left corner of square (6, 0) (under a 4-column panel)
+  lists: [{ at: { row: 6, col: 0 }, rows: 20, cols: 10, scale: 0.4 }],
+},
+view(state, player, lang) {
+  return {
+    pieces: [/* ... */],
+    // the pieces of board.lists[0], in list coordinates (0-19, 0-9)
+    lists: [{ pieces: [{ row: 0, col: 0, piece: 'black' }, { row: 1, col: 0, piece: 'black' }] }],
+  };
+},
+```
+
+A list is drawn from the top-left corner of its `at` square (`scale` 0.25–1, default 1), so put `at` on an empty square under an area to continue that panel.
+If it runs past the edge, the canvas grows to fit. On a flipped board it hangs from that square's bottom-right corner instead, but what's inside isn't flipped.
+`from` on a piece can be a list square, `{ list, row, col }`, and a piece in a list can have a board square as `from`: it moves and changes size between the two.
+The AI doesn't see lists. If it needs to know what they show (the upcoming pieces, say), give it to the AI with `observe()`.
+
 **Buttons (`view().buttons`):** sets the order and text of the `specialActions` buttons. Write the text in `lang`.
 Only the listed buttons are shown, so you can leave out buttons that can't be used now. If your game has `legal()`, buttons not in `legal()` are dimmed and can't be pressed.
 Without `buttons`, every `specialActions` entry is shown with its name, as before.
@@ -240,11 +263,12 @@ Pieces that go straight down the screen fall and speed up; others slide. Motion 
 Pieces jump straight to their place when the viewer has asked their system for reduced motion, or when a replay skips several moves.
 
 **Effects (`view().effects`):** one-off effects. Give a piece that isn't in this view anymore, like one that was just captured, as `{ row, col, piece }`,
-and boardmadang draws it on that square, cracks it, and breaks it into four pieces that fly apart and fade (`type: 'shatter'`, the only one for now, and the default).
+and boardmadang draws it on that square, cracks it, and breaks it into four pieces that fly apart and fade (`type: 'shatter'`, the default).
+`type: 'flash'` makes it glow white, then shrink and fade instead, for pieces the rules clear away (like a full line in Tetris).
 Each effect is shown only once, so you can keep returning the same `effects` until the next move. If the same piece can vanish from the same square twice in a row, tell them apart with `id` (the piece's number, say).
 Effects start together with motion, so the pieces fly apart while the stones above come down. They aren't shown when the viewer has asked for reduced motion, or when a replay skips several moves.
 
-`areas` are kept in thumbnails. `from`, `aliases`, `buttons` and `effects` are not part of what the AI sees and aren't saved in thumbnails.
+`areas` are kept in thumbnails. `lists`, `from`, `aliases`, `buttons` and `effects` are not part of what the AI sees and aren't saved in thumbnails.
 
 ## Thumbnail
 

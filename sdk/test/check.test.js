@@ -256,7 +256,7 @@ test('효과(effects): 아는 종류는 그대로 두고, 모르는 종류는 �
   const withEffects = (type) => variant({
     view: (s, p, lang) => ({ ...tictactoe.view(s, p, lang), effects: [{ row: 0, col: 0, piece: 'x', ...(type ? { type } : {}) }] }),
   });
-  for (const type of [undefined, 'shatter']) {
+  for (const type of [undefined, 'shatter', 'flash']) {
     const ok = checkGame(withEffects(type), opts);
     assert.deepEqual(ok.problems, []);
     assert.deepEqual(ok.warnings, []);
@@ -265,6 +265,34 @@ test('효과(effects): 아는 종류는 그대로 두고, 모르는 종류는 �
   assert.ok(r.warnings.some((w) => w.includes("view().effects has type 'explode'")), r.warnings.join('\n'));
   const thumb = makeThumbnail(tictactoe, 0, { pieces: [], effects: [{ row: 0, col: 0, piece: 'x' }] });
   assert.equal(thumb.view.effects, undefined);
+});
+
+test('판 옆 목록(lists): board.lists를 검사하고, view().lists는 있는 목록의 칸만 그리며, 썸네일에는 넣지 않습니다', () => {
+  const lists = [{ at: { row: 0, col: 0 }, rows: 2, cols: 3, scale: 0.5 }];
+  const withLists = (boardLists, viewLists) => variant({
+    board: { ...tictactoe.board, lists: boardLists },
+    view: (s, p, lang) => ({ ...tictactoe.view(s, p, lang), lists: viewLists }),
+  });
+  const ok = checkGame(withLists(lists, [{ pieces: [{ row: 1, col: 2, piece: 'x', from: { row: 0, col: 0 } }] }]), opts);
+  assert.deepEqual(ok.problems, []);
+  assert.deepEqual(ok.warnings, []);
+  // board.lists가 틀렸으면 문제
+  assert.match(checkMembers(withLists({}, undefined)).join(), /board\.lists: must be a list of up to 4/);
+  assert.match(checkMembers(withLists([{ ...lists[0], rows: 33 }], undefined)).join(), /board\.lists\[0\]: needs at/);
+  assert.match(checkMembers(withLists([{ ...lists[0], at: { row: 3, col: 0 } }], undefined)).join(), /board\.lists\[0\]: needs at/);
+  // view().lists가 틀렸으면 경고 (그 기물은 그리지 않음)
+  const warns = (boardLists, viewLists) => checkGame(withLists(boardLists, viewLists), opts).warnings.join('\n');
+  assert.match(warns(lists, {}), /view\(\)\.lists must be a list/);
+  assert.match(warns(lists, [{ pieces: [] }, { pieces: [] }]), /view\(\)\.lists\[1\] has no board\.lists\[1\]/);
+  assert.match(warns(undefined, [{ pieces: [] }]), /view\(\)\.lists\[0\] has no board\.lists\[0\]/);
+  assert.match(warns(lists, [{ pieces: [{ row: 2, col: 0, piece: 'x' }] }]), /view\(\)\.lists\[0\]\.pieces: each needs/);
+  assert.match(warns(lists, [{ pieces: [{ row: 0, col: 0 }] }]), /view\(\)\.lists\[0\]\.pieces: each needs/);
+  // 썸네일은 판 좌표만 찍습니다
+  const game = withLists(lists, [{ pieces: [{ row: 1, col: 2, piece: 'x' }] }]);
+  const thumb = makeThumbnail(game, 0, game.view(game.setup(), 0, 'ko'));
+  assert.equal(thumb.board.lists, undefined);
+  assert.equal(thumb.view.lists, undefined);
+  assert.deepEqual(validateThumbnail(thumb), []);
 });
 
 test('플레이어 기물(playerPieces): 기물 세트에 있는 이름 두 개, 선공 · 후공 순서', () => {

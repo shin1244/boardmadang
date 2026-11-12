@@ -1,7 +1,7 @@
 // 렌더러(sdk/playground/board.js)에서 화면 없이 셀 수 있는 부분: 판 밖 영역의 배치, 클릭 옮기기(aliases), 버튼, 움직임, 효과, 내 차례 테두리
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BoardView, PLAYER_COLORS, attachInput, buttonsOf, fieldOf, knowsPiece, paintPlayerDot } from '../playground/board.js';
+import { BoardView, PLAYER_COLORS, attachInput, buttonsOf, fieldOf, knowsPiece, listsOf, paintPlayerDot } from '../playground/board.js';
 
 // 캔버스 없이 BoardView를 만듭니다. 그리기 함수는 아무것도 하지 않고 부른 것만 적어 둡니다
 globalThis.window ??= { devicePixelRatio: 1 };
@@ -58,6 +58,120 @@ test('fieldOf: 영역을 뺀 가운데 판', () => {
   assert.deepEqual(bad.areas, []);
   assert.deepEqual(bad.field, { top: 0, bottom: 3, left: 0, right: 3 });
   assert.equal(bad.problems.length, 1);
+});
+
+test('listsOf: 판 옆 목록은 4개까지, at은 판의 칸, rows · cols는 1~32, scale은 0.25~1 (없으면 1)', () => {
+  const of = (lists) => listsOf({ rows: 5, cols: 6, lists });
+  assert.deepEqual(of(undefined), { lists: [], problems: [] });
+  assert.deepEqual(of([{ at: { row: 4, col: 5, x: 1 }, rows: 32, cols: 1, y: 2 }]).lists, [{ at: { row: 4, col: 5 }, rows: 32, cols: 1, scale: 1 }]);
+  assert.equal(of([{ at: { row: 0, col: 0 }, rows: 2, cols: 2, scale: 0.25 }]).lists[0].scale, 0.25);
+  const one = { at: { row: 0, col: 0 }, rows: 2, cols: 2 };
+  assert.equal(of([one, one, one, one]).lists.length, 4);
+  for (const bad of [
+    {}, [one, one, one, one, one], [null], [{ ...one, at: { row: 5, col: 0 } }], [{ ...one, at: { row: 0 } }],
+    [{ ...one, rows: 33 }], [{ ...one, cols: 0 }], [{ ...one, scale: 0.2 }], [{ ...one, scale: 1.5 }], [{ ...one, scale: '0.5' }],
+  ]) {
+    const r = of(bad);
+    assert.deepEqual(r.lists, [], JSON.stringify(bad));
+    assert.equal(r.problems.length, 1, JSON.stringify(bad));
+  }
+});
+
+// 왼쪽 패널(0~2줄, 0~3열) 아래에 반 크기 목록. 판은 4~9열
+const withList = (list) => ({
+  places: 'cells', rows: 10, cols: 10,
+  areas: [{ side: 'left', row: 0, col: 0, rows: 3, cols: 4 }],
+  lists: [{ at: { row: 4, col: 0 }, rows: 6, cols: 8, scale: 0.5, ...list }],
+});
+const near = (a, b) => Math.abs(a - b) < 0.01;
+
+test('판 옆 목록(lists): at 칸의 왼쪽 위 귀퉁이에서 작은 칸으로 놓이고, 판 배치와 캔버스 크기는 그대로입니다', () => {
+  const canvas = fakeCanvas();
+  const b = new BoardView(canvas, withList(), 'go-stones');
+  b.resize(480);
+  const ref = new BoardView(fakeCanvas(), { ...withList(), lists: undefined }, 'go-stones');
+  ref.resize(480);
+  assert.equal(b.S, ref.S);
+  assert.equal(b.width, ref.width);
+  assert.equal(b.height, ref.height);
+  assert.deepEqual(b.center(4, 0), ref.center(4, 0));
+  const { S } = b;
+  const [ax, ay] = b.center(4, 0);
+  // 칸 간격은 반 칸, 첫 칸은 at 칸의 왼쪽 위 귀퉁이에서 시작하고, 8칸이 위 패널의 4칸 폭과 같습니다
+  assert.ok(near(b.listCenter(0, 0, 0)[0], ax - S / 2 + S / 4));
+  assert.ok(near(b.listCenter(0, 0, 0)[1], ay - S / 2 + S / 4));
+  assert.ok(near(b.listCenter(0, 1, 1)[0] - b.listCenter(0, 0, 0)[0], S / 2));
+  assert.ok(near(b.listCenter(0, 1, 1)[1] - b.listCenter(0, 0, 0)[1], S / 2));
+  assert.ok(near(b.listCenter(0, 0, 7)[0] + S / 4, b.center(0, 3)[0] + S / 2));
+  // 목록은 누를 수 없습니다. 판 위에 겹친 목록이면 그 아래 칸도
+  const over = new BoardView(fakeCanvas(), { places: 'cells', rows: 4, cols: 4, lists: [{ at: { row: 0, col: 0 }, rows: 2, cols: 2 }] }, 'go-stones');
+  over.resize(200);
+  assert.equal(over.cellAt(at(...over.center(1, 1)), false), null);
+  assert.deepEqual(over.cellAt(at(...over.center(2, 2)), false), { row: 2, col: 2 });
+  // 목록의 기물은 목록 칸에 반 크기로 그립니다 (ctx.scale). 없는 목록이나 목록 밖의 칸은 그리지 않습니다
+  const scaled = () => canvas.calls.filter(([k]) => k === 'scale');
+  canvas.calls.length = 0;
+  b.draw({ pieces: [{ row: 5, col: 5, piece: 'black' }] });
+  assert.equal(scaled().length, 0);
+  b.draw({ pieces: [], lists: [{ pieces: [{ row: 5, col: 7, piece: 'black' }] }] });
+  assert.deepEqual(scaled()[0], ['scale', 0.5, 0.5]);
+  const bad = { pieces: [], lists: [{ pieces: [{ row: 6, col: 0, piece: 'black' }, { row: 0, col: 8, piece: 'black' }, { row: 0, col: 0 }] }, { pieces: [{ row: 0, col: 0, piece: 'black' }] }] };
+  assert.deepEqual(b.listPieces(bad), []);
+});
+
+test('판 옆 목록(lists): 뒤집으면 at 칸의 오른쪽 아래 귀퉁이에서 반대로 자라고, 넘치면 캔버스가 커집니다', () => {
+  const b = new BoardView(fakeCanvas(), withList(), 'go-stones');
+  b.resize(480);
+  const { S } = b;
+  // 뒤집은 화면: 목록 안은 뒤집지 않고, 마지막 칸이 at 칸의 오른쪽 아래 귀퉁이에 닿습니다
+  const [fx, fy] = b.center(4, 0, true);
+  assert.ok(near(b.listCenter(0, 5, 7, true)[0], fx + S / 2 - S / 4));
+  assert.ok(near(b.listCenter(0, 5, 7, true)[1], fy + S / 2 - S / 4));
+  assert.ok(b.listCenter(0, 0, 0, true)[0] < b.listCenter(0, 0, 7, true)[0]);
+  // 20줄 × 반 칸 = 10칸: 4줄에서 시작하면 판 아래로 나가므로 캔버스가 그만큼 커지고,
+  // 뒤집은 화면에서는 위로 나가므로 모든 자리가 아래로 옮겨집니다
+  const long = new BoardView(fakeCanvas(), withList({ rows: 20 }), 'go-stones');
+  long.resize(2000);
+  const ref = new BoardView(fakeCanvas(), { ...withList(), lists: undefined }, 'go-stones');
+  ref.resize(2000);
+  assert.equal(long.S, ref.S);
+  assert.ok(long.height > ref.height);
+  for (const flip of [false, true]) {
+    const box = long.place(flip).lists[0];
+    assert.ok(box.y[0] - long.pad > -0.01, `flip=${flip}`);
+    assert.ok(box.y[1] + long.pad < long.height + 0.01, `flip=${flip}`);
+    assert.ok(near(box.y[1] - box.y[0], 10 * long.S));
+  }
+  assert.ok(Math.abs(long.place(false).lists[0].y[1] + long.pad - long.height) < 1);
+  assert.ok(near(long.place(true).lists[0].y[0] - long.pad, 0));
+});
+
+test('판 옆 목록(lists): 목록과 판을 오가는 기물(from: { list, row, col })은 자리와 크기가 함께 바뀝니다', () => {
+  const b = new BoardView(fakeCanvas(), withList(), 'go-stones');
+  b.resize(480);
+  // 목록 0줄 0열 → 판 5줄 5열
+  const p = { row: 5, col: 5, piece: 'black', from: { list: 0, row: 0, col: 0 } };
+  b.draw({ pieces: [p] });
+  assert.equal(b.motions.length, 1);
+  const t0 = b.motions[0].t0;
+  assert.deepEqual(b.movingAt(p, false, t0), [...b.listCenter(0, 0, 0, false), 0.5]);
+  const mid = b.movingAt(p, false, t0 + 60);
+  assert.ok(mid[2] > 0.5 && mid[2] < 1);
+  assert.deepEqual(b.movingAt(p, false, t0 + 10000), [...b.center(5, 5), 1]);
+  // 판 → 목록 (목록 안의 기물에 판의 칸 from)
+  const q = { row: 1, col: 1, piece: 'white', from: { row: 5, col: 5 } };
+  const c = new BoardView(fakeCanvas(), withList(), 'go-stones');
+  c.resize(480);
+  c.draw({ pieces: [], lists: [{ pieces: [q] }] });
+  assert.equal(c.motions.length, 1);
+  const [lq] = c.listPieces({ lists: [{ pieces: [q] }] });
+  assert.deepEqual(c.movingAt(lq, false, c.motions[0].t0), [...c.center(5, 5), 1]);
+  assert.deepEqual(c.movingAt(lq, false, c.motions[0].t0 + 10000), [...c.listCenter(0, 1, 1, false), 0.5]);
+  // 없는 목록에서 오는 기물은 움직이지 않습니다
+  const d = new BoardView(fakeCanvas(), withList(), 'go-stones');
+  d.resize(480);
+  d.draw({ pieces: [{ row: 5, col: 5, piece: 'black', from: { list: 3, row: 0, col: 0 } }] });
+  assert.equal(d.motions.length, 0);
 });
 
 test('영역이 없으면 칸 자리와 크기가 예전과 같습니다', () => {
@@ -210,7 +324,29 @@ test('효과(effects): 금이 가는 동안과 조각이 튀는 동안 그 칸�
   assert.equal(canvas.calls.filter(([k]) => k === 'clip').length, 4);
   // 끝난 뒤에는 그리지 않습니다
   canvas.calls.length = 0;
-  b.drawEffect(fx, false, fx.t0 + 480);
+  b.drawEffect(fx, false, fx.t0 + 481); // 480이면 t0의 소수 부분 때문에 0.9999…가 되어 가끔 그려짐
+  assert.equal(canvas.calls.length, 0);
+});
+
+test('효과(effects): flash는 빛난 뒤 작아지며 사라지고, 같은 칸 · 기물이라도 shatter와 다른 효과입니다', () => {
+  const canvas = fakeCanvas();
+  const b = new BoardView(canvas, { places: 'cells', rows: 3, cols: 3 }, 'go-stones');
+  b.resize(200);
+  const e = { row: 1, col: 1, piece: 'white' };
+  b.draw({ pieces: [], effects: [{ ...e, type: 'flash' }, e] });
+  assert.equal(b.effects.length, 2);
+  const fx = b.effects.find((x) => x.e.type === 'flash');
+  // 빛나는 동안은 제 크기, 그 뒤로는 작아집니다 (조각으로 가르지 않으니 clip이 없음)
+  for (const [k, small] of [[0.2, false], [0.7, true]]) {
+    canvas.calls.length = 0;
+    b.drawEffect(fx, false, fx.t0 + 480 * k);
+    const scale = canvas.calls.find(([c]) => c === 'scale');
+    assert.equal(scale[1] < 1, small, `k=${k}`);
+    assert.equal(canvas.calls.filter(([c]) => c === 'clip').length, 0);
+    assert.ok(canvas.calls.some(([c]) => c === 'fill'));
+  }
+  canvas.calls.length = 0;
+  b.drawEffect(fx, false, fx.t0 + 481);
   assert.equal(canvas.calls.length, 0);
 });
 

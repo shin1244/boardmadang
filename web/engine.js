@@ -23,7 +23,7 @@
 //   g.close();
 // look = { players: [0, 1], lang, legalFor: 0 | 1 | null }
 
-import { EFFECT_TYPES, fieldOf, knowsPiece } from '/sdk/playground/board.js';
+import { EFFECT_TYPES, fieldOf, knowsPiece, listsOf } from '/sdk/playground/board.js';
 
 const FRAME = '/web/runner/frame.html';
 const LOAD_MS = 10_000;
@@ -104,6 +104,11 @@ function cleanBoard(b) {
     const { areas, problems } = fieldOf({ rows: b.rows, cols: b.cols, areas: b.areas });
     if (!problems.length && areas.length) out.areas = areas;
   }
+  // 판 옆 목록: 렌더러와 같은 규칙(listsOf)으로 보고, 틀렸으면 버립니다
+  if (b.lists !== undefined) {
+    const { lists, problems } = listsOf({ rows: b.rows, cols: b.cols, lists: b.lists });
+    if (!problems.length && lists.length) out.lists = lists;
+  }
   return out;
 }
 
@@ -156,12 +161,23 @@ function cleanView(v, board) {
   const cell = (c) => c && isInt(c.row, 0, board.rows - 1) && isInt(c.col, 0, board.cols - 1);
   const list = (a) => (Array.isArray(a) ? a.slice(0, cap) : []);
   const at = ({ row, col }) => ({ row, col });
-  // from: 이 기물이 방금 어느 칸에서 왔는지 (화면이 움직여 보여 줌)
-  out.pieces = list(v.pieces).filter((x) => cell(x) && isStr(x.piece, 32)).map((x) => {
-    const o = { row: x.row, col: x.col, piece: x.piece };
-    if (cell(x.from)) o.from = at(x.from);
+  // 판 옆 목록(board.lists)의 칸 { list, row, col }
+  const boxes = board.lists ?? [];
+  const inList = (c) => c && isInt(c.list, 0, boxes.length - 1) && isInt(c.row, 0, boxes[c.list].rows - 1) && isInt(c.col, 0, boxes[c.list].cols - 1);
+  // from: 이 기물이 방금 어느 칸(판이나 목록)에서 왔는지 (화면이 움직여 보여 줌)
+  const withFrom = (x, o) => {
+    if (x.from?.list === undefined ? cell(x.from) : inList(x.from)) o.from = x.from.list === undefined ? at(x.from) : { list: x.from.list, ...at(x.from) };
     return o;
-  });
+  };
+  out.pieces = list(v.pieces).filter((x) => cell(x) && isStr(x.piece, 32)).map((x) => withFrom(x, { row: x.row, col: x.col, piece: x.piece }));
+  // lists: 판 옆 목록의 기물 (목록 i의 칸 안에 있는 것만)
+  if (Array.isArray(v.lists) && boxes.length) {
+    out.lists = boxes.map((b, i) => ({
+      pieces: (Array.isArray(v.lists[i]?.pieces) ? v.lists[i].pieces.slice(0, b.rows * b.cols * 4) : [])
+        .filter((x) => x && isInt(x.row, 0, b.rows - 1) && isInt(x.col, 0, b.cols - 1) && isStr(x.piece, 32))
+        .map((x) => withFrom(x, { row: x.row, col: x.col, piece: x.piece })),
+    }));
+  }
   out.marks = list(v.marks).filter((m) => cell(m) && MARK_TYPES.includes(m.type)).map((m) => {
     const o = { row: m.row, col: m.col, type: m.type };
     if (isStr(m.piece, 32)) o.piece = m.piece;
