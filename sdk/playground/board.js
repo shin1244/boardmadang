@@ -162,6 +162,43 @@ export function fieldOf(board) {
   return { field, areas, problems: [] };
 }
 
+// ---- 판 옆 목록 (board.lists, view().lists) ----
+// 앞으로 나올 기물의 순서처럼 보여 주기만 하는 작은 패널입니다. 판 좌표(rows × cols)에 들지 않으므로
+// 클릭, legal(), AI의 행동과 관측, 썸네일에 들어가지 않고, 판 배치에서 자리도 차지하지 않습니다.
+// board.lists[i] = { at: { row, col }, rows, cols, scale }: at 칸의 왼쪽 위 귀퉁이에서 시작해 칸 크기 × scale 간격으로 rows × cols 칸을 그립니다.
+// 그 칸들에 놓을 기물은 view().lists[i].pieces에 목록 안 좌표(0 ~ rows-1, 0 ~ cols-1)로 줍니다.
+// 목록이 캔버스 밖으로 나가면 그만큼 캔버스가 커집니다. 판 밖 영역 아래의 빈칸에 at을 두면 그 패널 아래에 이어 그려집니다.
+// flipForPlayer로 뒤집은 화면에서는 at 칸의 반대쪽 귀퉁이(오른쪽 아래)에 붙어 거꾸로 자라지만, 목록 안은 뒤집지 않습니다 (위에서 아래로 읽힘).
+
+/** 판 옆 목록의 최대 개수 */
+export const MAX_LISTS = 4;
+/** 목록 하나의 최대 줄 수 · 칸 수 */
+export const LIST_SIZE = 32;
+/** 목록 칸 크기의 가장 작은 비율 */
+export const MIN_LIST_SCALE = 0.25;
+
+/**
+ * 판 옆 목록(board.lists)을 검사합니다. 문제가 있으면 problems에 글(영어, check.js가 그대로 보여 줌)을 넣고 lists는 비웁니다 (목록 없이 그림).
+ * board의 rows, cols는 이미 검사한 값이어야 합니다.
+ * @returns {{ lists: { at: { row: number, col: number }, rows: number, cols: number, scale: number }[], problems: string[] }}
+ */
+export function listsOf(board) {
+  if (board.lists === undefined) return { lists: [], problems: [] };
+  const fail = (msg) => ({ lists: [], problems: [msg] });
+  if (!Array.isArray(board.lists) || board.lists.length > MAX_LISTS) return fail(`lists: must be a list of up to ${MAX_LISTS} lists`);
+  const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+  const lists = [];
+  for (const [i, l] of board.lists.entries()) {
+    const scale = l?.scale ?? 1;
+    if (!l || typeof l !== 'object' || !l.at || !int(l.at.row, 0, board.rows - 1) || !int(l.at.col, 0, board.cols - 1)
+      || !int(l.rows, 1, LIST_SIZE) || !int(l.cols, 1, LIST_SIZE) || !(typeof scale === 'number' && scale >= MIN_LIST_SCALE && scale <= 1)) {
+      return fail(`lists[${i}]: needs at (a square { row, col } of the board), rows and cols from 1 to ${LIST_SIZE}, and scale from ${MIN_LIST_SCALE} to 1`);
+    }
+    lists.push({ at: { row: l.at.row, col: l.at.col }, rows: l.rows, cols: l.cols, scale });
+  }
+  return { lists, problems: [] };
+}
+
 /**
  * 한 축(가로 또는 세로)의 배치. 기기 픽셀 단위입니다.
  * 화면 순서로 [앞 영역들] 틈 [앞 좌표 글자] 여백 [판] 여백 [뒤 좌표 글자] 틈 [뒤 영역들]이고, 영역이 없는 쪽은 틈도 없습니다.
@@ -184,8 +221,10 @@ function axisLayout(n, f0, f1, { sd, m, gap, pad, points, labBefore, labAfter })
 // 기물에 from이 있으면 "방금 그 칸에서 이 칸으로 왔다"는 뜻이라, 새 화면을 처음 그릴 때 from에서 미끄러져 오게 그립니다.
 // 화면에서 곧게 아래로 내려오는 움직임은 떨어지듯 점점 빠르게, 그 밖은 처음에 빠르고 끝에서 부드럽게 멈춥니다.
 
-/** 움직임 하나를 알아보는 이름: 칸, from, 기물이 모두 같으면 같은 움직임입니다 */
-const motionKey = (p) => `${p.row},${p.col},${p.from.row},${p.from.col},${p.piece}`;
+/** 움직임 하나를 알아보는 이름: 칸, from, 기물이 모두 같으면 같은 움직임입니다 (목록의 칸은 목록 번호도) */
+const motionKey = (p) => `${p.list ?? ''}:${p.row},${p.col},${p.from.list ?? ''}:${p.from.row},${p.from.col},${p.piece}`;
+/** 같은 칸인지 (목록의 칸은 같은 목록이어야) */
+const sameSpot = (a, b) => (a.list ?? -1) === (b.list ?? -1) && a.row === b.row && a.col === b.col;
 
 /** 한 기물의 움직임 시간(ms)과 빠르기 곡선. dx, dy는 화면에서 움직이는 칸 수입니다 */
 function motionOf(dx, dy) {
@@ -199,15 +238,18 @@ const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(pre
 // ---- 효과 (view의 effects) ----
 // 잡혀서 없어지는 기물처럼 화면에서 사라지는 것을 한 번 보여 줍니다. 효과는 그 칸에 기물을 그려 놓고 모양을 바꿔 가며 지웁니다.
 //   shatter: 기물에 금이 가고, 몇 조각으로 갈라져 바깥으로 튀면서 흐려집니다.
+//   flash: 기물이 하얗게 빛난 뒤 작아지며 사라집니다 (테트리스에서 줄이 지워질 때처럼).
 
 /** 렌더러가 그릴 줄 아는 효과. type을 빼면 shatter입니다 */
-export const EFFECT_TYPES = ['shatter'];
+export const EFFECT_TYPES = ['shatter', 'flash'];
 /** 효과 하나를 알아보는 이름: 칸, 기물, 종류, id가 모두 같으면 같은 효과입니다 */
 const effectKey = (e) => `${e.row},${e.col},${e.piece},${e.type ?? 'shatter'},${e.id ?? ''}`;
 /** 효과 하나가 보이는 시간(ms) */
 const EFFECT_MS = 480;
 /** 금이 가는 동안 (효과 시간 가운데 앞쪽 비율) */
 const CRACK = 0.2;
+/** flash가 빛나는 동안 (효과 시간 가운데 앞쪽 비율) */
+const GLOW = 0.35;
 
 /** 글자에서 정한 0~1 숫자 n개. 같은 효과는 늘 같은 모양으로 갈라집니다 */
 function seeded(text, n) {
@@ -276,6 +318,8 @@ export class BoardView {
       mark(field.top, field.bottom, field.left, field.right);
       for (const a of areas) mark(a.row, a.row + a.rows, a.col, a.col + a.cols);
     }
+    // 판 옆 목록. 설정이 틀렸으면 목록 없이 그립니다
+    this.lists = listsOf(board).lists;
     this.placed = [null, null]; // 칸 자리 (resize에서 다시 구함)
     this.motions = []; // 움직이는 중인 것들 [{ t0, until, keys: 움직이는 기물들 }]
     this.seen = new Set(); // 마지막으로 그린 화면의 움직임들 (같은 움직임을 두 번 보여 주지 않게)
@@ -287,6 +331,28 @@ export class BoardView {
   /** 이 칸을 그리는지 (판이나 판 밖 영역) */
   isShown(row, col) {
     return !this.shown || this.shown[row * this.board.cols + col] === 1;
+  }
+
+  /** 기물을 그릴 수 있는 자리인지: 판에서 그리는 칸이거나, 있는 목록({ list, row, col })의 칸 */
+  hasSpot(c) {
+    if (!c || !Number.isInteger(c.row) || !Number.isInteger(c.col) || c.row < 0 || c.col < 0) return false;
+    if (c.list === undefined) return c.row < this.board.rows && c.col < this.board.cols && this.isShown(c.row, c.col);
+    const l = Number.isInteger(c.list) ? this.lists[c.list] : undefined;
+    return !!l && c.row < l.rows && c.col < l.cols;
+  }
+
+  /** (x, y)를 가운데로 k배로 그립니다 (목록의 작은 칸에 그리는 기물) */
+  zoom(x, y, k, fn) {
+    if (k === 1) {
+      fn(x, y);
+      return;
+    }
+    const { ctx } = this;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(k, k);
+    fn(0, 0);
+    ctx.restore();
   }
 
   /**
@@ -306,10 +372,11 @@ export class BoardView {
       const gap = Math.round(sd * 0.35);
       const pad = Math.round(sd * 0.1);
       const L = { sd, lab, m, gap, pad, points: this.points };
-      // 전체 크기는 뒤집어도 같습니다 (앞뒤의 영역이 자리만 바꿈)
-      const f = this.field;
-      L.w = axisLayout(cols, f.left, f.right, { ...L, labBefore: lab, labAfter: 0 }).size;
-      L.h = axisLayout(rows, f.top, f.bottom, { ...L, labBefore: 0, labAfter: lab }).size;
+      // 전체 크기. 판과 영역은 뒤집어도 같지만(앞뒤의 영역이 자리만 바꿈), 목록은 뒤집으면 다른 쪽으로 자라므로 큰 쪽
+      const a = this.layoutFor(L, false);
+      const b = this.lists.length ? this.layoutFor(L, true) : a;
+      L.w = Math.max(a.w, b.w);
+      L.h = Math.max(a.h, b.h);
       return L;
     };
     const limit = maxPx * dpr;
@@ -345,17 +412,93 @@ export class BoardView {
   place(flip) {
     const k = flip ? 1 : 0;
     if (this.placed[k]) return this.placed[k];
+    const { x, y, fx, fy, lists } = this.layoutFor(this.L, flip);
+    const d = this.dpr;
+    const css = (v) => v / d;
+    this.placed[k] = {
+      cx: x.c.map(css), cy: y.c.map(css), x0: css(x.start), x1: css(x.end), y0: css(y.start), y1: css(y.end), fx, fy,
+      lists: lists.map((b) => ({ x: b.x.map(css), y: b.y.map(css), step: css(b.step) })),
+    };
+    return this.placed[k];
+  }
+
+  /**
+   * 배치 전체 (기기 픽셀): 가로 · 세로 축(axisLayout)과 판 옆 목록의 자리.
+   * 목록 i: { x: [시작, 끝], y: [시작, 끝], step: 칸 간격 }. at 칸의 왼쪽 위 귀퉁이에서 오른쪽 아래로 자라고,
+   * 뒤집으면 판 전체가 거꾸로이므로 그 칸의 오른쪽 아래 귀퉁이에서 왼쪽 위로 자랍니다.
+   * 목록의 패널(안쪽 여백 포함)이 축 밖으로 나가면 모든 자리를 옮기고 그만큼 크게 잡습니다 (w, h).
+   */
+  layoutFor(L, flip) {
     const { rows, cols } = this.board;
     const f = this.field;
     const fx = flip ? [cols - f.right, cols - f.left] : [f.left, f.right];
     const fy = flip ? [rows - f.bottom, rows - f.top] : [f.top, f.bottom];
-    const x = axisLayout(cols, fx[0], fx[1], { ...this.L, labBefore: this.L.lab, labAfter: 0 });
-    const y = axisLayout(rows, fy[0], fy[1], { ...this.L, labBefore: 0, labAfter: this.L.lab });
-    const d = this.dpr;
-    this.placed[k] = {
-      cx: x.c.map((v) => v / d), cy: y.c.map((v) => v / d), x0: x.start / d, x1: x.end / d, y0: y.start / d, y1: y.end / d, fx, fy,
-    };
-    return this.placed[k];
+    const x = axisLayout(cols, fx[0], fx[1], { ...L, labBefore: L.lab, labAfter: 0 });
+    const y = axisLayout(rows, fy[0], fy[1], { ...L, labBefore: 0, labAfter: L.lab });
+    const half = L.sd / 2;
+    const lists = this.lists.map((l) => {
+      const step = L.sd * l.scale;
+      const cx = x.c[flip ? cols - 1 - l.at.col : l.at.col];
+      const cy = y.c[flip ? rows - 1 - l.at.row : l.at.row];
+      const x0 = flip ? cx + half - l.cols * step : cx - half;
+      const y0 = flip ? cy + half - l.rows * step : cy - half;
+      return { x: [x0, x0 + l.cols * step], y: [y0, y0 + l.rows * step], step };
+    });
+    let minX = 0;
+    let minY = 0;
+    let maxX = x.size;
+    let maxY = y.size;
+    for (const b of lists) {
+      minX = Math.min(minX, b.x[0] - L.pad);
+      maxX = Math.max(maxX, b.x[1] + L.pad);
+      minY = Math.min(minY, b.y[0] - L.pad);
+      maxY = Math.max(maxY, b.y[1] + L.pad);
+    }
+    if (minX < 0 || minY < 0) {
+      const mx = (v) => v - minX;
+      const my = (v) => v - minY;
+      x.c = x.c.map(mx);
+      x.start = mx(x.start);
+      x.end = mx(x.end);
+      y.c = y.c.map(my);
+      y.start = my(y.start);
+      y.end = my(y.end);
+      for (const b of lists) {
+        b.x = b.x.map(mx);
+        b.y = b.y.map(my);
+      }
+    }
+    return { x, y, fx, fy, lists, w: Math.ceil(maxX - minX), h: Math.ceil(maxY - minY) };
+  }
+
+  /** 목록 i의 칸 (row, col)의 가운데 (CSS 픽셀). 목록 안은 뒤집지 않습니다 */
+  listCenter(i, row, col, flip) {
+    const b = this.place(flip).lists[i];
+    return [b.x[0] + (col + 0.5) * b.step, b.y[0] + (row + 0.5) * b.step];
+  }
+
+  /** 판의 칸이나 목록의 칸({ list, row, col })의 [가운데 x, 가운데 y, 칸 크기에 대한 그리는 비율] */
+  spot(c, flip) {
+    if (c.list === undefined) return [...this.center(c.row, c.col, flip), 1];
+    return [...this.listCenter(c.list, c.row, c.col, flip), this.lists[c.list].scale];
+  }
+
+  /** view().lists의 기물들에 목록 번호(list)를 붙여서. 없는 목록이나 목록 밖의 칸은 뺍니다 */
+  listPieces(view) {
+    const out = [];
+    if (!Array.isArray(view.lists)) return out;
+    view.lists.forEach((l, list) => {
+      for (const p of Array.isArray(l?.pieces) ? l.pieces : []) {
+        const q = { ...p, list };
+        if (typeof p?.piece === 'string' && this.hasSpot(q)) out.push(q);
+      }
+    });
+    return out;
+  }
+
+  /** from에서 움직여 오는 기물인지 (from이 그릴 수 있는 다른 자리) */
+  moves(p) {
+    return !!p.from && !sameSpot(p, p.from) && (p.from.list === undefined || this.hasSpot(p.from));
   }
 
   /** 칸 경계(CSS 픽셀) → 그 경계에서 시작하는 줄의 가운데. 줄이 화면 픽셀에 딱 맞게 */
@@ -376,6 +519,8 @@ export class BoardView {
     const x = ((event.clientX - rect.left) * this.width) / rect.width;
     const y = ((event.clientY - rect.top) * this.height) / rect.height;
     const P = this.place(flip);
+    // 판 옆 목록은 누를 수 없습니다 (아래에 있는 칸도)
+    if (P.lists.some((b) => x >= b.x[0] && x < b.x[1] && y >= b.y[0] && y < b.y[1])) return null;
     // 칸 모드는 칸 안, 교차점 모드는 가장 가까운 교차점 (가운데에서 반 칸 안)
     const half = this.S / 2;
     const pick = (cs, v) => cs.findIndex((c) => v >= c - half && v < c + half);
@@ -488,11 +633,10 @@ export class BoardView {
       }
     }
 
-    // 말. 움직이는 중인 말은 from에서 제자리로 가는 길 위에 그립니다
-    for (const p of view.pieces ?? []) {
-      if (!shown(p)) continue;
-      const [x, y] = this.motions.length ? this.movingAt(p, flip, now) : at(p.row, p.col);
-      this.drawPiece(p.piece, x, y, 1);
+    // 말. 움직이는 중인 말은 from에서 제자리로 가는 길 위에 그립니다. 판 옆 목록의 말은 작게, 판의 말보다 먼저(아래에)
+    for (const p of [...this.listPieces(view), ...(view.pieces ?? []).filter(shown)]) {
+      const [x, y, k] = this.motions.length ? this.movingAt(p, flip, now) : this.spot(p, flip);
+      this.zoom(x, y, k, (x, y) => this.drawPiece(p.piece, x, y, 1));
     }
     for (const m of marksOf('ghost')) {
       const [x, y] = at(m.row, m.col);
@@ -641,13 +785,30 @@ export class BoardView {
     }
   }
 
-  /** 효과 하나의 지금 장면 (shatter: 금이 간 뒤 네 조각으로 갈라져 튀며 흐려짐) */
+  /** 효과 하나의 지금 장면 (shatter: 금이 간 뒤 네 조각으로 갈라져 튀며 흐려짐, flash: 빛난 뒤 작아지며 사라짐) */
   drawEffect(fx, flip, now) {
     const k = (now - fx.t0) / EFFECT_MS;
     if (k < 0 || k >= 1) return;
     const { ctx, S } = this;
     const { e } = fx;
     const [x, y] = this.center(e.row, e.col, flip);
+    if (e.type === 'flash') {
+      // 빛: 기물 위에 흰 빛이 차오른 뒤, 빛난 채로 가운데로 작아지며 사라집니다
+      const glow = Math.min(1, k / GLOW);
+      const t = Math.max(0, (k - GLOW) / (1 - GLOW));
+      const size = 1 - t * t;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(size, size);
+      this.drawPiece(e.piece, 0, 0, 1 - t);
+      ctx.globalAlpha = 0.85 * glow * (1 - t);
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(0, 0, S * 0.46, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
     // 조각을 가르는 각도: 같은 효과는 늘 같은 모양
     const n = 4;
     const r = seeded(fx.key, n + 1);
@@ -698,11 +859,12 @@ export class BoardView {
    * 움직임은 기물마다 따로 봅니다 (칸, from, 기물 이름이 모두 같으면 같은 움직임).
    * 직전에 그린 화면에 같은 움직임이 있었으면 다시 움직이지 않으므로, 게임은 다음 수까지 같은 from을 계속 줘도 되고,
    * 그 사이에 다른 기물에 새 from을 붙이면 그 기물만 움직입니다 (먼저 움직이던 기물은 그대로 이어서 움직임).
+   * 판 옆 목록의 기물도 같고, 판과 목록 사이를 오갈 수도 있습니다 (from: { list, row, col }).
    */
   updateMotion(view, animate, now) {
     const moving = new Map();
-    for (const p of view.pieces ?? []) {
-      if (p.from && (p.from.row !== p.row || p.from.col !== p.col)) moving.set(motionKey(p), p);
+    for (const p of [...(view.pieces ?? []), ...this.listPieces(view)]) {
+      if (this.moves(p)) moving.set(motionKey(p), p);
     }
     const fresh = [...moving].filter(([k]) => !this.seen.has(k));
     this.seen = new Set(moving.keys());
@@ -715,35 +877,40 @@ export class BoardView {
     }
   }
 
-  /** 기물이 화면에서 움직이는 칸 수 [가로, 세로] (from → 제자리, 뒤집기 반영) */
+  /** 기물이 화면에서 움직이는 칸 수 [가로, 세로] (from → 제자리, 뒤집기 반영). 목록을 오가면 화면의 거리를 칸 크기로 나눈 것 */
   screenStep(p, flip) {
+    if (p.list !== undefined || p.from.list !== undefined) {
+      const [x0, y0] = this.spot(p.from, flip);
+      const [x1, y1] = this.spot(p, flip);
+      return [(x1 - x0) / this.S, (y1 - y0) / this.S];
+    }
     const s = flip ? -1 : 1;
     return [(p.col - p.from.col) * s, (p.row - p.from.row) * s];
   }
 
-  /** 움직이는 중인 기물의 지금 자리. 움직이지 않는 기물이거나 이미 도착했으면 제자리 */
+  /** 움직이는 중인 기물의 지금 [x, y, 그리는 비율]. 움직이지 않는 기물이거나 이미 도착했으면 제자리. 목록을 오가면 크기도 바뀝니다 */
   movingAt(p, flip, now) {
-    const to = this.center(p.row, p.col, flip);
-    if (!p.from || (p.from.row === p.row && p.from.col === p.col)) return to;
+    const to = this.spot(p, flip);
+    if (!this.moves(p)) return to;
     const key = motionKey(p);
     const m = this.motions.find((x) => x.keys.has(key));
     if (!m) return to;
     const { ms, ease } = motionOf(...this.screenStep(p, flip));
     const k = Math.min(1, Math.max(0, (now - m.t0) / ms));
     if (k >= 1) return to;
-    const from = this.center(p.from.row, p.from.col, flip);
+    const from = this.spot(p.from, flip);
     const e = ease(k);
-    return [from[0] + (to[0] - from[0]) * e, from[1] + (to[1] - from[1]) * e];
+    return from.map((v, i) => v + (to[i] - v) * e);
   }
 
   /**
    * 바탕. 영역이 없으면 캔버스 전체가 판입니다 (예전과 같음).
    * 영역이 있으면 판(좌표 글자 자리까지)과 영역 패널만 칠하고 그 사이는 비워 둡니다 (페이지 바탕이 보임).
-   * 영역의 칸마다 옅은 주머니를 그려서 판의 칸과 다르게 보입니다.
+   * 영역의 칸마다 옅은 주머니를 그려서 판의 칸과 다르게 보입니다. 판 옆 목록은 주머니 없이 바탕만 칠합니다.
    */
   drawBackground(look, flip) {
     const { ctx, S } = this;
-    if (!this.areas.length) {
+    if (!this.areas.length && !this.lists.length) {
       ctx.fillStyle = look.bg;
       ctx.fillRect(0, 0, this.width, this.height);
       return;
@@ -777,6 +944,11 @@ export class BoardView {
         }
       }
     }
+    ctx.fillStyle = look.tray;
+    for (const b of P.lists) {
+      this.roundRect(b.x[0] - pad, b.y[0] - pad, b.x[1] - b.x[0] + pad * 2, b.y[1] - b.y[0] + pad * 2, Math.min(S * 0.18, 10));
+      ctx.fill();
+    }
   }
 
   /** 내 차례 테두리: 판 바탕(판 밖 영역은 빼고)의 둘레 안쪽에 초록 줄 */
@@ -786,7 +958,7 @@ export class BoardView {
     let y = 0;
     let w = this.width;
     let h = this.height;
-    if (this.areas.length) {
+    if (this.areas.length || this.lists.length) {
       // drawBackground가 판 바탕을 칠한 자리와 같습니다
       const P = this.place(flip);
       const m = this.m;

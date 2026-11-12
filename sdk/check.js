@@ -5,7 +5,7 @@
 // 썸네일도 여기서 검사합니다. 썸네일은 이미지가 아니라 혼자 두던 판을 그대로 찍은 데이터(thumbnail.json)이고,
 // 사이트가 보드 렌더러로 다시 그립니다. 판 설정과 기물 세트까지 들어 있어서 게임 코드 없이도 그릴 수 있습니다.
 
-import { EFFECT_TYPES, FRAME_WIDTH, LINE_WIDTH, TILE_ARROWS, fieldOf, knowsPiece, pieceName } from './playground/board.js';
+import { EFFECT_TYPES, FRAME_WIDTH, LINE_WIDTH, TILE_ARROWS, fieldOf, knowsPiece, listsOf, pieceName } from './playground/board.js';
 import { hashOf, makeRng } from './playground/platform.js';
 
 /** 업로드할 때 검사하는 상한 */
@@ -57,8 +57,8 @@ function boardProblems(b, where) {
       p.push(`${where}.${k}: must be a whole number from 1 to ${GAME_LIMITS.boardSize}`);
     }
   }
-  // 판 밖 영역(areas)은 rows, cols가 맞을 때만 봅니다 (규칙은 렌더러의 fieldOf 하나)
-  if (!p.length) p.push(...fieldOf(b).problems.map((x) => `${where}.${x}`));
+  // 판 밖 영역(areas)과 판 옆 목록(lists)은 rows, cols가 맞을 때만 봅니다 (규칙은 렌더러의 fieldOf, listsOf 하나씩)
+  if (!p.length) p.push(...[...fieldOf(b).problems, ...listsOf(b).problems].map((x) => `${where}.${x}`));
   return p;
 }
 
@@ -225,6 +225,20 @@ function viewWarnings(game, s, lang) {
       const type = e?.type ?? 'shatter';
       if (!EFFECT_TYPES.includes(type)) out.push(`view().effects has type '${type}', which boardmadang can't draw (use ${EFFECT_TYPES.map((t) => `'${t}'`).join(', ')}), so it isn't shown.`);
     }
+    // 판 옆 목록의 기물: 있는 목록의 칸이어야 그립니다
+    const lists = listsOf(game.board ?? {}).lists;
+    if (v.lists !== undefined && !Array.isArray(v.lists)) out.push('view().lists must be a list (one { pieces } per board.lists), so it isn\'t shown.');
+    (Array.isArray(v.lists) ? v.lists : []).forEach((l, i) => {
+      const box = lists[i];
+      if (!box) {
+        out.push(`view().lists[${i}] has no board.lists[${i}] to go in, so it isn't shown.`);
+        return;
+      }
+      const inside = (x) => x && Number.isInteger(x.row) && Number.isInteger(x.col) && x.row >= 0 && x.row < box.rows && x.col >= 0 && x.col < box.cols;
+      if (!Array.isArray(l?.pieces) || !l.pieces.every((x) => inside(x) && typeof x.piece === 'string')) {
+        out.push(`view().lists[${i}].pieces: each needs a piece name and row, col inside the list (0-${box.rows - 1}, 0-${box.cols - 1}), or it isn't shown.`);
+      }
+    });
   }
   return out;
 }

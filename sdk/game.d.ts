@@ -38,6 +38,33 @@ export interface BoardConfig {
    * 판에도 영역에도 들지 않는 칸은 그리지 않고 누를 수도 없습니다. 좌표 글자(labels)와 기본 화점은 판만 셉니다.
    */
   areas?: Area[];
+  /**
+   * 판 옆 목록 (4개까지). 앞으로 나올 기물의 순서처럼 보여 주기만 하는 작은 패널입니다.
+   * 판 좌표(rows × cols)에 들지 않으므로 클릭, legal(), AI의 행동과 관측, 썸네일에 들어가지 않고 판 배치에서 자리도 차지하지 않습니다.
+   * 목록 i에 놓을 기물은 view().lists[i].pieces에 목록 안 좌표로 줍니다. AI가 알아야 하는 내용이면 observe()로 따로 넘깁니다.
+   */
+  lists?: List[];
+}
+
+/**
+ * 판 옆 목록 하나. at 칸의 왼쪽 위 귀퉁이에서 시작해, 칸 크기 × scale 간격으로 rows × cols 칸을 그립니다 (칸마다 주머니 없이 바탕만).
+ * 판 밖 영역 아래의 빈칸에 at을 두면 그 패널 아래에 이어 그려지고, 캔버스 밖으로 나가면 그만큼 캔버스가 커집니다.
+ * 목록은 누를 수 없습니다. flipForPlayer로 뒤집은 화면에서는 at 칸의 오른쪽 아래 귀퉁이에 붙어 반대로 자라지만 목록 안은 뒤집지 않습니다.
+ */
+export interface List {
+  /** 목록을 붙일 판의 칸 (그리는 칸이 아니어도 됩니다) */
+  at: Cell;
+  /** 1~32 */
+  rows: number;
+  /** 1~32 */
+  cols: number;
+  /** 0.25~1. 칸 크기에 대한 목록 칸의 크기. 없으면 1 */
+  scale?: number;
+}
+
+/** 판 옆 목록의 칸. list는 board.lists의 번호입니다 */
+export interface ListCell extends Cell {
+  list: number;
 }
 
 /** 판 밖 영역 하나. row, col은 왼쪽 위 칸, rows, cols는 크기입니다 (판 전체 좌표) */
@@ -117,9 +144,10 @@ export interface View {
    * 화면에서 곧게 아래로 내려오면 떨어지듯 점점 빠르게, 그 밖은 미끄러지듯 움직입니다. 판 밖 영역에서 판으로 와도 됩니다.
    * 움직임은 기물마다 따로 봅니다. 같은 움직임은 한 번만 보이므로 다음 수까지 같은 from을 계속 줘도 되고 (기물 고르기 같은 행동 뒤에 다시 움직이지 않음),
    * 그 사이에 다른 기물에 새 from을 붙이면 그 기물만 움직입니다.
+   * from이 판 옆 목록의 칸({ list, row, col })이면 목록에서 판으로 오면서 크기도 바뀝니다.
    * from은 AI 관측과 썸네일에 들어가지 않습니다.
    */
-  pieces: Array<Cell & { piece: string; from?: Cell }>;
+  pieces: Array<Cell & { piece: string; from?: Cell | ListCell }>;
   marks?: Mark[];
   /**
    * 칸 칠하기. 0 / 1이면 플레이어 색, 'green' · 'yellow' · 'gray'면 판 팔레트의 색, 아니면 '#rrggbb'.
@@ -145,6 +173,11 @@ export interface View {
    * AI 관측과 썸네일에 들어가지 않습니다.
    */
   effects?: Effect[];
+  /**
+   * 판 옆 목록(board.lists)에 놓을 기물. lists[i]가 board.lists[i]의 것이고, 칸은 목록 안 좌표(0 ~ rows-1, 0 ~ cols-1)입니다.
+   * from은 pieces와 같습니다 (판의 칸이나 목록의 칸). AI 관측과 썸네일에 들어가지 않습니다.
+   */
+  lists?: Array<{ pieces: Array<Cell & { piece: string; from?: Cell | ListCell }> }>;
   /** 보드 위 안내 문구 */
   message?: string;
 }
@@ -156,8 +189,12 @@ export interface View {
 export interface Effect extends Cell {
   /** 사라지는 기물 */
   piece: string;
-  /** 'shatter': 금이 가고 조각으로 갈라져 튀며 흐려집니다. 없으면 'shatter' */
-  type?: 'shatter';
+  /**
+   * 'shatter': 금이 가고 조각으로 갈라져 튀며 흐려집니다 (잡힌 기물).
+   * 'flash': 하얗게 빛난 뒤 작아지며 사라집니다 (테트리스의 꽉 찬 줄처럼 규칙대로 지워지는 기물).
+   * 없으면 'shatter'
+   */
+  type?: 'shatter' | 'flash';
   /** 같은 칸 · 기물의 효과를 구별하는 값 (32자까지의 글자나 정수) */
   id?: string | number;
 }
