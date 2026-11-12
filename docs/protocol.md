@@ -34,11 +34,12 @@
 | `POST /api/admin/actions` | 운영 조치 하나 `{"action":"comment.hide","game":"…","comment":"…","note":"…"}` → `{"ok":true}`. 운영자만 |
 | `PUT /api/admin/ai/{game}` | AI 모델 올리기 `{"meta":{…},"model":"<model.onnx의 base64>"}` → `{"ai":{…}}` (`/api/games`의 `ai`). `meta`는 `trainer/train.py --export-onnx`가 쓴 `model.json` 그대로. 모델은 16 MB까지 (`413`), 모양이 틀리면 `422 {"error":"…"}`, 없는 게임이면 `404`. 같은 게임의 모델은 바뀝니다. 운영자만 |
 | `DELETE /api/admin/ai/{game}` | AI 모델 지우기 → `{"ok":true}`. 요청과 학습 기록은 남습니다. 운영자만 |
-| `GET /api/admin/stats?days=30` | 운영자 화면의 통계. 날마다 방문, MAU, 대국, 등록, 가입과 지금 접속. 운영자만 ([moderation.md](moderation.md#통계)) |
+| `GET /api/admin/stats?days=30` | 운영자 화면의 통계. 날마다 방문, MAU, 대국(온라인과 AI), 등록, 가입과 지금 접속. 운영자만 ([moderation.md](moderation.md#통계)) |
 | `GET /api/ai/mine` | 내가 올린 게임마다 AI 상태 `{"games":{"<id>":{"request":{…},"training":{…},"ai":{…}}},"next":"…"}`. 없는 칸은 빠집니다. `next`는 다음 AI 요청을 할 수 있는 때로, 지금 할 수 있으면 빠집니다 (일주일에 한 번). 계정만 |
 | `POST /api/ai/{game}/request` | AI 만들기 요청 (본문 `{}`, JSON만) → `{"request":{"game":"…","version":"…","by":"…","at":"…","status":"waiting","updated":"…"}}`. 내가 올린 게임의 지금 버전으로. 남의 게임이나 레포 게임이면 `404`, 내린 게임이면 `409 {"error":"hidden"}`, 이미 요청이 있으면 `409 {"error":"request open"}`, 이 버전으로 학습한 모델이 있으면 `409 {"error":"already trained"}`, 다른 게임의 요청이 안 끝났으면 `429 {"error":"another request"}`, 마지막으로 요청한 지 일주일이 안 됐으면 `429 {"error":"too soon","next":"…"}` (거둔 요청은 세지 않음), 정지된 계정이면 `403` |
 | `DELETE /api/ai/{game}/request` | 기다리는 중인 내 요청 거두기 → `{"ok":true}`. 운영자가 받아 갔거나 끝난 요청이면 `409 {"error":"no request"}` |
 | `GET /api/ai/{game}/training` | 학습 기록 (`snapshots.json` 그대로, 아래). 게임을 올린 사람과 운영자만, 다른 사람에게는 `404`. 로그인 전이면 `401` |
+| `POST /api/ai/{game}/plays` | AI 대국을 운영 통계에 셉니다 (JSON만). 사람이 그 판의 첫 수를 두면 `{"event":"play"}`, 끝나면(기권 포함) `{"event":"end","result":"win"\|"lose"\|"draw"}` (사람 쪽 결과) → `204`. 센 것과 상관없이 `204`입니다 (로봇, 하루 상한, 시작하지 않은 판의 끝은 세지 않음). 쿠키가 없으면 `401`, 모델이 없는 게임이면 `404`, 본문이 틀리면 `400` ([moderation.md](moderation.md#통계)) |
 | `GET /api/admin/ai/requests` | AI 요청 목록 `{"requests":[…],"trainings":{"<id>":{"version":"…","minutes":60,"snapshots":7,"updated":"…"}}}`. 안 끝난 요청을 오래된 것부터, 그다음 끝난 요청 30개를 최근 것부터. 운영자만 |
 | `POST /api/admin/ai/{game}/code` | 게임 코드 받기 (본문 `{}`, JSON만) → `application/zip` 첨부 `<게임>-<버전>.zip` (`<게임>/` 안에 코드와 `listing.json`). 열린 요청이 있으면 그 버전이고 요청이 학습 중(`training`)이 됩니다. 없으면 지금 버전. 레포 게임이면 `404`. 운영자만 |
 | `POST /api/admin/ai/{game}/decline` | 요청 반려 `{"note":"…"}` (500자까지, 제작자에게 보임) → `{"request":{…,"status":"declined"}}`. 열린 요청이 없으면 `409`. 운영자만 |

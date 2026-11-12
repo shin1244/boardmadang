@@ -109,7 +109,10 @@ function renderTiles() {
   return [
     tile(t('stats.dau'), today.visitors, t('stats.dau.sub', { m: num(today.members), g: num(today.visitors - today.members) })),
     tile(t('stats.mau'), today.mau, t('stats.mau.sub', { m: num(today.mauMembers) })),
-    tile(t('stats.plays'), today.plays, t('stats.plays.sub', { n: days, sum: num(sum('plays')) })),
+    // 대국은 온라인과 AI를 더한 수 (AI는 사람이 한 수 이상 둔 판)
+    tile(t('stats.plays'), today.plays + today.aiPlays, t('stats.plays.sub', {
+      on: num(today.plays), ai: num(today.aiPlays), n: days, sum: num(sum('plays') + sum('aiPlays')),
+    })),
     tile(t('stats.newGames'), today.newGames, t('stats.newGames.sub', { n: days, sum: num(sum('newGames')), upd: num(sum('updates')) })),
     tile(t('stats.signups'), today.signups, t('stats.signups.sub', { n: days, sum: num(sum('signups')), total: num(stats.accounts) })),
     tile(t('stats.online'), stats.online, t('stats.online.sub', { n: num(stats.playing) })),
@@ -331,7 +334,10 @@ function renderCharts() {
       title: t('stats.chart.mau'), kind: 'line', value: visit, empty: t('stats.noVisits'),
       series: [{ key: 'mau', label: t('stats.s.all') }, { key: 'mauMembers', label: t('stats.s.members') }],
     }),
-    chart({ title: t('stats.chart.plays'), kind: 'bar', series: [{ key: 'plays', label: t('stats.s.plays') }] }),
+    chart({
+      title: t('stats.chart.plays'), kind: 'bar',
+      series: [{ key: 'plays', label: t('stats.s.online') }, { key: 'aiPlays', label: t('stats.s.ai') }],
+    }),
     chart({
       title: t('stats.chart.uploads'), kind: 'bar',
       series: [{ key: 'newGames', label: t('stats.s.new') }, { key: 'updates', label: t('stats.s.updates') }],
@@ -343,23 +349,27 @@ function renderCharts() {
 
 // ---- 많이 둔 게임과 표 ----
 
+/** 많이 둔 게임. 서버가 온라인 + AI 판 수로 줄 세워 줍니다 */
 function renderTop(gameName) {
   const list = el('ol', 'stat-top');
-  const max = stats.top[0]?.plays ?? 0;
+  const total = (g) => g.plays + g.aiPlays;
+  const max = stats.top[0] ? total(stats.top[0]) : 0;
   for (const g of stats.top) {
     const li = el('li');
     const bar = el('span', 'stat-bar');
     const fill = el('i');
-    fill.style.width = `${(g.plays / max) * 100}%`;
+    fill.style.width = `${(total(g) / max) * 100}%`;
     bar.append(fill);
-    li.append(el('span', 'stat-game', gameName(g.game)), bar, el('b', 'stat-count', t('stats.top.plays', { n: num(g.plays) })));
+    const count = t('stats.top.plays', { n: num(total(g)), on: num(g.plays), ai: num(g.aiPlays) });
+    li.append(el('span', 'stat-game', gameName(g.game)), bar, el('b', 'stat-count', count));
     list.append(li);
   }
   return list;
 }
 
 const COLUMNS = [
-  ['visitors', 'stats.s.visitors'], ['members', 'stats.s.members'], ['mau', 'stats.s.mau'], ['plays', 'stats.s.plays'],
+  ['visitors', 'stats.s.visitors'], ['members', 'stats.s.members'], ['mau', 'stats.s.mau'], ['plays', 'stats.col.online'],
+  ['aiPlays', 'stats.col.ai'], ['aiEnds', 'stats.col.aiEnds'], ['aiWins', 'stats.col.aiWins'],
   ['newGames', 'stats.s.new'], ['updates', 'stats.s.updates'], ['signups', 'stats.s.signups'],
 ];
 
