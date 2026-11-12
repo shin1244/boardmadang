@@ -1,115 +1,126 @@
-# 보드마당 (boardmadang)
+<h1 align="center">boardmadang</h1>
 
-직접 만든 **1대1 격자 보드게임**을 올리면, 바로 온라인 대전을 할 수 있고
-**AI 상대까지 자동으로 학습**되는 플랫폼입니다.
+<p align="center">
+  <b>Upload a 1-vs-1 board game you made, and play it online right away against people or an AI.</b><br>
+  You write only the rules. The platform draws the board, runs the matches and trains the AI.
+</p>
 
-제작자는 게임 규칙만 씁니다. 보드 그리기, 매칭, 네트워크, 화면 뒤집기,
-AI 학습은 전부 플랫폼이 합니다.
+<p align="center">
+  <a href="https://boardmadang.com"><b>Play on boardmadang.com</b></a> ·
+  <a href="sdk/README.md">Make a game</a> ·
+  <a href="README.ko.md">한국어</a>
+</p>
 
-> 지금은 초기 단계입니다. [boardmadang.com](https://boardmadang.com)에서 게스트와 Google·GitHub 로그인, 매칭, 대국 시계, 관전,
-> 기보 다시보기가 동작합니다. 게임 올리기는 zip 올리기 → 자동 검사 → 직접 깨기(클리어 체크) → 등록, 등록 정보 고치기와 내리기까지 만들었고, 남은 일과
-> 앞으로 할 일은 [docs/roadmap.md](docs/roadmap.md)에 있습니다.
+<p align="center">
+  <img src="docs/images/rockfall.gif" width="560" alt="Rockfall on boardmadang: hovering previews the drop, the drop captures 18 white stones and clears a row, then the AI answers">
+</p>
 
-## 핵심 아이디어
+> boardmadang is early and fully open source. If you like board games, game design or AI, [come build it with us](#contributing).
+
+## What you get
+
+- **Rules, not an engine.** A game is one JavaScript module with `setup`, `play` and `view`. boardmadang draws the board (squares or intersections), the pieces, side panels, falling and sliding pieces, and capture effects.
+- **Online play.** Quick matching, rooms with invite links, a game clock, spectating, replays and rematches. Guests can play, or log in with Google or GitHub.
+- **An AI opponent.** Games are trained with AlphaZero-style self-play, and the network runs in the player's browser, so playing the AI costs no server time.
+- **Safe uploads.** Uploaded code runs in a sandboxed Web Worker. A game goes live only after it passes the automatic checks and its maker wins one game playing both sides (the clear check).
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/lobby-en.png" height="340" alt="The game list on boardmadang.com"><br>The game list</td>
+    <td align="center"><img src="docs/images/ai-en.png" height="340" alt="Playing Rockfall against the AI, with the drop preview"><br>Playing the AI</td>
+  </tr>
+</table>
+
+## Make a game
+
+You need [Node.js](https://nodejs.org) 18 or newer.
+
+```bash
+npx boardmadang new my-game   # starts from tic-tac-toe
+cd my-game
+npx boardmadang dev           # the playground: play both sides yourself
+npx boardmadang check         # the same checks the site runs on upload
+npx boardmadang pack          # my-game.zip, ready to upload
+```
+
+A game is a plain object. Every function is pure: it gets the state and returns a new one.
+
+```js
+export default {
+  id: 'tictactoe',
+  board: { places: 'cells', rows: 3, cols: 3 },
+  pieces: 'xo',
+  maxActions: 9,
+  setup: () => ({ board: Array(9).fill(null), turn: 0 }),
+  play(state, player, action) { /* a click { row, col } → the next state */ },
+  result(state) { /* { winner, reason } once the game is over */ },
+  view(state, player) { /* what to draw: { pieces: [{ row, col, piece: 'x' }] } */ },
+};
+```
+
+Then upload the zip on [Register a game](https://boardmadang.com/web/register.html). The full guide is in the [SDK docs](sdk/README.md).
+
+<p align="center">
+  <img src="docs/images/playground-en.png" width="760" alt="The playground: both players' boards, automatic checks over 200 random games, and the move log"><br>
+  <sub>The playground (<code>npx boardmadang dev</code>): both boards side by side, checks over 200 random games, and the move log.</sub>
+</p>
+
+## How it works
 
 ```
-A가 클릭 → 플랫폼이 (row, col)로 변환 → 서버는 순번만 붙여 양쪽에 그대로 전달
-→ 양쪽 브라우저가 같은 게임 로직에 같은 클릭을 같은 순서로 넣음 → 같은 결과
+a click → (row, col) → the server only numbers it and passes it to both players
+→ both browsers feed the same clicks, in the same order, to the same game code → the same result
 ```
 
-서버는 **게임 규칙을 하나도 모릅니다** (락스텝 방식).
-자세한 설계는 [docs/architecture.md](docs/architecture.md)를 보세요.
+The server knows nothing about the rules (lockstep). That's why game code has a few rules:
 
-## 게임 제작 규칙
+- **Grid boards and clicks.** Pieces go on squares or intersections of a grid you size. Input is a click on a square, or an optional button such as "Rotate".
+- **Deterministic.** Use only the `rng` the platform gives you for randomness, so both screens stay the same.
+- **Perfect information.** No hidden hands, since both browsers hold the whole state.
+- **Pure functions.** Game code can't touch the screen, the network or storage.
+- **Games must end.** `maxActions` caps a game's length, which AI training also needs.
 
-| # | 규칙 | 이유 |
+The full design is in [docs/architecture.md](docs/architecture.md) (Korean).
+
+## AI opponents
+
+[`trainer/`](trainer/README.md) trains a network for any game folder with AlphaZero-style self-play (a neural network plus tree search).
+The model is exported to ONNX and runs in the browser. For now training runs on your own machine (a GPU helps, but tic-tac-toe takes a few minutes on a CPU), and training on the server is on the [roadmap](docs/roadmap.md).
+
+```bash
+pip install -r trainer/requirements.txt
+python trainer/train.py games/tictactoe --minutes 5
+```
+
+## Repository
+
+| Folder | What's in it | License |
 |---|---|---|
-| 1 | **마우스만** 사용합니다 | 모든 입력이 "클릭 좌표"로 통일됩니다 |
-| 2 | **격자 보드**만 됩니다. 칸(`cells`)이나 교차점(`points`)에 두고, 크기는 제작자가 정합니다 | 플랫폼이 보드를 대신 그립니다 |
-| 3 | 플랫폼은 **좌표만 전달**하고, 좌표의 의미는 제작자의 로직이 정합니다 | 서버가 규칙을 몰라도 됩니다 |
-| 4 | 로직은 **결정적**이어야 합니다. 랜덤은 플랫폼이 준 `rng`만 씁니다 | 양쪽 화면이 어긋나지 않습니다 |
-| 5 | **완전정보 게임**만 됩니다 (숨겨진 패, 주사위 없음) | 양쪽 브라우저가 전체 상태를 갖기 때문입니다 |
-| 6 | 로직은 **순수 함수**입니다. 화면, 네트워크, 저장소에 접근할 수 없습니다 | 업로드된 코드를 Web Worker에 가둡니다 |
-| 7 | **최대 수**(`maxActions`)가 있어야 합니다. 차례가 넘어간 행동만 셉니다 (기물 고르기는 세지 않음) | 게임이 반드시 끝나야 AI 학습이 됩니다 |
+| [`server/`](server) | Go backend: matching, click relay, uploads, replays | AGPL-3.0 |
+| [`web/`](web) | The site: game list, matches, AI play, game upload | AGPL-3.0 |
+| [`sdk/`](sdk/README.md) | npm package `boardmadang`: API types, playground, checks | MIT |
+| [`games/`](games) | Example game (tic-tac-toe) | MIT |
+| [`trainer/`](trainer/README.md) | AlphaZero-style AI training | MIT |
+| [`docs/`](docs) | Design docs (Korean) | |
 
-게임 만드는 법은 [sdk/README.ko.md](sdk/README.ko.md)(영어: [sdk/README.md](sdk/README.md))에 있습니다. 게임은 npm 패키지 `boardmadang`으로 만듭니다.
-
-```bash
-npx boardmadang new my-game
-```
-
-## 폴더 구조
-
-```
-server/    Go 백엔드: 매칭, 클릭 중계, 결과 기록          (AGPL-3.0)
-sdk/       게임 제작 도구 (npm 패키지 boardmadang): API 타입, 플레이그라운드, 검사, 묶기   (MIT)
-games/     예제 게임: 틱택토, 바둑, 체스                    (MIT)
-trainer/   AlphaZero 방식 AI 학습 (지금은 내 컴퓨터에서 게임 폴더 하나를 학습)   (MIT)
-docs/      설계 문서
-web/       프론트엔드: 로비(게임 목록), 게임 등록창, 대전 화면         (AGPL-3.0)
-```
-
-## 실행
+## Run it locally
 
 ```bash
-cd server
-go run ./cmd/server
+cd server && go run ./cmd/server   # everything on http://localhost:8080
 ```
 
-```bash
-curl http://localhost:8080/healthz
-```
+One Go server serves the whole site, and boardmadang.com runs the same server.
+To work on games without it, `node sdk/playground/serve.js` serves the game list and the playground on http://localhost:5173.
+More in [docs/development.md](docs/development.md) (Korean).
 
-설정은 환경변수로 합니다. [.env.example](.env.example)을 참고하세요.
+## Contributing
 
-Go 서버 하나가 화면까지 모두 보여줍니다. http://localhost:8080 을 열면 로비가 보이고, 대전, 로그인, 기보가 다 됩니다.
-운영(boardmadang.com)도 이 서버 하나로 돌립니다 ([docs/deploy-gcp.md](docs/deploy-gcp.md)).
+boardmadang is fully open source and still young, so there's plenty to do: bug reports, docs, example games, new features, and new games on the site are all welcome.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) first. Pull requests need a one-time [CLA](CLA.md) signature, and you keep the copyright.
 
-개발 서버(Node)는 게임을 만들 때 씁니다. 게임 등록창의 저장(`games/<id>/listing.json`에 쓰기)은 아직 개발 서버에만 있습니다.
-로비(게임 목록)와 [플레이그라운드](sdk/README.ko.md#바로-시작하기)는 Go 서버 없이 개발 서버로 띄울 수 있습니다.
+## License
 
-```bash
-node sdk/playground/serve.js
-```
+- `sdk/`, `games/`, `trainer/`: **MIT**
+- everything else (`server/`, `web/`): **AGPL-3.0**. If you run a modified version as a service, you share your changes.
 
-온라인 대전까지 해보려면 Go 서버를 같이 켭니다. 개발 서버가 `/ws`와 `/api/me`를 Go 서버로 넘기므로
-브라우저는 http://localhost:5173 하나만 씁니다. 같은 브라우저의 탭 두 개로 대전 찾기를 누르면 서로 매칭됩니다.
-
-```bash
-cd server && go run ./cmd/server
-```
-
-8080 포트를 다른 프로그램이 쓰고 있으면 Go 서버의 포트를 바꾸고 개발 서버에 알려줍니다.
-
-```bash
-cd server && PORT=8081 go run ./cmd/server
-```
-
-```bash
-GO_SERVER=http://localhost:8081 node sdk/playground/serve.js
-```
-
-- 로비: http://localhost:5173
-- 플레이그라운드: http://localhost:5173/sdk/playground/?game=tictactoe
-- 게임 등록: http://localhost:5173/web/register.html (이름, 룰북, 난이도, 지원 언어, 타이머를 `games/<id>/listing.json`에 저장)
-- 방 목록: http://localhost:5173/web/rooms.html (아래에 진행 중인 대국이 있고, 관전할 수 있습니다)
-- 약관과 개인정보: http://localhost:5173/web/legal.html (주요 화면 아래의 바닥글에서 엽니다)
-- 로그인: 상단의 로그인 버튼 (Google, GitHub). 켜는 법은 [docs/identity.md](docs/identity.md#소셜-로그인-켜기)에 있습니다.
-  의견 남기기와 방 만들기는 계정만 됩니다. OAuth 앱 없이 시험하려면 Go 서버를 `DEV_LOGIN=1`로 켜고 "개발용 로그인"을 누릅니다.
-- 내 프로필 (상단의 내 이름을 누름): http://localhost:5173/web/history.html. 내가 올린 게임(Go 서버만)과 내 대국이 있습니다.
-  끝난 대국은 `server/data/`에 기보로 저장되고, 여기서 다시볼 수 있습니다.
-
-로비는 `games/`와 `games/private/`에 있는 게임을 자동으로 보여줍니다. 카드의 '혼자 둬보기'는 플레이그라운드를,
-'대전 찾기'는 대전 화면(`web/match.html`)을 열어 같은 타이머의 상대를 찾고, '방 만들기'는 방 목록에 방을 올립니다.
-
-## 라이선스
-
-- `sdk/`, `games/`: **MIT** — 게임 제작자가 제약 없이 씁니다.
-- `trainer/`: **MIT** — AI 학습 코드. 상업적으로도 자유롭게 쓰고, 저작권 표시만 남기면 됩니다.
-- 그 외 전부(`server/`, `web/`): **AGPL-3.0** — 수정해서 서비스로 운영하면 수정본도 공개해야 합니다.
-
-**올린 게임은 AGPL이 되지 않습니다.** 게임의 라이선스는 제작자가 정하며, 이를 AGPL 7조의
-추가 허가로 명시해 두었습니다. 자세한 내용은 [LICENSING.md](LICENSING.md)를 보세요.
-
-기여하기 전에 [기여자 라이선스 동의서(CLA)](CLA.md)에 서명을 받습니다. 저작권은 기여자에게 남습니다.
-자세한 내용은 [CONTRIBUTING.md](CONTRIBUTING.md)를 보세요.
+**Games you upload don't become AGPL.** You choose your game's license, and an additional permission under AGPL section 7 says so. See [LICENSING.md](LICENSING.md).
