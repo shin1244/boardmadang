@@ -330,6 +330,7 @@ test('판 설정의 look, labels, flipForPlayer, starPoints: 틀린 값은 말�
   assert.deepEqual(board({ look: 'wood', labels: true, flipForPlayer: 1, starPoints: true }), []);
   assert.deepEqual(board({ places: 'points', starPoints: [{ row: 1, col: 1 }] }), []);
   assert.deepEqual(board({ starPoints: false }), []);
+  assert.deepEqual(board({ look: null, labels: null, flipForPlayer: null, starPoints: null }), [], 'null은 정하지 않은 것으로 봅니다');
   assert.deepEqual(board({ look: 'woood' }), ["board.look: must be 'plain', 'checker', or 'wood'"]);
   assert.deepEqual(board({ labels: 'yes' }), ['board.labels: must be true or false']);
   assert.deepEqual(board({ flipForPlayer: 2 }), ['board.flipForPlayer: must be 0 or 1']);

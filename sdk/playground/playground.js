@@ -13,7 +13,7 @@ import {
   callGame, checkGame, checkMembers, checkThumbnail, langProblems, makeThumbnail, mutationProblems, observeProblems, replayProblems,
   sameAction, stateProblems, turnProblems,
 } from '../check.js';
-import { BoardView, GAME_ID, attachInput, buttonsOf, paintPlayerDot } from './board.js';
+import { BoardView, GAME_ID, SHAPE_LIMITS, attachInput, buttonsOf, paintPlayerDot } from './board.js';
 import { LANGS, LANG_NAMES, fullLangs, localize } from './listing.js';
 import { hashOf, makeRng } from './platform.js';
 
@@ -390,7 +390,7 @@ function showTitle() {
 }
 
 async function main() {
-  if (!GAME_ID.test(gameId)) throw new Error('game may use only lowercase letters, numbers, and -');
+  if (!GAME_ID.test(gameId)) throw new Error(`game may use only lowercase letters, numbers, and - (up to ${SHAPE_LIMITS.idChars} characters)`);
   // 개발 서버가 games/<id>와 깃허브에 올리지 않는 games/private/<id>를 찾아 등록 정보와 같이 알려줍니다.
   const entry = (await (await fetch('/api/games')).json()).find((g) => g.id === gameId);
   if (!entry) throw new Error("the dev server couldn't find this game");

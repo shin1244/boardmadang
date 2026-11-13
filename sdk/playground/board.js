@@ -45,7 +45,7 @@ const PIECE_INK = {
 // Go 서버의 썸네일 검사(server/internal/upload/thumbnail.go)와 AI 학습의 관측(trainer/env.js)에는 같은 값이 따로 있으니,
 // 여기를 고치면 그쪽도 고칩니다.
 
-/** 게임이 정할 수 있는 크기와 길이의 상한 */
+/** 게임이 정할 수 있는 크기와 길이의 상한 (제작자가 보는 표는 sdk/README.md와 docs/abuse-and-limits.md에 있습니다. 고치면 같이 고칩니다) */
 export const SHAPE_LIMITS = {
   idChars: 40, // 게임 id
   boardSize: 32, // rows, cols
@@ -79,8 +79,10 @@ export const isCell = (c, area) => !!c && typeof c === 'object' && isInt(c.row, 
 const sameCell = (a, b) => !!a && !!b && a.row === b.row && a.col === b.col;
 /** 두께로 쓸 수 있는 숫자인지 (range는 FRAME_WIDTH나 LINE_WIDTH) */
 export const validWidth = (w, range) => Number.isFinite(w) && w >= range.min && w <= range.max;
+// 아래 목록들은 includes로 찾습니다. Object.hasOwn은 Safari 15.4 전에는 없어서, 렌더러만 도는 화면(로비의 썸네일)까지 멈춥니다
+const COLOR_NAMES = Object.keys(NAMED_COLORS);
 /** 게임이 color에 쓸 수 있는 값인지: 0 / 1(플레이어 색), 이름 붙은 색(NAMED_COLORS), '#rrggbb' */
-export const isColor = (c) => c === 0 || c === 1 || (typeof c === 'string' && (Object.hasOwn(NAMED_COLORS, c) || /^#[0-9a-fA-F]{6}$/.test(c)));
+export const isColor = (c) => c === 0 || c === 1 || (typeof c === 'string' && (COLOR_NAMES.includes(c) || /^#[0-9a-fA-F]{6}$/.test(c)));
 /** 특수 행동 이름으로 쓸 수 있는지: 1~24자이고, 'click'은 칸 클릭이라 안 됩니다 */
 export const isSpecialKind = (k) => isName(k, SHAPE_LIMITS.kindChars) && k !== 'click';
 
@@ -104,7 +106,7 @@ export const pieceName = (p) => (typeof p === 'string' ? p : p?.name);
 /** 이 기물 묶음(pieces)에 그 이름의 기물이 있는지. 기본 묶음은 그릴 줄 아는 이름, 직접 정의한 묶음은 목록의 이름 */
 export function knowsPiece(pieceSet, name) {
   if (typeof name !== 'string') return false;
-  if (typeof pieceSet === 'string') return Object.hasOwn(BUILT_IN_PIECES, pieceSet) && BUILT_IN_PIECES[pieceSet](name);
+  if (typeof pieceSet === 'string') return PIECE_SETS.includes(pieceSet) && BUILT_IN_PIECES[pieceSet](name);
   return Array.isArray(pieceSet) && pieceSet.some((p) => pieceName(p) === name);
 }
 
@@ -145,7 +147,7 @@ export function cleanPieces(pieces) {
  */
 export function starsOf(board) {
   const s = board.starPoints;
-  if (s === undefined || s === false) return { stars: [], problems: [] };
+  if (s === undefined || s === null || s === false) return { stars: [], problems: [] };
   if (s === true) return { stars: true, problems: [] };
   const stars = Array.isArray(s) ? s.slice(0, SHAPE_LIMITS.starPoints).filter((c) => isCell(c, board)).map(({ row, col }) => ({ row, col })) : [];
   const ok = Array.isArray(s) && stars.length === s.length;

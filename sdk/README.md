@@ -308,6 +308,9 @@ languages, and the timer. You can also fill it in on the site when you register.
 |---|---|
 | Board size (`rows`, `cols`) | 32 |
 | Kinds of pieces | 32 |
+| Piece name | 32 characters |
+| Special actions | 8, with names up to 24 characters |
+| Game id | 40 characters |
 | `maxActions` | 2,000 |
 | Game code | 256 KB |
 | State (as JSON) | 64 KB |

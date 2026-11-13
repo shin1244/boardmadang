@@ -24,7 +24,7 @@ export interface BoardConfig {
   rows: number;
   cols: number;
   look?: 'plain' | 'checker' | 'wood';
-  /** 화점. true면 보드 크기에 맞는 기본 위치, 배열이면 그 자리들 */
+  /** 화점. true면 보드 크기에 맞는 기본 위치, 배열이면 그 자리들 (판 안의 칸, 64개까지) */
   starPoints?: boolean | Cell[];
   /** 가장자리 좌표 표시 (a~h, 1~8) */
   labels?: boolean;
@@ -288,12 +288,12 @@ export interface TilePiece {
 }
 
 export interface Game<S> {
-  /** 영문 소문자 id (URL에 쓰입니다) */
+  /** 영문 소문자, 숫자, -로 된 id (40자까지. URL에 쓰입니다) */
   id: string;
   board: BoardConfig;
   /**
    * 내장 기물 세트 이름, 또는 이 게임이 쓰는 기물 목록 (이름마다 AI 관측 채널이 됩니다).
-   * 목록의 항목은 이름(원에 이름 앞 두 글자) 또는 글자 패(TilePiece)입니다.
+   * 목록의 항목은 이름(1~32자. 원에 이름 앞 두 글자) 또는 글자 패(TilePiece)이고, 32가지까지입니다.
    */
   pieces: 'chess' | 'go-stones' | 'xo' | Array<string | TilePiece>;
   /**
@@ -301,7 +301,7 @@ export interface Game<S> {
    * 없으면 플레이어 색 점(빨강, 파랑)이 보입니다.
    */
   playerPieces?: [string, string];
-  /** 좌표가 아닌 행동 (8개까지). 플랫폼이 버튼으로 보여줍니다. 버튼 글자와 순서는 view()의 buttons로 정합니다. 기권은 플랫폼 기능이라 넣지 않습니다. */
+  /** 좌표가 아닌 행동 (8개까지, 이름은 1~24자). 플랫폼이 버튼으로 보여줍니다. 버튼 글자와 순서는 view()의 buttons로 정합니다. 기권은 플랫폼 기능이라 넣지 않습니다. */
   specialActions?: string[];
   /**
    * 둔 수가 이 횟수에 이르면 무승부로 끝납니다. 게임이 반드시 끝나게 하는 안전장치입니다.
