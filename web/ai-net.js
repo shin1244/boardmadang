@@ -11,6 +11,9 @@
 //
 // onnxruntime-web은 web/vendor/package.json으로 받습니다 (npm --prefix web/vendor ci). WebAssembly판만 쓰고 스레드는 하나입니다
 // (여러 스레드는 사이트가 cross-origin isolated여야 해서). 모델 파일 이름이 내용의 해시라 브라우저가 오래 캐시합니다.
+//
+// 이 Worker가 뜨자마자 런타임의 WebAssembly(15MB, 압축해서 4MB쯤)를 받아 준비해 둡니다 (warming). 어느 게임이든 같은 파일이라
+// 화면이 게임 정보를 받기 전에 시작할 수 있고, load가 오면 모델 파일은 그와 동시에 받습니다.
 
 import * as ort from './vendor/node_modules/onnxruntime-web/dist/ort.wasm.min.mjs';
 
@@ -24,10 +27,19 @@ let size = 0; // 관측 길이 (채널 × rows × cols)
 let dims = null;
 let queue = Promise.resolve(); // 계산은 하나씩
 
+// 런타임은 첫 세션을 만들 때 WebAssembly를 받아 컴파일합니다. 따로 부르는 길이 없어서, 아무것도 하지 않는 가장 작은 모델
+// (입력을 그대로 내보내는 Identity 하나, 67바이트)로 세션을 한 번 만들었다 닫습니다.
+// 실패해도 여기서는 넘어가고, load가 진짜 세션을 만들 때 같은 오류가 나서 화면에 알려집니다.
+const WARM_MODEL = new Uint8Array([
+  8, 7, 18, 0, 58, 55, 10, 16, 10, 1, 120, 18, 1, 121, 34, 8, 73, 100, 101, 110, 116, 105, 116, 121, 18, 1, 119, 90, 15, 10, 1, 120, 18, 10,
+  10, 8, 8, 1, 18, 4, 10, 2, 8, 1, 98, 15, 10, 1, 121, 18, 10, 10, 8, 8, 1, 18, 4, 10, 2, 8, 1, 66, 4, 10, 0, 16, 13,
+]);
+const warming = ort.InferenceSession.create(WARM_MODEL, { executionProviders: ['wasm'] }).then((s) => s.release()).catch(() => {});
+
 async function load(model, shape) {
   if (typeof model !== 'string' || !MODEL_PATH.test(model)) throw new Error('bad model path');
   if (!Array.isArray(shape) || shape.length !== 3 || !shape.every((n) => Number.isInteger(n) && n > 0 && n <= 256)) throw new Error('bad shape');
-  const res = await fetch(model);
+  const [res] = await Promise.all([fetch(model), warming]);
   if (!res.ok) throw new Error(`model: HTTP ${res.status}`);
   session = await ort.InferenceSession.create(new Uint8Array(await res.arrayBuffer()), {
     executionProviders: ['wasm'],
