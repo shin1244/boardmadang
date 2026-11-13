@@ -5,14 +5,18 @@
 // 썸네일도 여기서 검사합니다. 썸네일은 이미지가 아니라 혼자 두던 판을 그대로 찍은 데이터(thumbnail.json)이고,
 // 사이트가 보드 렌더러로 다시 그립니다. 판 설정과 기물 세트까지 들어 있어서 게임 코드 없이도 그릴 수 있습니다.
 
-import { EFFECT_TYPES, FRAME_WIDTH, LINE_WIDTH, TILE_ARROWS, fieldOf, knowsPiece, listsOf, pieceName } from './playground/board.js';
+import {
+  EFFECT_TYPES, FRAME_WIDTH, GAME_ID, LINE_WIDTH, LOOK_NAMES, MARK_TYPES, PIECE_SETS, PLACES, SHAPE_LIMITS,
+  cleanPieces, fieldOf, isCell, isColor, isInt, isSpecialKind, knowsPiece, listsOf, pieceName, starsOf, validWidth,
+} from './playground/board.js';
 import { hashOf, makeRng } from './playground/platform.js';
 
-/** 업로드할 때 검사하는 상한 */
+/**
+ * 업로드할 때 검사하는 상한. 판과 기물의 크기(SHAPE_LIMITS: boardSize, pieceKinds, maxActions 등)는
+ * 렌더러와 사이트의 실행기도 같은 값을 씁니다.
+ */
 export const GAME_LIMITS = {
-  boardSize: 32, // rows, cols
-  pieceKinds: 32,
-  maxActions: 2000,
+  ...SHAPE_LIMITS,
   codeBytes: 256 * 1024, // 게임 폴더의 .js, .mjs를 합친 크기
   stateBytes: 64 * 1024, // 상태 JSON
   playAvgMs: 2,
@@ -20,9 +24,9 @@ export const GAME_LIMITS = {
   thumbnailBytes: 32 * 1024,
 };
 
-const PLACES = ['cells', 'points', 'both'];
-const PIECE_SETS = ['chess', 'go-stones', 'xo'];
-const MARK_TYPES = ['dot', 'ring', 'last-move', 'danger', 'ghost', 'blocked', 'frame'];
+/** 목록을 문제 글에 쓸 모양으로: 'a', 'b', or 'c' */
+const quoted = (list) => list.map((x) => `'${x}'`);
+const oneOf = (list) => [...quoted(list).slice(0, -1), `or ${quoted(list).at(-1)}`].join(', ');
 
 /** JSON으로 그대로 옮길 수 없는 값의 위치. 문제없으면 null */
 export function findNonJson(v, where = 'state') {
@@ -51,43 +55,38 @@ export function findNonJson(v, where = 'state') {
 function boardProblems(b, where) {
   if (!b || typeof b !== 'object') return [`${where}: must be an object`];
   const p = [];
-  if (!PLACES.includes(b.places)) p.push(`${where}.places: must be 'cells', 'points', or 'both'`);
-  for (const k of ['rows', 'cols']) {
-    if (!Number.isInteger(b[k]) || b[k] < 1 || b[k] > GAME_LIMITS.boardSize) {
-      p.push(`${where}.${k}: must be a whole number from 1 to ${GAME_LIMITS.boardSize}`);
-    }
-  }
-  // 판 밖 영역(areas)과 판 옆 목록(lists)은 rows, cols가 맞을 때만 봅니다 (규칙은 렌더러의 fieldOf, listsOf 하나씩)
-  if (!p.length) p.push(...[...fieldOf(b).problems, ...listsOf(b).problems].map((x) => `${where}.${x}`));
+  if (!PLACES.includes(b.places)) p.push(`${where}.places: must be ${oneOf(PLACES)}`);
+  const badSize = ['rows', 'cols'].filter((k) => !isInt(b[k], 1, GAME_LIMITS.boardSize));
+  for (const k of badSize) p.push(`${where}.${k}: must be a whole number from 1 to ${GAME_LIMITS.boardSize}`);
+  // 렌더러는 틀린 값을 말없이 기본값으로 그리므로 (오타가 드러나지 않음) 여기서 알려 줍니다
+  if (b.look !== undefined && !LOOK_NAMES.includes(b.look)) p.push(`${where}.look: must be ${oneOf(LOOK_NAMES)}`);
+  if (b.labels !== undefined && typeof b.labels !== 'boolean') p.push(`${where}.labels: must be true or false`);
+  if (b.flipForPlayer !== undefined && b.flipForPlayer !== 0 && b.flipForPlayer !== 1) p.push(`${where}.flipForPlayer: must be 0 or 1`);
+  // 화점, 판 밖 영역(areas), 판 옆 목록(lists)은 rows, cols가 맞을 때만 봅니다 (규칙은 렌더러의 starsOf, fieldOf, listsOf 하나씩)
+  if (!badSize.length) p.push(...[...starsOf(b).problems, ...fieldOf(b).problems, ...listsOf(b).problems].map((x) => `${where}.${x}`));
   return p;
 }
 
-/** 글자 패 { name, text, player?, arrows? }. 글자는 1~2자, 방향은 TILE_ARROWS에서 겹치지 않게 */
-const tileOk = (x) => !!x && typeof x === 'object' && !Array.isArray(x)
-  && typeof x.name === 'string' && x.name.length >= 1 && x.name.length <= 32
-  && typeof x.text === 'string' && [...x.text].length >= 1 && [...x.text].length <= 2
-  && (x.player === undefined || x.player === 0 || x.player === 1)
-  && (x.arrows === undefined || (Array.isArray(x.arrows) && x.arrows.every((a) => TILE_ARROWS.includes(a))
-    && new Set(x.arrows).size === x.arrows.length));
-
-const piecesOk = (pc) => PIECE_SETS.includes(pc)
-  || (Array.isArray(pc) && pc.length <= GAME_LIMITS.pieceKinds && pc.every((x) => typeof x === 'string' || tileOk(x)));
+/** 기물 묶음의 이름이거나 기물 목록인지 (규칙은 렌더러의 cleanPieces 하나) */
+const piecesOk = (pc) => cleanPieces(pc) !== null;
 
 /** 필수 멤버와 제한값 검사. 업로드 검사의 첫 단계와 같습니다. */
 export function checkMembers(g) {
   const p = [];
   const fn = (k) => typeof g[k] === 'function';
-  if (typeof g.id !== 'string' || !/^[a-z0-9-]+$/.test(g.id)) p.push('id: must use only lowercase letters, numbers, and -');
+  if (typeof g.id !== 'string' || !GAME_ID.test(g.id)) p.push(`id: must use only lowercase letters, numbers, and - (up to ${GAME_LIMITS.idChars} characters)`);
   p.push(...boardProblems(g.board, 'board'));
-  if (!piecesOk(g.pieces)) p.push(`pieces: must be 'chess', 'go-stones', 'xo', or a list of up to ${GAME_LIMITS.pieceKinds} names or tiles ({ name, text, player, arrows })`);
-  if (!Number.isInteger(g.maxActions) || g.maxActions < 1 || g.maxActions > GAME_LIMITS.maxActions) {
+  if (!piecesOk(g.pieces)) {
+    p.push(`pieces: must be ${quoted(PIECE_SETS).join(', ')}, or a list of up to ${GAME_LIMITS.pieceKinds} names (1 to ${GAME_LIMITS.nameChars} characters) or tiles ({ name, text, player, arrows })`);
+  }
+  if (!isInt(g.maxActions, 1, GAME_LIMITS.maxActions)) {
     p.push(`maxActions: must be a whole number from 1 to ${GAME_LIMITS.maxActions.toLocaleString('en')}`);
   }
   for (const k of ['setup', 'play', 'result', 'view', 'turn']) if (!fn(k)) p.push(`${k}(): missing (must be a function)`);
   for (const k of ['legal', 'observe']) if (k in g && !fn(k)) p.push(`${k}: must be a function if present`);
   if ('specialActions' in g
-    && !(Array.isArray(g.specialActions) && g.specialActions.every((x) => typeof x === 'string' && x !== 'click'))) {
-    p.push("specialActions: must be a list of names other than 'click'");
+    && !(Array.isArray(g.specialActions) && g.specialActions.length <= GAME_LIMITS.specialActions && g.specialActions.every(isSpecialKind))) {
+    p.push(`specialActions: must be a list of up to ${GAME_LIMITS.specialActions} names (1 to ${GAME_LIMITS.kindChars} characters) other than 'click'`);
   }
   if ('playerPieces' in g && !(Array.isArray(g.playerPieces) && g.playerPieces.length === 2
     && g.playerPieces.every((x) => knowsPiece(g.pieces, x)))) {
@@ -98,8 +97,10 @@ export function checkMembers(g) {
 
 export const sameAction = (a, b) => a.kind === b.kind && (a.kind !== 'click' || (a.row === b.row && a.col === b.col));
 
-/** 게임 함수를 부르고, 오류가 나면 어느 함수인지 붙여 다시 던집니다. */
-function call(name, f) {
+// ---- 한 판을 두면서 보는 것들. 랜덤 대국(checkGame)과 플레이그라운드가 같은 함수를 씁니다 ----
+
+/** 게임 함수를 부르고, 오류가 나면 어느 함수인지 붙여 다시 던집니다. name은 'play()' 같은 이름 */
+export function callGame(name, f) {
   try {
     return f();
   } catch (e) {
@@ -107,12 +108,23 @@ function call(name, f) {
   }
 }
 
-/** 상태 하나의 문제 (JSON이 아닌 값, 크기) */
-function stateProblems(s, from) {
+/** 상태 하나의 문제 (JSON이 아닌 값, 크기). from은 그 상태를 돌려준 함수 ('setup()', 'play()') */
+export function stateProblems(s, from) {
   const bad = findNonJson(s);
   if (bad) return [`${from} returned a state with a non-JSON value: ${bad}`];
   if (JSON.stringify(s).length > GAME_LIMITS.stateBytes) return [`${from} returned a state larger than ${GAME_LIMITS.stateBytes / 1024}KB`];
   return [];
+}
+
+/** play()가 받은 상태를 고쳤는지. before는 부르기 전에 떠 둔 JSON.stringify(state) */
+export const mutationProblems = (s, before) => (JSON.stringify(s) === before ? [] : ['play() changed the state it received. Copy it and return a new state.']);
+
+/** turn()이 돌려준 값 t의 문제. over는 판이 끝났는지 (끝났으면 null이어야 대국 시계가 멈춥니다) */
+export function turnProblems(t, over) {
+  const p = [];
+  if (t !== 0 && t !== 1 && t !== null) p.push(`turn() must return 0, 1, or null (got ${JSON.stringify(t)})`);
+  if (over && t !== null) p.push('turn() must return null once the game is over, so the clock stops.');
+  return p;
 }
 
 /** 지금 둘 수 있는 [플레이어, 행동]. legal()이 없으면 아무 칸 클릭과 특수 행동 */
@@ -120,7 +132,7 @@ function choicesOf(game, s, random) {
   const choices = [];
   for (const p of [0, 1]) {
     if (game.legal) {
-      for (const a of call('legal()', () => game.legal(s, p))) choices.push([p, a]);
+      for (const a of callGame('legal()', () => game.legal(s, p))) choices.push([p, a]);
     } else {
       const { rows, cols } = game.board;
       choices.push([p, { kind: 'click', row: Math.floor(random() * rows), col: Math.floor(random() * cols) }]);
@@ -137,11 +149,11 @@ function choicesOf(game, s, random) {
  */
 function playRandom(game, seed, { random, lang, deep }) {
   const out = { actions: [], moves: 0, end: null, result: null, sumMs: 0, maxMs: 0, legalIgnored: 0, problems: [] };
-  let s = call('setup()', () => game.setup(makeRng(seed)));
+  let s = callGame('setup()', () => game.setup(makeRng(seed)));
   if (deep) out.problems.push(...stateProblems(s, 'setup()'));
   let h = hashOf(s);
   let raw = 0;
-  let r = call('result()', () => game.result(s, lang));
+  let r = callGame('result()', () => game.result(s, lang));
   while (!r) {
     // 둔 수(차례가 넘어간 행동)가 maxActions에 이르면 플랫폼이 무승부로 끝냅니다
     if (out.moves >= game.maxActions) { out.end = 'maxActions'; break; }
@@ -150,25 +162,22 @@ function playRandom(game, seed, { random, lang, deep }) {
     if (!choices.length) { out.end = 'noLegal'; break; }
 
     const [player, action] = choices[Math.floor(random() * choices.length)];
-    const turn = call('turn()', () => game.turn(s));
+    const turn = callGame('turn()', () => game.turn(s));
     const before = deep ? JSON.stringify(s) : null;
     const t = performance.now();
-    const next = call('play()', () => game.play(s, player, action));
+    const next = callGame('play()', () => game.play(s, player, action));
     const ms = performance.now() - t;
     out.sumMs += ms;
     out.maxMs = Math.max(out.maxMs, ms);
     raw++;
-    if (deep) {
-      if (JSON.stringify(s) !== before) out.problems.push('play() changed the state it received. Copy it and return a new state.');
-      out.problems.push(...stateProblems(next, 'play()'));
-    }
+    if (deep) out.problems.push(...mutationProblems(s, before), ...stateProblems(next, 'play()'));
     out.actions.push({ player, action });
     const h2 = hashOf(next);
     if (h2 === h) {
       if (game.legal) out.legalIgnored++;
     } else {
       // 차례가 넘어가면(판이 끝나도) 한 수입니다. 기물 고르기처럼 차례가 그대로인 행동은 세지 않습니다
-      if (call('turn()', () => game.turn(next)) !== player) out.moves++;
+      if (callGame('turn()', () => game.turn(next)) !== player) out.moves++;
       // 대국 시계와 AI 학습은 turn()으로 누가 둘 차례인지 압니다. play()와 어긋나면 안 됩니다
       if (player !== turn) {
         out.problems.push('play() accepted a move from a player whose turn it was not, according to turn(). The two must agree.');
@@ -176,12 +185,8 @@ function playRandom(game, seed, { random, lang, deep }) {
     }
     s = next;
     h = h2;
-    r = call('result()', () => game.result(s, lang));
-    if (deep) {
-      const t2 = call('turn()', () => game.turn(s));
-      if (t2 !== 0 && t2 !== 1 && t2 !== null) out.problems.push(`turn() must return 0, 1, or null (got ${JSON.stringify(t2)})`);
-      if (r && t2 !== null) out.problems.push('turn() must return null once the game is over, so the clock stops.');
-    }
+    r = callGame('result()', () => game.result(s, lang));
+    if (deep) out.problems.push(...turnProblems(callGame('turn()', () => game.turn(s)), !!r));
   }
   if (r) {
     out.result = r;
@@ -193,17 +198,14 @@ function playRandom(game, seed, { random, lang, deep }) {
   return out;
 }
 
-/** 같은 시드와 같은 행동으로 처음부터 다시 둔 상태의 해시 */
-function replayHash(game, seed, actions) {
+/** 결정성: 같은 시드와 같은 행동([{ player, action }])으로 처음부터 다시 두면 해시가 hash인 상태가 나와야 합니다 */
+export function replayProblems(game, seed, actions, hash) {
   let s = game.setup(makeRng(seed));
   for (const { player, action } of actions) s = game.play(s, player, action);
-  return hashOf(s);
+  return hashOf(s) === hash ? [] : ['Replaying the same seed and moves gave a different state. Check for Math.random() or Date.now().'];
 }
 
-/**
- * view()에서 언어마다 같아야 하는 부분. 글자인 message와 버튼 글자(buttons의 label)를 뺀 나머지입니다.
- * 플레이그라운드도 씁니다.
- */
+/** view()에서 언어마다 같아야 하는 부분. 글자인 message와 버튼 글자(buttons의 label)를 뺀 나머지입니다. */
 export function drawnPart(view) {
   const { message, buttons, ...rest } = view ?? {};
   return Array.isArray(buttons) ? { ...rest, buttons: buttons.map((b) => b?.kind) } : rest;
@@ -212,12 +214,15 @@ export function drawnPart(view) {
 /**
  * view()가 그리지 못하는 것을 알려 줍니다 (경고). 플랫폼은 이런 것을 말없이 버리므로 만든 사람이 알아차리기 어렵습니다.
  *   - buttons에 specialActions에 없는 행동
+ *   - effects에 모르는 종류
+ *   - lists에 없는 목록이나 목록 밖의 칸
  */
 function viewWarnings(game, s, lang) {
   const out = [];
+  const specials = game.specialActions ?? [];
+  const lists = listsOf(game.board ?? {}).lists;
   for (const p of [0, 1]) {
-    const v = call('view()', () => game.view(s, p, lang)) ?? {};
-    const specials = game.specialActions ?? [];
+    const v = callGame('view()', () => game.view(s, p, lang)) ?? {};
     for (const b of Array.isArray(v.buttons) ? v.buttons : []) {
       if (!specials.includes(b?.kind)) out.push(`view().buttons has '${b?.kind}', which isn't in specialActions, so it isn't shown.`);
     }
@@ -226,7 +231,6 @@ function viewWarnings(game, s, lang) {
       if (!EFFECT_TYPES.includes(type)) out.push(`view().effects has type '${type}', which boardmadang can't draw (use ${EFFECT_TYPES.map((t) => `'${t}'`).join(', ')}), so it isn't shown.`);
     }
     // 판 옆 목록의 기물: 있는 목록의 칸이어야 그립니다
-    const lists = listsOf(game.board ?? {}).lists;
     if (v.lists !== undefined && !Array.isArray(v.lists)) out.push('view().lists must be a list (one { pieces } per board.lists), so it isn\'t shown.');
     (Array.isArray(v.lists) ? v.lists : []).forEach((l, i) => {
       const box = lists[i];
@@ -234,8 +238,7 @@ function viewWarnings(game, s, lang) {
         out.push(`view().lists[${i}] has no board.lists[${i}] to go in, so it isn't shown.`);
         return;
       }
-      const inside = (x) => x && Number.isInteger(x.row) && Number.isInteger(x.col) && x.row >= 0 && x.row < box.rows && x.col >= 0 && x.col < box.cols;
-      if (!Array.isArray(l?.pieces) || !l.pieces.every((x) => inside(x) && typeof x.piece === 'string')) {
+      if (!Array.isArray(l?.pieces) || !l.pieces.every((x) => isCell(x, box) && typeof x.piece === 'string')) {
         out.push(`view().lists[${i}].pieces: each needs a piece name and row, col inside the list (0-${box.rows - 1}, 0-${box.cols - 1}), or it isn't shown.`);
       }
     });
@@ -243,12 +246,12 @@ function viewWarnings(game, s, lang) {
   return out;
 }
 
-/** 승자와 판 그림은 lang과 상관없이 같아야 합니다. 글자(message, reason, 버튼 글자)만 언어마다 다릅니다. */
-function langProblems(game, s, langs) {
+/** 승자와 판 그림은 lang과 상관없이 같아야 합니다. 글자(message, reason, 버튼 글자)만 언어마다 다릅니다. langs가 둘 이상일 때만 봅니다 */
+export function langProblems(game, s, langs) {
   if (langs.length < 2) return [];
   const p = [];
-  const drawn = (pl, l) => JSON.stringify(drawnPart(call('view()', () => game.view(s, pl, l))));
-  const winner = (l) => { const r = call('result()', () => game.result(s, l)); return r ? String(r.winner) : '-'; };
+  const drawn = (pl, l) => JSON.stringify(drawnPart(callGame('view()', () => game.view(s, pl, l))));
+  const winner = (l) => { const r = callGame('result()', () => game.result(s, l)); return r ? String(r.winner) : '-'; };
   for (const pl of [0, 1]) {
     if (langs.some((l) => drawn(pl, l) !== drawn(pl, langs[0]))) {
       p.push('view() changes more than the message depending on lang. The board must look the same in every language.');
@@ -258,9 +261,10 @@ function langProblems(game, s, langs) {
   return p;
 }
 
-function observeProblems(game, s) {
+/** observe()가 있으면 [채널][rows][cols] 모양의 숫자인지 */
+export function observeProblems(game, s) {
   if (!game.observe) return [];
-  const o = call('observe()', () => game.observe(s, 0));
+  const o = callGame('observe()', () => game.observe(s, 0));
   const { rows, cols } = game.board;
   const ok = Array.isArray(o) && o.every((ch) => Array.isArray(ch) && ch.length === rows
     && ch.every((row) => Array.isArray(row) && row.length === cols && row.every((x) => typeof x === 'number')));
@@ -305,14 +309,12 @@ export function checkGame(game, { n = 200, langs = ['ko'], random = Math.random 
       calls += g.raw;
       legalIgnored += g.legalIgnored;
       problems.push(...g.problems);
-      if (i < 20 && replayHash(game, seed, g.actions) !== g.hash) {
-        problems.push('Replaying the same seed and moves gave a different state. Check for Math.random() or Date.now().');
-      }
+      if (i < 20) problems.push(...replayProblems(game, seed, g.actions, g.hash));
       if (deep) problems.push(...langProblems(game, g.state, langs));
       if (i === 0) {
         problems.push(...observeProblems(game, g.state));
         // 버튼은 끝난 판에서 사라지기 쉬우므로 시작 판에서도 봅니다
-        const start = call('setup()', () => game.setup(makeRng(seed)));
+        const start = callGame('setup()', () => game.setup(makeRng(seed)));
         warnings.push(...viewWarnings(game, start, lang), ...viewWarnings(game, g.state, lang));
       }
     } catch (e) {
@@ -332,22 +334,15 @@ export function checkGame(game, { n = 200, langs = ['ko'], random = Math.random 
 
   return {
     problems: [...new Set(problems)],
-    warnings,
+    warnings: [...new Set(warnings)], // 같은 경고가 양쪽 플레이어와 시작 판, 끝난 판에서 다 나옵니다
     stats: { n: played, tally, avgMoves: played ? totalMoves / played : 0, avgMs, maxMs },
   };
 }
 
 // ---- 썸네일 ----
 
-const isCell = (c, b) => c && typeof c === 'object'
-  && Number.isInteger(c.row) && Number.isInteger(c.col)
-  && c.row >= 0 && c.col >= 0 && c.row < b.rows && c.col < b.cols;
-/** 이름 붙은 색 (playground/board.js의 NAMED_COLORS와 같아야 함) */
-const COLOR_NAMES = ['green', 'yellow', 'gray'];
-/** 색: 0 / 1(플레이어 색), 이름 붙은 색, '#rrggbb' */
-const isColor = (c) => c === 0 || c === 1 || COLOR_NAMES.includes(c) || (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c));
 /** 두께: 없거나, 칸 한 변의 % 범위 안의 숫자 */
-const isWidth = (w, range) => w === undefined || (typeof w === 'number' && w >= range.min && w <= range.max);
+const isWidth = (w, range) => w === undefined || validWidth(w, range);
 /** 선(lines) 하나: 두 칸과 색, 두께, 마우스를 올렸을 때만 보일 칸(hover) */
 const isLine = (l, b) => l && typeof l === 'object' && isCell(l.from, b) && isCell(l.to, b)
   && (l.color === undefined || isColor(l.color)) && isWidth(l.width, LINE_WIDTH)
@@ -409,7 +404,7 @@ export function validateThumbnail(t) {
   const list = (k) => v[k] === undefined || Array.isArray(v[k]);
   for (const k of ['marks', 'tint', 'text', 'lines']) if (!list(k)) p.push(`thumbnail.view.${k}: must be a list if present`);
   if (p.length) return p;
-  if (!v.pieces.every((x) => isCell(x, b) && typeof x.piece === 'string' && x.piece.length <= 32)) {
+  if (!v.pieces.every((x) => isCell(x, b) && typeof x.piece === 'string' && x.piece.length <= GAME_LIMITS.nameChars)) {
     p.push('thumbnail.view.pieces: each needs a place on the board and a piece name');
   }
   if (!(v.marks ?? []).every((m) => isCell(m, b) && MARK_TYPES.includes(m.type)
@@ -418,8 +413,8 @@ export function validateThumbnail(t) {
     p.push('thumbnail.view.marks: each needs a place on the board and a known mark type');
   }
   if (!(v.tint ?? []).every((x) => isCell(x, b) && isColor(x.color) && (x.hover === undefined || isCell(x.hover, b)))) p.push('thumbnail.view.tint: each needs a place on the board and a color');
-  if (!(v.text ?? []).every((x) => isCell(x, b) && typeof x.text === 'string' && x.text.length <= 8)) {
-    p.push('thumbnail.view.text: each needs a place on the board and up to 8 characters');
+  if (!(v.text ?? []).every((x) => isCell(x, b) && typeof x.text === 'string' && x.text.length <= GAME_LIMITS.textChars)) {
+    p.push(`thumbnail.view.text: each needs a place on the board and up to ${GAME_LIMITS.textChars} characters`);
   }
   if (!(v.lines ?? []).every((l) => isLine(l, b))) {
     p.push(`thumbnail.view.lines: each needs from and to on the board, and width from ${LINE_WIDTH.min} to ${LINE_WIDTH.max}`);

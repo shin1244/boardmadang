@@ -305,3 +305,45 @@ test('플레이어 기물(playerPieces): 기물 세트에 있는 이름 두 개,
   }
   assert.match(checkMembers(variant({ pieces: 'chess', playerPieces: ['wK', 'bX'] })).join(), /playerPieces: must be/);
 });
+
+test('선언의 상한: id, 기물 이름, 특수 행동은 사이트의 실행기가 받는 만큼만 (실행기와 같은 규칙)', () => {
+  const ok = (over) => assert.deepEqual(checkMembers(variant(over)), [], JSON.stringify(over));
+  const bad = (over, start) => {
+    const p = checkMembers(variant(over));
+    assert.ok(p.length === 1 && p[0].startsWith(start), `${JSON.stringify(over)} → ${p.join(' / ')}`);
+  };
+  ok({ id: 'a'.repeat(40) });
+  bad({ id: 'a'.repeat(41) }, 'id:');
+  ok({ pieces: ['p'.repeat(32), { name: 'k', text: '王' }] });
+  bad({ pieces: ['p'.repeat(33)] }, 'pieces:');
+  bad({ pieces: [''] }, 'pieces:');
+  bad({ pieces: Array.from({ length: 33 }, (_, i) => `p${i}`) }, 'pieces:');
+  ok({ specialActions: ['a'.repeat(24), ...'bcdefgh'] });
+  bad({ specialActions: [...'abcdefghi'] }, 'specialActions:');
+  bad({ specialActions: ['a'.repeat(25)] }, 'specialActions:');
+  bad({ specialActions: [''] }, 'specialActions:');
+  bad({ specialActions: ['click'] }, 'specialActions:');
+});
+
+test('판 설정의 look, labels, flipForPlayer, starPoints: 틀린 값은 말없이 넘기지 않고 알려 줍니다', () => {
+  const board = (over) => checkMembers(variant({ board: { ...tictactoe.board, ...over } }));
+  assert.deepEqual(board({ look: 'wood', labels: true, flipForPlayer: 1, starPoints: true }), []);
+  assert.deepEqual(board({ places: 'points', starPoints: [{ row: 1, col: 1 }] }), []);
+  assert.deepEqual(board({ starPoints: false }), []);
+  assert.deepEqual(board({ look: 'woood' }), ["board.look: must be 'plain', 'checker', or 'wood'"]);
+  assert.deepEqual(board({ labels: 'yes' }), ['board.labels: must be true or false']);
+  assert.deepEqual(board({ flipForPlayer: 2 }), ['board.flipForPlayer: must be 0 or 1']);
+  for (const starPoints of [5, 'yes', [{ row: 3, col: 0 }], [null]]) {
+    assert.ok(board({ starPoints })[0]?.startsWith('board.starPoints:'), JSON.stringify(starPoints));
+  }
+  // 썸네일의 판도 같은 규칙으로 봅니다
+  const thumb = makeThumbnail(tictactoe, 0, tictactoe.view(tictactoe.setup(), 0, 'ko'));
+  assert.deepEqual(validateThumbnail({ ...thumb, board: { ...thumb.board, look: 'woood' } }), ["thumbnail.board.look: must be 'plain', 'checker', or 'wood'"]);
+});
+
+test('같은 경고는 한 번만 알립니다 (양쪽 플레이어, 시작 판과 끝난 판에서 같은 경고가 나와도)', () => {
+  const view = (s, p, l) => ({ ...tictactoe.view(s, p, l), buttons: [{ kind: 'nope' }] });
+  const r = checkGame(variant({ view }), opts);
+  assert.deepEqual(r.problems, []);
+  assert.deepEqual(r.warnings, ["view().buttons has 'nope', which isn't in specialActions, so it isn't shown."]);
+});

@@ -1,7 +1,10 @@
 // 렌더러(sdk/playground/board.js)에서 화면 없이 셀 수 있는 부분: 판 밖 영역의 배치, 클릭 옮기기(aliases), 버튼, 움직임, 효과, 내 차례 테두리
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BoardView, PLAYER_COLORS, attachInput, buttonsOf, fieldOf, knowsPiece, listsOf, paintPlayerDot } from '../playground/board.js';
+import {
+  BoardView, PLAYER_COLORS, PIECE_SETS, attachInput, buttonsOf, cleanPiece, cleanPieces, fieldOf, isColor, isSpecialKind, knowsPiece, listsOf,
+  paintPlayerDot, starsOf,
+} from '../playground/board.js';
 
 // 캔버스 없이 BoardView를 만듭니다. 그리기 함수는 아무것도 하지 않고 부른 것만 적어 둡니다
 globalThis.window ??= { devicePixelRatio: 1 };
@@ -416,5 +419,45 @@ test('플레이어 기물(paintPlayerDot): 아는 기물이면 그 기물 그림
     assert.equal(el.children.length, 0);
   } finally {
     globalThis.document = saved;
+  }
+});
+
+test('기물 목록(cleanPieces): 기본 묶음의 이름이거나, 이름(1~32자)과 글자 패의 목록 32가지까지. 알려진 칸만 남깁니다', () => {
+  for (const set of PIECE_SETS) assert.equal(cleanPieces(set), set);
+  assert.equal(cleanPieces('checkers'), null);
+  assert.deepEqual(cleanPieces(['a', { name: 'k', text: '王', player: 1, arrows: ['n', 'sw'], extra: 1 }]), ['a', { name: 'k', text: '王', player: 1, arrows: ['n', 'sw'] }]);
+  assert.equal(cleanPieces(Array.from({ length: 33 }, (_, i) => `p${i}`)), null);
+  assert.equal(cleanPiece('p'.repeat(32)), 'p'.repeat(32));
+  for (const bad of ['', 'p'.repeat(33), 5, null, [], { name: 'k' }, { name: '', text: 'a' }, { name: 'k', text: 'abc' }, { name: 'k', text: 'a', player: 2 },
+    { name: 'k', text: 'a', arrows: ['n', 'n'] }, { name: 'k', text: 'a', arrows: ['up'] }]) {
+    assert.equal(cleanPiece(bad), null, JSON.stringify(bad));
+  }
+  // 기본 묶음의 기물 이름
+  assert.ok(knowsPiece('chess', 'wK') && knowsPiece('go-stones', 'black') && knowsPiece('xo', 'o'));
+  assert.ok(!knowsPiece('chess', 'x') && !knowsPiece('toString', 'x') && !knowsPiece('xo', 5));
+});
+
+test('색과 특수 행동 이름: 게임이 쓸 수 있는 값', () => {
+  for (const c of [0, 1, 'green', 'yellow', 'gray', '#a0B1c2']) assert.ok(isColor(c), String(c));
+  for (const c of [2, 'red', '#abc', '#a0b1c2d', 'constructor', null, undefined, {}]) assert.ok(!isColor(c), String(c));
+  assert.ok(isSpecialKind('pass') && isSpecialKind('a'.repeat(24)));
+  for (const k of ['', 'click', 'a'.repeat(25), 5, null]) assert.ok(!isSpecialKind(k), String(k));
+});
+
+test('화점(starsOf): 판 안의 칸만 남기고, 버린 것이 있으면 알려 줍니다. 틀린 값이어도 그리다 멈추지 않습니다', () => {
+  const board = (starPoints) => ({ places: 'points', rows: 9, cols: 9, starPoints });
+  assert.deepEqual(starsOf(board(undefined)), { stars: [], problems: [] });
+  assert.deepEqual(starsOf(board(false)), { stars: [], problems: [] });
+  assert.deepEqual(starsOf(board(true)), { stars: true, problems: [] });
+  assert.deepEqual(starsOf(board([{ row: 2, col: 2, extra: 1 }])), { stars: [{ row: 2, col: 2 }], problems: [] });
+  const mixed = starsOf(board([{ row: 2, col: 2 }, { row: 9, col: 0 }, null]));
+  assert.deepEqual(mixed.stars, [{ row: 2, col: 2 }]);
+  assert.equal(mixed.problems.length, 1);
+  assert.deepEqual(starsOf(board(5)).stars, []);
+  assert.equal(starsOf(board(Array.from({ length: 65 }, () => ({ row: 0, col: 0 })))).stars.length, 64);
+  for (const starPoints of [true, [{ row: 2, col: 2 }, null], 5, 'yes']) {
+    const view = new BoardView(fakeCanvas(), board(starPoints), 'go-stones');
+    view.resize(400);
+    view.draw({ pieces: [] }); // 던지지 않아야 합니다
   }
 });
