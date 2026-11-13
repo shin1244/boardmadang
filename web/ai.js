@@ -5,6 +5,9 @@
 // AI 차례가 되면 실행기에 think를 부르고, 실행기가 신경망 계산을 부탁할 때마다(need) 관측을 ai-net.js에 넣어 결과를 answer로 돌려줍니다.
 // 탐색이 고른 행동(done)은 사람의 클릭처럼 play로 둡니다.
 //
+// 신경망은 처음에 받을 것이 커서(onnxruntime-web의 WebAssembly) 화면이 뜨자마자 받기 시작하고, 다 받기를 기다리지 않고
+// 판을 고르게 합니다. 사람이 먼저 두는 동안 받아지고, AI 차례가 됐는데 아직이면 그때만 기다립니다 (netReady).
+//
 // 모델은 운영자가 학습해 올린 것입니다 (/api/games의 ai, server/internal/ai). 관측과 행동의 모양이 지금 게임 코드와 같아야 씁니다.
 // 난이도는 한 수마다의 탐색 횟수만 다릅니다 (LEVELS). 보통이 모델에 적힌 sims이고, 시험할 때는 주소에 ?sims=을 붙여 바꿀 수 있습니다.
 
@@ -39,6 +42,7 @@ let me = null;
 let entry = null; // /api/games의 항목. entry.ai가 모델
 let runner = null; // 게임 실행기
 let net = null; // 신경망 Worker
+let netUp = false; // 신경망이 준비됐는지 (netReady가 풀렸는지)
 let board = null;
 let phase = 'loading'; // loading | choose | playing | ended | error
 let problem = '';
@@ -49,6 +53,7 @@ let moves = 0; // 둔 수: 차례가 넘어간 행동 수 (maxActions 무승부)
 let ended = null; // { winner, why: 'result' | 'maxActions' | 'noTurn' | 'resign' | 'aiStuck' }
 let hover = null;
 let round = 0; // 새 판마다 늘립니다. 앞 판의 AI가 늦게 돌아오면 버립니다
+let leaving = []; // 판이 바뀌면 부를 함수들 (신경망을 기다리던 think를 깨웁니다)
 let queue = Promise.resolve(); // 실행기 호출은 하나씩
 let level = savedLevel(); // easy | normal | hard. 판을 고르는 화면에서만 바꿀 수 있어 한 판 동안은 그대로입니다
 let told = { round: -1, end: false }; // 운영 통계에 play를 알린 판(round)과, 그 판의 끝도 알렸는지
@@ -70,7 +75,16 @@ function savedLevel() {
   }
 }
 
+/** 다음 판으로 넘깁니다. 앞 판에서 기다리던 것들은 그만둡니다 */
+function nextRound() {
+  round++;
+  for (const left of leaving.splice(0)) left();
+  return round;
+}
+
 function fail(text) {
+  net?.terminate(); // 받는 중이던 신경망도 그만둡니다
+  net = null;
   phase = 'error';
   problem = text;
   render();
@@ -81,32 +95,38 @@ function fail(text) {
 let nextRun = 0;
 const runs = new Map(); // id → { resolve, reject, timer }
 
-function startNet() {
-  return new Promise((resolve, reject) => {
-    net = new Worker('/web/ai-net.js', { type: 'module' });
-    const timer = setTimeout(() => reject(new Error('timeout')), NET_MS);
-    net.addEventListener('message', (e) => {
-      const m = e.data;
-      if (m?.type === 'ready') {
-        clearTimeout(timer);
-        resolve();
-      } else if (m?.type === 'error') {
-        clearTimeout(timer);
-        reject(new Error(m.error));
-      } else if (runs.has(m?.id)) {
-        const r = runs.get(m.id);
-        runs.delete(m.id);
-        clearTimeout(r.timer);
-        if (m.error) r.reject(new Error(m.error));
-        else r.resolve(m);
-      }
-    });
-    net.addEventListener('error', (e) => {
-      clearTimeout(timer);
-      reject(new Error(e.message || 'AI worker error'));
-    });
-    net.postMessage({ type: 'load', model: entry.ai.model, shape: [runner.shape.channels, runner.shape.rows, runner.shape.cols] });
+let settleNet = null;
+/** 신경망이 준비되면 풀립니다. 못 불러오면 그 이유로 거절됩니다 */
+const netReady = new Promise((resolve, reject) => {
+  settleNet = { resolve, reject };
+});
+netReady.catch(() => {}); // 실패는 main이 화면에 알립니다 (그전에 실패해도 처리 안 된 거절로 남지 않게)
+
+/** 신경망 Worker를 띄웁니다. 뜨자마자 런타임을 받기 시작합니다 (ai-net.js의 warming) */
+function openNet() {
+  net = new Worker('/web/ai-net.js', { type: 'module' });
+  net.addEventListener('message', (e) => {
+    const m = e.data;
+    if (m?.type === 'ready') {
+      settleNet.resolve();
+    } else if (m?.type === 'error') {
+      settleNet.reject(new Error(m.error));
+    } else if (runs.has(m?.id)) {
+      const r = runs.get(m.id);
+      runs.delete(m.id);
+      clearTimeout(r.timer);
+      if (m.error) r.reject(new Error(m.error));
+      else r.resolve(m);
+    }
   });
+  net.addEventListener('error', (e) => settleNet.reject(new Error(e.message || 'AI worker error')));
+}
+
+/** 이 게임의 모델을 불러오라고 시킵니다. 모양은 모델에 적힌 것이고, 지금 게임 코드와 같은지는 main이 따로 봅니다 (modelFits) */
+function loadNet() {
+  const timer = setTimeout(() => settleNet.reject(new Error('timeout')), NET_MS);
+  netReady.then(() => clearTimeout(timer), () => clearTimeout(timer));
+  net.postMessage({ type: 'load', model: entry.ai.model, shape: [entry.ai.channelNames.length, entry.ai.rows, entry.ai.cols] });
 }
 
 function infer(planes) {
@@ -121,8 +141,11 @@ function infer(planes) {
   });
 }
 
-/** AI가 둘 행동. 둘 수 있는 수가 없으면 null */
-async function think() {
+/** 판 my에서 AI가 둘 행동. 둘 수 있는 수가 없으면 null. 신경망을 아직 받는 중이면 기다립니다 */
+async function think(my) {
+  // 기다리는 사이에 판이 바뀌면(기권, 새 판) 그만 기다립니다. 안 그러면 다음 판이 이 판 뒤에 줄을 서서 뜨지 않습니다
+  if (!netUp) await Promise.race([netReady, new Promise((left) => leaving.push(left))]);
+  if (my !== round) return null;
   let r = await runner.think(sims());
   while (r.need) {
     const { logits, value } = await infer(r.need.planes);
@@ -135,7 +158,7 @@ async function think() {
 
 /** 새 판. 시드는 판마다 새로 뽑습니다 */
 async function newGame(side) {
-  const my = ++round;
+  const my = nextRound();
   seat = side;
   ended = null;
   moves = 0;
@@ -209,7 +232,7 @@ async function aiTurns(my) {
   while (my === round && phase === 'playing' && turn === aiSeat()) {
     render();
     const started = performance.now();
-    const action = await think();
+    const action = await think(my);
     if (my !== round) return;
     const wait = MIN_THINK_MS - (performance.now() - started);
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
@@ -260,7 +283,7 @@ function statusLine() {
   if (phase === 'error') return [problem, ''];
   if (phase === 'loading') return [problem || t('match.loading'), ''];
   if (phase === 'choose') return [t('ai.choose'), ''];
-  if (phase === 'playing') return [turn === seat ? t('ai.yourTurn') : t('ai.thinking'), ''];
+  if (phase === 'playing') return [turn === seat ? t('ai.yourTurn') : t(netUp ? 'ai.thinking' : 'ai.loading'), ''];
   const { winner } = ended;
   if (winner === null) return [t('match.draw'), 'even'];
   return winner === seat ? [t('match.win'), 'win'] : [t('match.lose'), 'lose'];
@@ -404,14 +427,14 @@ function setupButtons() {
   $('#resign').addEventListener('click', () => {
     if (phase !== 'playing' || !confirm(t('match.resign.confirm'))) return;
     const my = round;
-    round++; // 생각 중이던 AI는 버립니다
+    nextRound(); // 생각 중이던 AI는 버립니다
     ended = { winner: aiSeat(), why: 'resign' };
     phase = 'ended';
     reportEnd(my);
     render();
   });
   $('#again').addEventListener('click', () => {
-    round++;
+    nextRound();
     phase = 'choose';
     render();
   });
@@ -427,34 +450,41 @@ async function main() {
       render();
     });
   });
+  if (gameId) openNet(); // 게임 정보를 기다리지 않고 런타임부터 받습니다
   setLang(await detectLang());
   setupButtons();
   render();
 
+  const games = fetch('/api/games').then((res) => res.json()).catch(() => null);
   me = await loadMe();
-  try {
-    entry = (await (await fetch('/api/games')).json()).find((g) => g.id === gameId) ?? null;
-  } catch {
-    entry = null;
-  }
+  entry = (await games)?.find?.((g) => g.id === gameId) ?? null;
   if (!entry) return fail(t('match.noGame', { id: gameId }));
   if (!entry.ai) return fail(t('ai.none'));
+  loadNet(); // 모델 파일도 게임 코드와 같이 받습니다
+  netReady.then(
+    () => {
+      netUp = true;
+      if (phase !== 'error') render();
+    },
+    (err) => {
+      if (phase !== 'error') fail(t('ai.failed', { msg: err.message }));
+    },
+  );
   render();
   try {
     runner = await loadGame(entry);
   } catch (err) {
     return fail(t('match.loadFailed', { msg: err.message }));
   }
+  if (phase === 'error') return; // 그사이 신경망을 못 불러왔습니다
   try {
     // 관측은 학습할 때의 언어로 만듭니다 (view()가 언어마다 다를 수 있음)
     if (!modelFits(entry.ai, await runner.ai(entry.ai.lang))) return fail(t('ai.mismatch'));
-    problem = t('ai.loading');
-    render();
-    await startNet();
   } catch (err) {
     return fail(t('ai.failed', { msg: err.message }));
   }
-  problem = '';
+  if (phase === 'error') return;
+  // 신경망을 다 받기 전에도 판을 고르고 먼저 둘 수 있습니다
   setupBoard();
   phase = 'choose';
   render();
