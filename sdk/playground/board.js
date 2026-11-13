@@ -39,6 +39,119 @@ const PIECE_INK = {
   b: { fill: '#2b303b', stroke: '#0f1218' },
 };
 
+// ---- 게임이 쓸 수 있는 값 ----
+// 판 설정, 기물, 화면(view)에 쓸 수 있는 목록과 범위는 이 파일에만 적습니다.
+// 렌더러(이 파일), 검사 도구(sdk/check.js), 사이트의 실행기(web/engine.js)가 여기 것을 가져다 쓰고, 같은 목록을 다시 적지 않습니다.
+// Go 서버의 썸네일 검사(server/internal/upload/thumbnail.go)와 AI 학습의 관측(trainer/env.js)에는 같은 값이 따로 있으니,
+// 여기를 고치면 그쪽도 고칩니다.
+
+/** 게임이 정할 수 있는 크기와 길이의 상한 */
+export const SHAPE_LIMITS = {
+  idChars: 40, // 게임 id
+  boardSize: 32, // rows, cols
+  starPoints: 64, // 직접 정한 화점의 개수
+  pieceKinds: 32, // 직접 정의한 기물의 가짓수
+  nameChars: 32, // 기물 이름
+  textChars: 8, // 칸 위의 글자 (view().text)
+  specialActions: 8, // 특수 행동의 가짓수
+  kindChars: 24, // 특수 행동 이름
+  maxActions: 2000,
+};
+
+/** 게임 id: 영문 소문자, 숫자, - (사이트 주소에 쓰입니다) */
+export const GAME_ID = new RegExp(`^[a-z0-9-]{1,${SHAPE_LIMITS.idChars}}$`);
+/** 기물을 놓는 자리 (board.places) */
+export const PLACES = ['cells', 'points', 'both'];
+/** 판 모양 (board.look) */
+export const LOOK_NAMES = Object.keys(LOOKS);
+/** 칸 위 표시의 종류 (view().marks의 type) */
+export const MARK_TYPES = ['dot', 'ring', 'last-move', 'danger', 'ghost', 'blocked', 'frame'];
+/** frame 테두리와 선(lines)의 두께. 칸 한 변에 대한 %입니다 */
+export const FRAME_WIDTH = { min: 1, max: 30 };
+export const LINE_WIDTH = { min: 1, max: 50, default: 20 };
+
+export const isInt = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+/** 1 ~ max자의 글자 */
+const isName = (s, max) => typeof s === 'string' && s.length >= 1 && s.length <= max;
+/** 판(또는 목록) 안의 칸 { row, col }인지. area는 rows, cols가 있는 것 */
+export const isCell = (c, area) => !!c && typeof c === 'object' && isInt(c.row, 0, area.rows - 1) && isInt(c.col, 0, area.cols - 1);
+/** 같은 칸인지. 한쪽이 없으면 아닙니다 */
+const sameCell = (a, b) => !!a && !!b && a.row === b.row && a.col === b.col;
+/** 두께로 쓸 수 있는 숫자인지 (range는 FRAME_WIDTH나 LINE_WIDTH) */
+export const validWidth = (w, range) => Number.isFinite(w) && w >= range.min && w <= range.max;
+/** 게임이 color에 쓸 수 있는 값인지: 0 / 1(플레이어 색), 이름 붙은 색(NAMED_COLORS), '#rrggbb' */
+export const isColor = (c) => c === 0 || c === 1 || (typeof c === 'string' && (Object.hasOwn(NAMED_COLORS, c) || /^#[0-9a-fA-F]{6}$/.test(c)));
+/** 특수 행동 이름으로 쓸 수 있는지: 1~24자이고, 'click'은 칸 클릭이라 안 됩니다 */
+export const isSpecialKind = (k) => isName(k, SHAPE_LIMITS.kindChars) && k !== 'click';
+
+/** 그릴 줄 아는 기본 기물 묶음과, 묶음마다 있는 기물 이름 */
+const BUILT_IN_PIECES = {
+  chess: (name) => /^[wb][KQRBNP]$/.test(name),
+  'go-stones': (name) => name === 'black' || name === 'white',
+  xo: (name) => name === 'x' || name === 'o',
+};
+/** 기본 기물 묶음의 이름 (pieces) */
+export const PIECE_SETS = Object.keys(BUILT_IN_PIECES);
+
+/**
+ * 글자 패의 방향 표시. n은 패 주인이 볼 때 앞(상대 쪽)이고 시계 방향으로 돕니다.
+ */
+export const TILE_ARROWS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
+
+/** 기물 목록의 한 항목 → 이름. 이름 문자열이거나 글자 패 { name, text, player, arrows } 입니다 */
+export const pieceName = (p) => (typeof p === 'string' ? p : p?.name);
+
+/** 이 기물 묶음(pieces)에 그 이름의 기물이 있는지. 기본 묶음은 그릴 줄 아는 이름, 직접 정의한 묶음은 목록의 이름 */
+export function knowsPiece(pieceSet, name) {
+  if (typeof name !== 'string') return false;
+  if (typeof pieceSet === 'string') return Object.hasOwn(BUILT_IN_PIECES, pieceSet) && BUILT_IN_PIECES[pieceSet](name);
+  return Array.isArray(pieceSet) && pieceSet.some((p) => pieceName(p) === name);
+}
+
+/**
+ * 기물 목록의 한 항목: 이름(1~32자), 또는 글자 패 { name, text(1~2자), player?, arrows? }.
+ * 알려진 칸만 남긴 것을 돌려주고, 맞지 않으면 null입니다.
+ */
+export function cleanPiece(p) {
+  if (isName(p, SHAPE_LIMITS.nameChars)) return p;
+  if (!p || typeof p !== 'object' || Array.isArray(p) || !isName(p.name, SHAPE_LIMITS.nameChars) || typeof p.text !== 'string') return null;
+  const chars = [...p.text].length;
+  if (chars < 1 || chars > 2) return null;
+  const out = { name: p.name, text: p.text };
+  if (p.player !== undefined) {
+    if (p.player !== 0 && p.player !== 1) return null;
+    out.player = p.player;
+  }
+  if (p.arrows !== undefined) {
+    if (!Array.isArray(p.arrows) || !p.arrows.every((a) => TILE_ARROWS.includes(a)) || new Set(p.arrows).size !== p.arrows.length) return null;
+    out.arrows = [...p.arrows];
+  }
+  return out;
+}
+
+/** 게임의 pieces: 기본 묶음의 이름, 또는 기물 목록(32가지까지). 알려진 칸만 남긴 것을 돌려주고, 맞지 않으면 null입니다 */
+export function cleanPieces(pieces) {
+  if (typeof pieces === 'string') return PIECE_SETS.includes(pieces) ? pieces : null;
+  if (!Array.isArray(pieces) || pieces.length > SHAPE_LIMITS.pieceKinds) return null;
+  const list = pieces.map(cleanPiece);
+  return list.includes(null) ? null : list;
+}
+
+/**
+ * 화점(board.starPoints): true면 판 크기에 맞는 기본 자리(그릴 때 정함), 목록이면 그 칸들입니다.
+ * 판 밖의 칸과 64개를 넘는 것은 버리고, 버린 것이 있거나 모양이 틀리면 problems에 글(영어, check.js가 그대로 보여 줌)을 넣습니다.
+ * board의 rows, cols는 이미 검사한 값이어야 합니다.
+ * @returns {{ stars: true | { row: number, col: number }[], problems: string[] }} 화점이 없으면 stars는 []
+ */
+export function starsOf(board) {
+  const s = board.starPoints;
+  if (s === undefined || s === false) return { stars: [], problems: [] };
+  if (s === true) return { stars: true, problems: [] };
+  const stars = Array.isArray(s) ? s.slice(0, SHAPE_LIMITS.starPoints).filter((c) => isCell(c, board)).map(({ row, col }) => ({ row, col })) : [];
+  const ok = Array.isArray(s) && stars.length === s.length;
+  return { stars, problems: ok ? [] : [`starPoints: must be true, false, or a list of up to ${SHAPE_LIMITS.starPoints} places { row, col } on the board`] };
+}
+
 /**
  * 체스 기물 (100×100 칸 안의 그림). 글꼴의 체스 문자는 기기마다 모양이 달라서 직접 그립니다.
  * 체스를 두는 사람에게 익숙한 전통(스턴턴) 모양을 기하 도형으로 새로 그린 것입니다:
@@ -60,32 +173,13 @@ const chessPath = (k) => (chessPaths ??= Object.fromEntries(Object.entries(CHESS
 /** 직접 정의한 기물: 목록 순서대로 이 색의 원에 이름 앞 두 글자 */
 const CUSTOM_COLORS = ['#e0524f', '#4a7fdc', '#3a9a6b', '#d0942f', '#8f5bc4', '#0c969b', '#cc5f8c', '#6b7f93'];
 
-/**
- * 글자 패의 방향 표시. n은 패 주인이 볼 때 앞(상대 쪽)이고 시계 방향으로 돕니다.
- * sdk/check.js, web/engine.js, 서버의 thumbnail.go와 같은 목록입니다.
- */
-export const TILE_ARROWS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
+/** 글자 패의 방향(TILE_ARROWS)마다 화면에서 가리키는 쪽 */
 const ARROW_VEC = { n: [0, -1], ne: [1, -1], e: [1, 0], se: [1, 1], s: [0, 1], sw: [-1, 1], w: [-1, 0], nw: [-1, -1] };
 const TILE_FACE = '#fbf7ee';
 const TILE_FONT = '"Noto Serif KR", "Noto Serif CJK KR", Batang, "Songti SC", SimSun, serif';
 
-/** 기물 목록의 한 항목 → 이름. 이름 문자열이거나 글자 패 { name, text, player, arrows } 입니다 */
-export const pieceName = (p) => (typeof p === 'string' ? p : p?.name);
-
-/** 이 기물 묶음(pieces)에 그 이름의 기물이 있는지. 기본 묶음은 그릴 줄 아는 이름, 직접 정의한 묶음은 목록의 이름 */
-export function knowsPiece(pieceSet, name) {
-  if (typeof name !== 'string') return false;
-  if (pieceSet === 'xo') return name === 'x' || name === 'o';
-  if (pieceSet === 'go-stones') return name === 'black' || name === 'white';
-  if (pieceSet === 'chess') return /^[wb][KQRBNP]$/.test(name);
-  return Array.isArray(pieceSet) && pieceSet.some((p) => pieceName(p) === name);
-}
 const COL_LABELS = 'abcdefghijklmnopqrstuvwxyzABCDEF';
 
-/** frame 테두리와 선(lines)의 두께. 칸 한 변에 대한 %입니다 (sdk/check.js, web/engine.js와 같은 범위) */
-export const FRAME_WIDTH = { min: 1, max: 30 };
-export const LINE_WIDTH = { min: 1, max: 50, default: 20 };
-const validWidth = (w, range) => Number.isFinite(w) && w >= range.min && w <= range.max;
 /** 0 / 1이면 플레이어 색, 이름(green 등)이면 판 팔레트의 색, '#rrggbb'면 그 색 */
 const colorOf = (c, fallback) => (typeof c === 'number' ? PLAYER_COLORS[c] : NAMED_COLORS[c] ?? c ?? fallback);
 
@@ -111,7 +205,7 @@ function defaultStars(rows, cols) {
 // 판의 위 · 아래 · 왼쪽 · 오른쪽에 따로 떨어진 패널로 그립니다 (기물 고르기 패널, 손에 든 기물 같은 것).
 // 좌표는 그대로라서 클릭, legal(), AI의 행동과 관측, 서버는 영역이 없는 게임과 똑같습니다. 그리기만 다릅니다.
 
-/** 판 밖 영역이 붙을 수 있는 쪽 (sdk/check.js, web/engine.js, 서버의 thumbnail.go와 같은 목록) */
+/** 판 밖 영역이 붙을 수 있는 쪽 (서버의 thumbnail.go와 같은 목록) */
 export const AREA_SIDES = ['top', 'bottom', 'left', 'right'];
 /** 판 밖 영역의 최대 개수 (서버의 thumbnail.go와 같은 값) */
 export const MAX_AREAS = 8;
@@ -133,11 +227,9 @@ export function fieldOf(board) {
   const fail = (msg) => ({ field: whole, areas: [], problems: [msg] });
   const list = board.areas;
   if (!Array.isArray(list) || list.length > MAX_AREAS) return fail(`areas: must be a list of up to ${MAX_AREAS} areas`);
-  const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
   const areas = [];
   for (const [i, a] of list.entries()) {
-    if (!a || typeof a !== 'object' || !AREA_SIDES.includes(a.side)
-      || !int(a.row, 0, rows - 1) || !int(a.col, 0, cols - 1) || !int(a.rows, 1, rows - a.row) || !int(a.cols, 1, cols - a.col)) {
+    if (!isCell(a, board) || !AREA_SIDES.includes(a.side) || !isInt(a.rows, 1, rows - a.row) || !isInt(a.cols, 1, cols - a.col)) {
       return fail(`areas[${i}]: needs side ('top', 'bottom', 'left', 'right') and row, col, rows, cols that stay inside the board`);
     }
     areas.push({ side: a.side, row: a.row, col: a.col, rows: a.rows, cols: a.cols });
@@ -186,12 +278,11 @@ export function listsOf(board) {
   if (board.lists === undefined) return { lists: [], problems: [] };
   const fail = (msg) => ({ lists: [], problems: [msg] });
   if (!Array.isArray(board.lists) || board.lists.length > MAX_LISTS) return fail(`lists: must be a list of up to ${MAX_LISTS} lists`);
-  const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
   const lists = [];
   for (const [i, l] of board.lists.entries()) {
     const scale = l?.scale ?? 1;
-    if (!l || typeof l !== 'object' || !l.at || !int(l.at.row, 0, board.rows - 1) || !int(l.at.col, 0, board.cols - 1)
-      || !int(l.rows, 1, LIST_SIZE) || !int(l.cols, 1, LIST_SIZE) || !(typeof scale === 'number' && scale >= MIN_LIST_SCALE && scale <= 1)) {
+    if (!l || typeof l !== 'object' || !isCell(l.at, board)
+      || !isInt(l.rows, 1, LIST_SIZE) || !isInt(l.cols, 1, LIST_SIZE) || !(typeof scale === 'number' && scale >= MIN_LIST_SCALE && scale <= 1)) {
       return fail(`lists[${i}]: needs at (a square { row, col } of the board), rows and cols from 1 to ${LIST_SIZE}, and scale from ${MIN_LIST_SCALE} to 1`);
     }
     lists.push({ at: { row: l.at.row, col: l.at.col }, rows: l.rows, cols: l.cols, scale });
@@ -224,7 +315,7 @@ function axisLayout(n, f0, f1, { sd, m, gap, pad, points, labBefore, labAfter })
 /** 움직임 하나를 알아보는 이름: 칸, from, 기물이 모두 같으면 같은 움직임입니다 (목록의 칸은 목록 번호도) */
 const motionKey = (p) => `${p.list ?? ''}:${p.row},${p.col},${p.from.list ?? ''}:${p.from.row},${p.from.col},${p.piece}`;
 /** 같은 칸인지 (목록의 칸은 같은 목록이어야) */
-const sameSpot = (a, b) => (a.list ?? -1) === (b.list ?? -1) && a.row === b.row && a.col === b.col;
+const sameSpot = (a, b) => (a.list ?? -1) === (b.list ?? -1) && sameCell(a, b);
 
 /** 한 기물의 움직임 시간(ms)과 빠르기 곡선. dx, dy는 화면에서 움직이는 칸 수입니다 */
 function motionOf(dx, dy) {
@@ -320,6 +411,8 @@ export class BoardView {
     }
     // 판 옆 목록. 설정이 틀렸으면 목록 없이 그립니다
     this.lists = listsOf(board).lists;
+    // 화점. 판 밖의 칸은 빼고 그립니다
+    this.stars = starsOf(board).stars;
     this.placed = [null, null]; // 칸 자리 (resize에서 다시 구함)
     this.motions = []; // 움직이는 중인 것들 [{ t0, until, keys: 움직이는 기물들 }]
     this.seen = new Set(); // 마지막으로 그린 화면의 움직임들 (같은 움직임을 두 번 보여 주지 않게)
@@ -335,10 +428,10 @@ export class BoardView {
 
   /** 기물을 그릴 수 있는 자리인지: 판에서 그리는 칸이거나, 있는 목록({ list, row, col })의 칸 */
   hasSpot(c) {
-    if (!c || !Number.isInteger(c.row) || !Number.isInteger(c.col) || c.row < 0 || c.col < 0) return false;
-    if (c.list === undefined) return c.row < this.board.rows && c.col < this.board.cols && this.isShown(c.row, c.col);
+    if (!c) return false;
+    if (c.list === undefined) return isCell(c, this.board) && this.isShown(c.row, c.col);
     const l = Number.isInteger(c.list) ? this.lists[c.list] : undefined;
-    return !!l && c.row < l.rows && c.col < l.cols;
+    return !!l && isCell(c, l);
   }
 
   /** (x, y)를 가운데로 k배로 그립니다 (목록의 작은 칸에 그리는 기물) */
@@ -546,7 +639,7 @@ export class BoardView {
     this.opts = { flip, hover, animate, myTurn }; // 움직이는 동안 다음 장면을 같은 설정으로 그립니다
     const { ctx, S, board } = this;
     const { cols } = board;
-    const look = LOOKS[board.look] ?? LOOKS.plain;
+    const look = LOOKS[LOOK_NAMES.includes(board.look) ? board.look : 'plain'];
     const at = (r, c) => this.center(r, c, flip);
     const shown = (c) => this.isShown(c.row, c.col);
     const now = performance.now();
@@ -577,7 +670,7 @@ export class BoardView {
 
     // 칸 칠하기와 바닥 표시 (말 아래).
     // hover가 있는 칠하기는 마우스가 그 칸에 있을 때만, 그 칸의 원래 칠하기 대신 연하게 그립니다 ("두면 이 칸이 이 색이 됨")
-    const onHover = (c) => hover !== null && hover.row === c.row && hover.col === c.col;
+    const onHover = (c) => sameCell(hover, c);
     const previewed = new Set((view.tint ?? []).filter((t) => t.hover && onHover(t.hover)).map((t) => t.row * cols + t.col));
     for (const t of view.tint ?? []) {
       if (!shown(t)) continue;
@@ -651,7 +744,7 @@ export class BoardView {
     ctx.lineCap = 'round';
     for (const l of view.lines ?? []) {
       if (!shown(l.from) || !shown(l.to)) continue;
-      if (l.hover && !(hover && hover.row === l.hover.row && hover.col === l.hover.col)) continue;
+      if (l.hover && !onHover(l.hover)) continue;
       const [x1, y1] = at(l.from.row, l.from.col);
       const [x2, y2] = at(l.to.row, l.to.col);
       ctx.strokeStyle = colorOf(l.color, MARK.ink);
@@ -667,6 +760,7 @@ export class BoardView {
     // 글자 패는 칸의 84%를 채우고 가장자리 안쪽에 방향 삼각형, 가운데에 글자가 있습니다. 그래서 패 위에 겹쳐 그리면 가리므로,
     // 글자 패 게임의 마지막 수와 패 칸의 고른 기물·갈 수 있는 곳 표시는 패와 칸 경계 사이의 여백(칸 한 변의 45~50%)에 그립니다
     const outer = Math.max(2, S * 0.05); // 여백에 그리는 선의 굵기
+    const outerHalf = S / 2 - outer / 2 - 1; // 그 선이 지나는 곳 (칸 가운데에서)
     const tiled = new Set((view.pieces ?? []).filter((p) => this.custom.get(p.piece)?.tile).map((p) => p.row * cols + p.col));
     for (const m of marksOf('last-move')) {
       const [x, y] = at(m.row, m.col);
@@ -675,10 +769,9 @@ export class BoardView {
         const d = S * 0.16;
         ctx.fillRect(x - d / 2, y - d / 2, d, d);
       } else if (this.tiled) {
-        const half = S / 2 - outer / 2 - 1;
         ctx.strokeStyle = MARK.last;
         ctx.lineWidth = outer;
-        ctx.strokeRect(x - half, y - half, half * 2, half * 2);
+        ctx.strokeRect(x - outerHalf, y - outerHalf, outerHalf * 2, outerHalf * 2);
       } else {
         const inset = frameW + 3;
         ctx.strokeStyle = MARK.last;
@@ -690,9 +783,8 @@ export class BoardView {
       const [x, y] = at(m.row, m.col);
       ctx.strokeStyle = MARK.ring;
       if (!this.points && tiled.has(m.row * cols + m.col)) {
-        const half = S / 2 - outer / 2 - 1;
         ctx.lineWidth = outer;
-        this.roundSquare(x, y, half, S * 0.12);
+        this.roundSquare(x, y, outerHalf, S * 0.12);
         ctx.stroke();
         continue;
       }
@@ -767,11 +859,9 @@ export class BoardView {
    * 새 효과는 같은 화면의 움직임과 함께 바로 시작합니다.
    */
   updateEffects(view, animate, now) {
-    const { rows, cols } = this.board;
     const fresh = new Map();
     for (const e of Array.isArray(view.effects) ? view.effects : []) {
-      if (!e || typeof e.piece !== 'string' || !EFFECT_TYPES.includes(e.type ?? 'shatter')) continue;
-      if (!Number.isInteger(e.row) || !Number.isInteger(e.col) || e.row < 0 || e.row >= rows || e.col < 0 || e.col >= cols) continue;
+      if (!isCell(e, this.board) || typeof e.piece !== 'string' || !EFFECT_TYPES.includes(e.type ?? 'shatter')) continue;
       if (!this.isShown(e.row, e.col)) continue;
       fresh.set(effectKey(e), e);
     }
@@ -803,8 +893,7 @@ export class BoardView {
       this.drawPiece(e.piece, 0, 0, 1 - t);
       ctx.globalAlpha = 0.85 * glow * (1 - t);
       ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(0, 0, S * 0.46, 0, Math.PI * 2);
+      this.circle(0, 0, S * 0.46);
       ctx.fill();
       ctx.restore();
       return;
@@ -977,7 +1066,7 @@ export class BoardView {
 
   /** 판의 줄 (칸 모드는 칸 경계, 교차점 모드는 놓는 줄과 화점). 줄은 화면 픽셀에 맞춰 모두 같은 굵기로. 판 밖 영역에는 줄이 없습니다 */
   drawGrid(look, flip) {
-    const { ctx, S, board } = this;
+    const { ctx, S } = this;
     const f = this.field;
     const rows = f.bottom - f.top;
     const cols = f.right - f.left;
@@ -1014,11 +1103,11 @@ export class BoardView {
     }
     ctx.stroke();
 
-    if (this.points && board.starPoints) {
+    if (this.points) {
       // 기본 화점은 판(영역을 뺀 가운데) 크기로 정합니다
-      const stars = board.starPoints === true
+      const stars = this.stars === true
         ? defaultStars(rows, cols).map((p) => ({ row: p.row + f.top, col: p.col + f.left }))
-        : board.starPoints;
+        : this.stars;
       ctx.fillStyle = look.line;
       for (const p of stars) {
         const [x, y] = this.center(p.row, p.col, flip);
@@ -1051,11 +1140,12 @@ export class BoardView {
 
   drawPiece(piece, x, y, alpha) {
     const { ctx, S } = this;
-    const set = this.pieceSet;
+    // 기본 묶음에 있는 기물이면 그 묶음의 그림으로
+    const set = typeof this.pieceSet === 'string' && knowsPiece(this.pieceSet, piece) ? this.pieceSet : null;
     ctx.save();
     ctx.globalAlpha = alpha;
 
-    if (set === 'xo' && (piece === 'x' || piece === 'o')) {
+    if (set === 'xo') {
       ctx.lineWidth = S * 0.1;
       ctx.lineCap = 'round';
       if (piece === 'x') {
@@ -1072,7 +1162,7 @@ export class BoardView {
         this.circle(x, y, S * 0.3);
         ctx.stroke();
       }
-    } else if (set === 'go-stones' && (piece === 'black' || piece === 'white')) {
+    } else if (set === 'go-stones') {
       // 돌: 체스 기물과 같은 흰 · 검은 면과 테두리
       const ink = PIECE_INK[piece === 'black' ? 'b' : 'w'];
       this.circle(x, y, S * 0.44);
@@ -1081,7 +1171,7 @@ export class BoardView {
       ctx.strokeStyle = ink.stroke;
       ctx.lineWidth = Math.max(1, S * 0.035);
       ctx.stroke();
-    } else if (set === 'chess' && /^[wb][KQRBNP]$/.test(piece)) {
+    } else if (set === 'chess') {
       // 그림(100×100, 기물은 세로 4~90)을 칸의 88% 크기로 칸 가운데에
       const k = (S * 0.88) / 100;
       const ink = PIECE_INK[piece[0]];
@@ -1127,15 +1217,7 @@ export class BoardView {
     ctx.translate(x, y);
     if (owned && tile.player !== bottom) ctx.rotate(Math.PI);
 
-    const h = S * 0.42; // 패 한 변의 반
-    const r = S * 0.09;
-    ctx.beginPath();
-    ctx.moveTo(-h + r, -h);
-    ctx.arcTo(h, -h, h, h, r);
-    ctx.arcTo(h, h, -h, h, r);
-    ctx.arcTo(-h, h, -h, -h, r);
-    ctx.arcTo(-h, -h, h, -h, r);
-    ctx.closePath();
+    this.roundSquare(0, 0, S * 0.42, S * 0.09); // 패 한 변의 반, 모서리
     ctx.fillStyle = TILE_FACE;
     ctx.fill();
     ctx.lineWidth = Math.max(1.5, S * 0.045);
@@ -1239,8 +1321,6 @@ export function innerSize(el) {
     h: el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom),
   };
 }
-
-const sameCell = (a, b) => !!a && !!b && a.row === b.row && a.col === b.col;
 
 /**
  * 판의 마우스와 터치 입력. 대국, AI 대국, 등록 화면, 플레이그라운드가 같이 씁니다.

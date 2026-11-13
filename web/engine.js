@@ -23,21 +23,17 @@
 //   g.close();
 // look = { players: [0, 1], lang, legalFor: 0 | 1 | null }
 
-import { EFFECT_TYPES, fieldOf, knowsPiece, listsOf } from '/sdk/playground/board.js';
+// 판, 기물, 화면에 쓸 수 있는 목록과 범위는 렌더러(sdk/playground/board.js)의 것을 그대로 씁니다. 여기에 다시 적지 않습니다.
+import {
+  EFFECT_TYPES, FRAME_WIDTH, LINE_WIDTH, LOOK_NAMES, MARK_TYPES, PLACES, SHAPE_LIMITS,
+  cleanPieces, fieldOf, isCell, isColor, isInt, isSpecialKind, knowsPiece, listsOf, starsOf, validWidth,
+} from '/sdk/playground/board.js';
 
 const FRAME = '/web/runner/frame.html';
 const LOAD_MS = 10_000;
 const CALL_MS = 3_000; // 한 번 부를 때. play는 행동 수에 따라 늘립니다
 const PER_MOVE_MS = 20;
 const CHECK_MS = 60_000; // 자동 검사는 랜덤 대국을 여러 판 둡니다
-
-const PLACES = ['cells', 'points', 'both'];
-const LOOKS = ['plain', 'checker', 'wood'];
-const PIECE_SETS = ['chess', 'go-stones', 'xo'];
-const MARK_TYPES = ['dot', 'ring', 'last-move', 'danger', 'ghost', 'blocked', 'frame'];
-// 테두리(frame)와 선(lines)의 두께 범위. 칸 한 변의 %입니다 (sdk/playground/board.js의 FRAME_WIDTH, LINE_WIDTH)
-const FRAME_WIDTH = { min: 1, max: 30 };
-const LINE_WIDTH = { min: 1, max: 50 };
 
 let frame = null; // Promise<HTMLIFrameElement>, 페이지마다 하나
 let nextSession = 0;
@@ -79,26 +75,19 @@ addEventListener('message', async (e) => {
 
 // ---- 돌아온 값 검사 ----
 
-const isInt = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
 const isStr = (v, max) => typeof v === 'string' && v.length <= max;
-/** 색: 0 / 1(플레이어 색), 이름 붙은 색(sdk/playground/board.js의 NAMED_COLORS), '#rrggbb' */
-const COLOR_NAMES = ['green', 'yellow', 'gray'];
-const isColor = (c) => c === 0 || c === 1 || COLOR_NAMES.includes(c) || (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c));
-const isWidth = (w, range) => typeof w === 'number' && w >= range.min && w <= range.max;
 
 function cleanBoard(b) {
-  if (!b || typeof b !== 'object' || !PLACES.includes(b.places) || !isInt(b.rows, 1, 32) || !isInt(b.cols, 1, 32)) {
+  const size = SHAPE_LIMITS.boardSize;
+  if (!b || typeof b !== 'object' || !PLACES.includes(b.places) || !isInt(b.rows, 1, size) || !isInt(b.cols, 1, size)) {
     throw new Error('board: places, rows, cols are needed');
   }
   const out = { places: b.places, rows: b.rows, cols: b.cols };
-  if (LOOKS.includes(b.look)) out.look = b.look;
+  if (LOOK_NAMES.includes(b.look)) out.look = b.look;
   if (b.labels === true) out.labels = true;
   if (b.flipForPlayer === 0 || b.flipForPlayer === 1) out.flipForPlayer = b.flipForPlayer;
-  if (b.starPoints === true) out.starPoints = true;
-  else if (Array.isArray(b.starPoints)) {
-    out.starPoints = b.starPoints.slice(0, 64).filter((c) => isInt(c?.row, 0, b.rows - 1) && isInt(c?.col, 0, b.cols - 1))
-      .map(({ row, col }) => ({ row, col }));
-  }
+  // 화점: 렌더러와 같은 규칙(starsOf)으로 판 안의 칸만 남깁니다
+  if (b.starPoints === true || Array.isArray(b.starPoints)) out.starPoints = starsOf(b).stars;
   // 판 밖 영역: 렌더러와 같은 규칙(sdk/playground/board.js의 fieldOf)으로 보고, 틀렸으면 버립니다 (판 전체를 예전처럼 그림)
   if (b.areas !== undefined) {
     const { areas, problems } = fieldOf({ rows: b.rows, cols: b.cols, areas: b.areas });
@@ -112,42 +101,20 @@ function cleanBoard(b) {
   return out;
 }
 
-// 글자 패의 방향 (sdk/playground/board.js의 TILE_ARROWS)
-const TILE_ARROWS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
-
-/** 기물 목록의 한 항목: 이름, 또는 글자 패 { name, text(1~2자), player?, arrows? }. 맞지 않으면 null (sdk/check.js의 tileOk와 같은 규칙) */
-function cleanPiece(p) {
-  if (isStr(p, 32)) return p;
-  if (!p || typeof p !== 'object' || !isStr(p.name, 32) || !p.name || typeof p.text !== 'string') return null;
-  const chars = [...p.text].length;
-  if (chars < 1 || chars > 2) return null;
-  const out = { name: p.name, text: p.text };
-  if (p.player !== undefined) {
-    if (p.player !== 0 && p.player !== 1) return null;
-    out.player = p.player;
-  }
-  if (p.arrows !== undefined) {
-    if (!Array.isArray(p.arrows) || !p.arrows.every((a) => TILE_ARROWS.includes(a)) || new Set(p.arrows).size !== p.arrows.length) return null;
-    out.arrows = [...p.arrows];
-  }
-  return out;
-}
-
 function cleanInfo(v) {
   if (!v || typeof v !== 'object') throw new Error('game info is missing');
-  const list = Array.isArray(v.pieces) && v.pieces.length <= 32 ? v.pieces.map(cleanPiece) : null;
-  const pieces = PIECE_SETS.includes(v.pieces) ? v.pieces : list && !list.includes(null) ? list : null;
+  const pieces = cleanPieces(v.pieces); // 기본 묶음의 이름, 또는 이름과 글자 패의 목록 (렌더러와 같은 규칙)
   if (!pieces) throw new Error('pieces must be a built-in set or a list of names and tiles');
   const specials = Array.isArray(v.specialActions) ? v.specialActions : [];
   return {
-    id: isStr(v.id, 40) ? v.id : '',
+    id: isStr(v.id, SHAPE_LIMITS.idChars) ? v.id : '',
     board: cleanBoard(v.board),
     pieces,
-    specialActions: specials.filter((k) => isStr(k, 24) && k && k !== 'click').slice(0, 8),
-    maxActions: isInt(v.maxActions, 1, 2000) ? v.maxActions : 2000,
+    specialActions: specials.filter(isSpecialKind).slice(0, SHAPE_LIMITS.specialActions),
+    maxActions: isInt(v.maxActions, 1, SHAPE_LIMITS.maxActions) ? v.maxActions : SHAPE_LIMITS.maxActions,
     // 플레이어마다 이름 옆에 보일 기물. 없거나 틀리면 플레이어 색 점
     playerPieces: Array.isArray(v.playerPieces) && v.playerPieces.length === 2
-      && v.playerPieces.every((x) => isStr(x, 32) && knowsPiece(pieces, x)) ? [...v.playerPieces] : null,
+      && v.playerPieces.every((x) => knowsPiece(pieces, x)) ? [...v.playerPieces] : null,
     turn: v.turn === true,
     legal: v.legal === true,
   };
@@ -158,31 +125,32 @@ function cleanView(v, board) {
   const out = { pieces: [] };
   if (!v || typeof v !== 'object') return out;
   const cap = board.rows * board.cols * 4;
-  const cell = (c) => c && isInt(c.row, 0, board.rows - 1) && isInt(c.col, 0, board.cols - 1);
+  const cell = (c) => isCell(c, board);
+  const isPiece = (name) => isStr(name, SHAPE_LIMITS.nameChars);
   const list = (a) => (Array.isArray(a) ? a.slice(0, cap) : []);
   const at = ({ row, col }) => ({ row, col });
   // 판 옆 목록(board.lists)의 칸 { list, row, col }
   const boxes = board.lists ?? [];
-  const inList = (c) => c && isInt(c.list, 0, boxes.length - 1) && isInt(c.row, 0, boxes[c.list].rows - 1) && isInt(c.col, 0, boxes[c.list].cols - 1);
+  const inList = (c) => !!c && isInt(c.list, 0, boxes.length - 1) && isCell(c, boxes[c.list]);
   // from: 이 기물이 방금 어느 칸(판이나 목록)에서 왔는지 (화면이 움직여 보여 줌)
   const withFrom = (x, o) => {
     if (x.from?.list === undefined ? cell(x.from) : inList(x.from)) o.from = x.from.list === undefined ? at(x.from) : { list: x.from.list, ...at(x.from) };
     return o;
   };
-  out.pieces = list(v.pieces).filter((x) => cell(x) && isStr(x.piece, 32)).map((x) => withFrom(x, { row: x.row, col: x.col, piece: x.piece }));
+  out.pieces = list(v.pieces).filter((x) => cell(x) && isPiece(x.piece)).map((x) => withFrom(x, { row: x.row, col: x.col, piece: x.piece }));
   // lists: 판 옆 목록의 기물 (목록 i의 칸 안에 있는 것만)
   if (Array.isArray(v.lists) && boxes.length) {
     out.lists = boxes.map((b, i) => ({
       pieces: (Array.isArray(v.lists[i]?.pieces) ? v.lists[i].pieces.slice(0, b.rows * b.cols * 4) : [])
-        .filter((x) => x && isInt(x.row, 0, b.rows - 1) && isInt(x.col, 0, b.cols - 1) && isStr(x.piece, 32))
+        .filter((x) => isCell(x, b) && isPiece(x.piece))
         .map((x) => withFrom(x, { row: x.row, col: x.col, piece: x.piece })),
     }));
   }
   out.marks = list(v.marks).filter((m) => cell(m) && MARK_TYPES.includes(m.type)).map((m) => {
     const o = { row: m.row, col: m.col, type: m.type };
-    if (isStr(m.piece, 32)) o.piece = m.piece;
+    if (isPiece(m.piece)) o.piece = m.piece;
     if (isColor(m.color)) o.color = m.color;
-    if (isWidth(m.width, FRAME_WIDTH)) o.width = m.width;
+    if (validWidth(m.width, FRAME_WIDTH)) o.width = m.width;
     return o;
   });
   // 칠하기와 선은 칸마다 여러 개(마우스를 올린 칸마다의 미리보기, 이웃 8칸 등)일 수 있어 상한을 두 배로 둡니다
@@ -191,11 +159,11 @@ function cleanView(v, board) {
     if (cell(x.hover)) o.hover = at(x.hover);
     return o;
   });
-  out.text = list(v.text).filter((x) => cell(x) && isStr(x.text, 8)).map(({ row, col, text }) => ({ row, col, text }));
+  out.text = list(v.text).filter((x) => cell(x) && isStr(x.text, SHAPE_LIMITS.textChars)).map(({ row, col, text }) => ({ row, col, text }));
   out.lines = (Array.isArray(v.lines) ? v.lines.slice(0, cap * 2) : []).filter((l) => l && cell(l.from) && cell(l.to) && (l.hover === undefined || cell(l.hover))).map((l) => {
     const o = { from: at(l.from), to: at(l.to) };
     if (isColor(l.color)) o.color = l.color;
-    if (isWidth(l.width, LINE_WIDTH)) o.width = l.width;
+    if (validWidth(l.width, LINE_WIDTH)) o.width = l.width;
     if (cell(l.hover)) o.hover = at(l.hover);
     return o;
   });
@@ -205,7 +173,7 @@ function cleanView(v, board) {
   }
   // buttons: 판 아래 특수 행동 버튼의 순서와 글자. 없으면 예전처럼 specialActions 전부를 이름 그대로 보여 주므로 빈 목록과 구별합니다
   if (Array.isArray(v.buttons)) {
-    out.buttons = v.buttons.slice(0, 8).filter((b) => b && isStr(b.kind, 24) && b.kind && b.kind !== 'click').map((b) => {
+    out.buttons = v.buttons.slice(0, SHAPE_LIMITS.specialActions).filter((b) => b && isSpecialKind(b.kind)).map((b) => {
       const o = { kind: b.kind };
       if (isStr(b.label, 40)) o.label = b.label;
       return o;
@@ -214,7 +182,7 @@ function cleanView(v, board) {
   // effects: 한 번 보이고 끝나는 효과 (잡혀서 없어진 기물이 갈라지는 것 등). 모르는 종류는 버립니다
   if (Array.isArray(v.effects)) {
     out.effects = list(v.effects)
-      .filter((e) => e && cell(e) && isStr(e.piece, 32) && EFFECT_TYPES.includes(e.type ?? 'shatter')
+      .filter((e) => cell(e) && isPiece(e.piece) && EFFECT_TYPES.includes(e.type ?? 'shatter')
         && (e.id === undefined || isStr(e.id, 32) || Number.isSafeInteger(e.id)))
       .map((e) => {
         const o = { row: e.row, col: e.col, piece: e.piece, type: e.type ?? 'shatter' };
@@ -233,10 +201,12 @@ function cleanResult(r) {
   return out;
 }
 
+/** 행동 하나: 판이 될 수 있는 크기 안의 칸 클릭, 또는 특수 행동의 이름 */
 function cleanAction(a) {
-  if (!a || typeof a !== 'object' || !isStr(a.kind, 24) || !a.kind) return null;
-  if (a.kind !== 'click') return { kind: a.kind };
-  return isInt(a.row, 0, 31) && isInt(a.col, 0, 31) ? { kind: 'click', row: a.row, col: a.col } : null;
+  if (!a || typeof a !== 'object') return null;
+  const max = SHAPE_LIMITS.boardSize - 1;
+  if (a.kind === 'click') return isInt(a.row, 0, max) && isInt(a.col, 0, max) ? { kind: 'click', row: a.row, col: a.col } : null;
+  return isSpecialKind(a.kind) ? { kind: a.kind } : null;
 }
 
 /** 자동 검사 결과. 글자 목록과 숫자만 남깁니다. */
@@ -267,7 +237,8 @@ function cleanLook(l, board) {
 /** AI 대국의 관측과 행동 모양 (web/runner/host.js의 ai) */
 function cleanShape(v) {
   const names = (a, max) => Array.isArray(a) && a.length <= max && a.every((x) => isStr(x, 64) && x);
-  if (!v || !isInt(v.rows, 1, 32) || !isInt(v.cols, 1, 32) || !names(v.channelNames, 256) || !names(v.specials, 8)
+  const size = SHAPE_LIMITS.boardSize;
+  if (!v || !isInt(v.rows, 1, size) || !isInt(v.cols, 1, size) || !names(v.channelNames, 256) || !names(v.specials, SHAPE_LIMITS.specialActions)
     || v.channels !== v.channelNames.length || v.nActions !== v.rows * v.cols + v.specials.length) {
     throw new Error('bad AI shape');
   }

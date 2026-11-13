@@ -307,7 +307,7 @@ func piecesOk(v any) bool {
 // tileArrows는 글자 패의 방향입니다 (sdk/playground/board.js의 TILE_ARROWS).
 var tileArrows = []string{"n", "ne", "e", "se", "s", "sw", "w", "nw"}
 
-// pieceOk는 기물 목록의 한 항목이 이름이거나 글자 패 { name, text, player?, arrows? }인지입니다 (sdk/check.js의 tileOk와 같은 규칙).
+// pieceOk는 기물 목록의 한 항목이 이름이거나 글자 패 { name, text, player?, arrows? }인지입니다 (글자 패는 sdk/playground/board.js의 cleanPiece와 같은 규칙).
 func pieceOk(x any) bool {
 	if _, ok := x.(string); ok {
 		return true

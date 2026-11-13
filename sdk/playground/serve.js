@@ -26,24 +26,15 @@ import http from 'node:http';
 import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { gameEntry, json, isLocal, saveThumbnail } from '../lib/games.js';
+import { fileURLToPath } from 'node:url';
+import { gameEntry, saveThumbnail } from '../lib/games.js';
+import { isLocal, json, readBody, sendFile } from '../lib/http.js';
+import { GAME_ID } from './board.js';
 import { normalizeListing, validateListing } from './listing.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PORT = Number(process.env.PORT) || 5173;
 const GO = new URL(process.env.GO_SERVER || 'http://localhost:8080');
-
-const TYPES = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.wasm': 'application/wasm', // 브라우저 AI의 onnxruntime-web (web/vendor)
-};
 
 /** Go 서버의 DATA_DIR/ai (server/internal/ai). Go 서버를 server/ 에서 켜면 DATA_DIR 기본값이 server/data 입니다 */
 const AI_DIR = path.join(process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT, 'server', 'data'), 'ai');
@@ -64,6 +55,7 @@ function aiModel(id) {
       nActions: m.nActions,
       sims: m.sims,
       updated: m.updated,
+      ...(m.balance ? { balance: m.balance } : {}), // 선공 · 후공 승률 (이 기능 전에 내보낸 모델에는 없음)
     };
   } catch {
     return null;
@@ -80,7 +72,7 @@ function listGames() {
     const base = path.join(ROOT, dir);
     if (!fs.existsSync(base)) continue;
     for (const d of fs.readdirSync(base, { withFileTypes: true })) {
-      if (!d.isDirectory() || !/^[a-z0-9-]+$/.test(d.name)) continue;
+      if (!d.isDirectory() || !GAME_ID.test(d.name)) continue;
       if (!fs.existsSync(path.join(base, d.name, 'index.js'))) continue;
       const folder = path.join(base, d.name);
       const entry = gameEntry(folder, { id: d.name, module: `/${dir}/${d.name}/index.js`, private: isPrivate });
@@ -187,54 +179,21 @@ function proxyWS(req, socket, head) {
 }
 
 /**
- * 개발용 등록 정보 저장. 내 컴퓨터에서 온 요청만 받습니다 (같은 와이파이의 다른 기기가 파일을 못 쓰게).
- * 다른 사이트가 보내는 요청은 JSON 본문 때문에 브라우저가 미리 확인(preflight)하는데,
- * 이 서버가 CORS 허가를 주지 않으므로 막힙니다.
+ * 개발용 등록 정보 저장. 내 컴퓨터에서 온 JSON만 받습니다 (같은 와이파이의 다른 기기가 파일을 못 쓰게. lib/http.js의 readBody).
+ * 타이머는 turn()이 있어야 돌지만, turn()은 모든 게임의 필수 함수라 여기서 따로 보지 않습니다 (sdk/check.js의 checkMembers).
  */
 function saveListing(req, res, id) {
   if (!isLocal(req)) return json(res, 403, { error: 'local only' });
   if (DEV_ME.kind !== 'member') return json(res, 403, { error: 'member only' });
-  if (!/^application\/json\b/.test(req.headers['content-type'] ?? '')) return json(res, 415, { error: 'JSON only' });
   const game = listGames().find((g) => g.id === id);
   if (!game) return json(res, 404, { error: 'no such game' });
-
-  let body = '';
-  req.setEncoding('utf8');
-  req.on('data', (chunk) => {
-    body += chunk;
-    if (body.length > 200_000) req.destroy();
-  });
-  req.on('end', () => {
-    let listing;
-    try {
-      listing = JSON.parse(body);
-    } catch {
-      return json(res, 400, { error: 'bad JSON' });
-    }
+  readBody(req, res, (listing) => {
     const problems = validateListing(listing);
     if (problems.length) return json(res, 422, { problems });
     const saved = normalizeListing(listing);
-    hasTurn(game).then((ok) => {
-      // 타이머는 누구 시계가 가는지 알아야 하므로 turn()이 있는 게임만 쓸 수 있습니다
-      if ((saved.timer.minutes !== null || saved.timer.custom) && !ok) {
-        return json(res, 422, { problems: [{ code: 'timer.needsTurn' }] });
-      }
-      const file = path.join(game.folder, 'listing.json');
-      fs.writeFileSync(file, JSON.stringify(saved, null, 2) + '\n');
-      json(res, 200, { listing: saved });
-    });
+    fs.writeFileSync(path.join(game.folder, 'listing.json'), JSON.stringify(saved, null, 2) + '\n');
+    json(res, 200, { listing: saved });
   });
-}
-
-/** 게임 코드에 turn()이 있는지. 불러오지 못하면 false. 저장할 때마다 새로 읽도록 쿼리를 붙입니다. */
-async function hasTurn(game) {
-  try {
-    const url = pathToFileURL(path.join(ROOT, game.module));
-    url.search = `?t=${Date.now()}`;
-    return typeof (await import(url.href)).default?.turn === 'function';
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -274,16 +233,15 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/locale') return json(res, 200, detectLocale(req));
   if (url.pathname === '/api/me') return proxyMe(req, res);
   if (url.pathname === '/api/auth/providers' || url.pathname.startsWith('/auth/') || url.pathname === '/api/account') return proxyRaw(req, res, url);
-  if (url.pathname === '/api/admin' || url.pathname === '/api/admin/actions' || /^\/api\/admin\/ai\/(requests|[a-z0-9-]+(\/(code|decline|training))?)$/.test(url.pathname)) return proxyRaw(req, res, url);
-  if (/^\/api\/ai\/(mine|[a-z0-9-]+\/(request|training))$/.test(url.pathname)) return proxyRaw(req, res, url);
+  if (['/api/admin', '/api/admin/actions', '/api/admin/stats'].includes(url.pathname) || /^\/api\/admin\/ai\/(requests|[a-z0-9-]+(\/(code|decline|training))?)$/.test(url.pathname)) return proxyRaw(req, res, url);
+  if (/^\/api\/ai\/(mine|[a-z0-9-]+\/(request|training|plays))$/.test(url.pathname)) return proxyRaw(req, res, url);
   const model = url.pathname.match(/^\/ai\/([a-z0-9-]+)\/[0-9a-f]{16}\.onnx$/);
   if (model) {
     if (aiModel(model[1])?.model !== url.pathname) {
       res.writeHead(404);
       return res.end('not found');
     }
-    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store' });
-    return fs.createReadStream(path.join(AI_DIR, model[1], path.basename(url.pathname))).pipe(res);
+    return sendFile(res, path.join(AI_DIR, model[1], path.basename(url.pathname)));
   }
   if (url.pathname === '/api/rooms' || url.pathname === '/api/live' || /^\/api\/matches(\/[A-Z0-9]+)?$/.test(url.pathname)) return proxyGo(req, res, url);
   if (/^\/api\/games\/[a-z0-9-]+\/comments(\/[A-Z0-9]+)?$/.test(url.pathname) || url.pathname === '/api/reports') return proxyGo(req, res, url);
@@ -304,21 +262,11 @@ const server = http.createServer((req, res) => {
   }
   if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
 
-  fs.readFile(file, (err, data) => {
-    if (err) {
-      res.writeHead(404);
-      return res.end('not found');
-    }
-    const headers = {
-      'Content-Type': TYPES[path.extname(file)] ?? 'application/octet-stream',
-      'Cache-Control': 'no-store', // 게임 코드를 고치고 새로고침하면 바로 반영되게
-    };
-    // 게임 실행기 (web/engine.js): Go 서버(server/internal/site의 runnerCSP)와 같은 헤더
-    if (/\.(m?js|json)$/.test(file)) headers['Access-Control-Allow-Origin'] = '*';
-    if (url.pathname === '/web/runner/frame.html') headers['Content-Security-Policy'] = runnerCSP(req);
-    res.writeHead(200, headers);
-    res.end(data);
-  });
+  // 게임 실행기 (web/engine.js): Go 서버(server/internal/site의 runnerCSP)와 같은 헤더
+  const headers = {};
+  if (/\.(m?js|json)$/.test(file)) headers['Access-Control-Allow-Origin'] = '*';
+  if (url.pathname === '/web/runner/frame.html') headers['Content-Security-Policy'] = runnerCSP(req);
+  sendFile(res, file, headers);
 });
 
 server.on('upgrade', (req, socket, head) => {

@@ -25,7 +25,7 @@ The new game is tic-tac-toe. Change the rules in `index.js` and refresh the page
 | `npx boardmadang new <folder>` | Makes a new game from a tic-tac-toe starter. The folder name becomes the game id. |
 | `npx boardmadang dev` | Opens the playground. Play both sides and take a [thumbnail](#thumbnail). |
 | `npx boardmadang check` | Runs the same checks the site runs when you upload. |
-| `npx boardmadang pack` | If the checks pass, makes `<id>.zip` for uploading. |
+| `npx boardmadang pack` | If the checks pass, makes `<id>.zip` for uploading (`--out game.zip` to put it somewhere else). |
 
 Upload the zip on the **Register a game** page of boardmadang.com (<https://boardmadang.com/web/register.html>).
 You need to log in. The page runs the same checks in your browser. Then you play both sides and win one game (the clear check), fill in the listing, and register.

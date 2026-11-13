@@ -25,7 +25,7 @@ npx boardmadang dev
 | `npx boardmadang new <폴더>` | 틱택토에서 시작하는 새 게임을 만듭니다. 폴더 이름이 게임 id가 됩니다. |
 | `npx boardmadang dev` | 플레이그라운드를 엽니다. 혼자 양쪽을 두고 [썸네일](#썸네일)을 찍습니다. |
 | `npx boardmadang check` | 사이트에 올릴 때와 같은 검사를 합니다. |
-| `npx boardmadang pack` | 검사를 통과하면 올릴 `<id>.zip`을 만듭니다. |
+| `npx boardmadang pack` | 검사를 통과하면 올릴 `<id>.zip`을 만듭니다 (다른 곳에 만들려면 `--out game.zip`). |
 
 zip은 boardmadang.com의 **게임 등록** 화면(<https://boardmadang.com/web/register.html>)에서 올립니다.
 로그인이 필요합니다. 화면이 브라우저에서 같은 검사를 한 번 더 하고, 혼자 양쪽을 둬서 한 판을 이기면(클리어 체크) 등록 정보를 넣어 등록합니다.
