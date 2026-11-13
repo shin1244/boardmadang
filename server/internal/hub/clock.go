@@ -53,7 +53,7 @@ func (r *Room) setTurn(turn *int) {
 		c.timer.Stop()
 		c.timer = nil
 	}
-	r.broadcast(*r.clockMsg())
+	r.broadcast(*r.clockAt(t))
 	if next < 0 {
 		return
 	}
@@ -93,16 +93,23 @@ func (r *Room) stopClock() {
 	c.remaining = c.now(t)
 	c.running = -1
 	c.gen++
-	r.broadcast(*r.clockMsg())
+	r.broadcast(*r.clockAt(t))
 }
 
 // clockMsg는 지금 시계입니다. 타이머가 없으면 nil.
 func (r *Room) clockMsg() *protocol.Clock {
+	return r.clockAt(time.Now())
+}
+
+// clockAt은 t 때의 시계입니다. 타이머가 없으면 nil.
+// 시계를 넘기거나 멈출 때는 그때 잰 t를 그대로 줍니다. 시각을 다시 재면 그사이의 수백 ns가 방금 시계를 받은 쪽에서 빠지고,
+// ms로 내림하면서 한 번도 가지 않은 시계가 1ms 줄어든 값(600000이 아니라 599999)으로 나갑니다.
+func (r *Room) clockAt(t time.Time) *protocol.Clock {
 	c := r.clock
 	if c == nil {
 		return nil
 	}
-	rem := c.now(time.Now())
+	rem := c.now(t)
 	msg := &protocol.Clock{Type: protocol.TypeClock, Remaining: [2]int64{rem[0].Milliseconds(), rem[1].Milliseconds()}}
 	if c.running >= 0 {
 		p := c.running
