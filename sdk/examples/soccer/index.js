@@ -1,8 +1,7 @@
-// Chess soccer (work in progress): chess pieces play football on a 9×9 pitch. Kick the ball into the opponent's goal to win.
+// Chess soccer (work in progress): chess pieces play football on a pitch 7 squares wide and 9 long. Kick the ball into the opponent's goal to win.
 // Try it: npx boardmadang dev sdk/examples/soccer
 //
-// The grid has 11 rows: row 0 is the top goal, rows 1-9 are the pitch, row 10 is the bottom goal. A goal is 3 squares wide (columns 3-5).
-// (`goalWidth` makes it 5 wide, to try out.)
+// The grid has 11 rows: row 0 is the top goal, rows 1-9 are the pitch, row 10 is the bottom goal. A goal is the middle 3 squares of its row.
 // Player 0 sits at the bottom and shoots at the top goal; player 1 sits at the top.
 // A piece is two characters: its kind (K king, R rook, B bishop, N knight, P pawn) + its owner (0, 1). For example 'R0'
 //
@@ -20,12 +19,12 @@
 //   keeper     (off) a sliding ball stops as soon as it is next to the opponent's king
 //   chipGoals  (on)  a knight may chip the ball straight into the goal
 //   goalWidth  (3)   how many squares wide a goal is
+//   cols       (7)   how many squares wide the pitch is (it is always 9 long). 9 was the first try: half of those games had no goal
 
-const COLS = 9;
 const OWN_GOAL_ROW = [10, 0]; // the goal each player defends
-const inPitch = (row, col) => row >= 1 && row <= 9 && col >= 0 && col < COLS;
-/** The columns of a goal that is `width` squares wide, in the middle of the back line */
-const goalCols = (width) => Array.from({ length: width }, (_, i) => (COLS - width) / 2 + i);
+const inPitch = (row, col, cols) => row >= 1 && row <= 9 && col >= 0 && col < cols;
+/** The columns of a goal that is `width` squares wide, in the middle of a back line of `cols` squares */
+const goalCols = (width, cols) => Array.from({ length: width }, (_, i) => (cols - width) / 2 + i);
 const ownerOf = (piece) => Number(piece[1]);
 const same = (a, b) => a.row === b.row && a.col === b.col;
 
@@ -80,7 +79,7 @@ function kickTargets(grid, at, used, rules) {
         if (kind !== 'N' || rules.chipGoals) targets.push({ ...next, goal: true });
         break;
       }
-      const there = inPitch(next.row, next.col) ? grid[next.row][next.col] : undefined;
+      const there = inPitch(next.row, next.col, rules.cols) ? grid[next.row][next.col] : undefined;
       if (there === null) {
         ({ row, col } = next);
         const caught = guard && Math.abs(guard.row - row) <= 1 && Math.abs(guard.col - col) <= 1;
@@ -98,12 +97,13 @@ function kickTargets(grid, at, used, rules) {
 }
 
 /** The game, with the rules that are still being tried out as options */
-export function makeGame({ keeper = false, chipGoals = true, goalWidth = 3 } = {}) {
-  const rules = { keeper, chipGoals, goal: goalCols(goalWidth) };
+export function makeGame({ keeper = false, chipGoals = true, goalWidth = 3, cols = 7 } = {}) {
+  const rules = { keeper, chipGoals, cols, goal: goalCols(goalWidth, cols) };
+  const mid = (cols - 1) / 2; // the middle column
   return {
     id: 'chess-soccer',
     board: {
-      places: 'cells', rows: 11, cols: COLS, look: 'plain', flipForPlayer: 1,
+      places: 'cells', rows: 11, cols, look: 'plain', flipForPlayer: 1,
       areas: [{ side: 'top', row: 0, col: rules.goal[0], rows: 1, cols: goalWidth }, { side: 'bottom', row: 10, col: rules.goal[0], rows: 1, cols: goalWidth }],
     },
     pieces: [
@@ -115,13 +115,13 @@ export function makeGame({ keeper = false, chipGoals = true, goalWidth = 3 } = {
     repeat: 3,
 
     setup: () => {
-      const grid = Array.from({ length: 11 }, () => Array(COLS).fill(null));
+      const grid = Array.from({ length: 11 }, () => Array(cols).fill(null));
       // Bottom player: keeper on the back row, two pawns in front of it, then knight, rook, bishop. The top player mirrors it
-      [grid[9][4], grid[8][2], grid[8][6], grid[7][3], grid[7][4], grid[7][5]] = ['K0', 'P0', 'P0', 'N0', 'R0', 'B0'];
-      [grid[1][4], grid[2][6], grid[2][2], grid[3][5], grid[3][4], grid[3][3]] = ['K1', 'P1', 'P1', 'N1', 'R1', 'B1'];
+      [grid[9][mid], grid[8][mid - 2], grid[8][mid + 2], grid[7][mid - 1], grid[7][mid], grid[7][mid + 1]] = ['K0', 'P0', 'P0', 'N0', 'R0', 'B0'];
+      [grid[1][mid], grid[2][mid + 2], grid[2][mid - 2], grid[3][mid + 1], grid[3][mid], grid[3][mid - 1]] = ['K1', 'P1', 'P1', 'N1', 'R1', 'B1'];
       return {
         grid,
-        ball: { row: 5, col: 4 }, // null while a piece is about to kick it
+        ball: { row: 5, col: mid }, // null while a piece is about to kick it
         kicked: null, // where the ball was last kicked from (so it is shown rolling)
         kick: null, // { at: the piece that must kick now, used: the pieces that already kicked this turn }
         won: null, // { winner, own } once the ball is in a goal
@@ -136,7 +136,7 @@ export function makeGame({ keeper = false, chipGoals = true, goalWidth = 3 } = {
         if (!piece || ownerOf(piece) !== player) return;
         const { dirs, slide } = WALK[piece[0]](player);
         for (const [dr, dc] of dirs) {
-          for (let to = { row: row + dr, col: col + dc }; inPitch(to.row, to.col) && grid[to.row][to.col] === null; to = { row: to.row + dr, col: to.col + dc }) {
+          for (let to = { row: row + dr, col: col + dc }; inPitch(to.row, to.col, cols) && grid[to.row][to.col] === null; to = { row: to.row + dr, col: to.col + dc }) {
             if (!same(to, ball)) list.push({ from: { row, col }, to });
             else if (kickTargets(withMove(grid, { row, col }, to), to, [], rules).length) list.push({ from: { row, col }, to }); // onto the ball: only if it can be kicked
             if (!slide || same(to, ball)) break; // nothing walks through the ball
