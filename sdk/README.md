@@ -25,7 +25,7 @@ The new game is tic-tac-toe. Change the rules in `index.js` and refresh the page
 | `npx boardmadang new <folder>` | Makes a new game from a tic-tac-toe starter. The folder name becomes the game id. |
 | `npx boardmadang dev` | Opens the playground. Play both sides and take a [thumbnail](#thumbnail). |
 | `npx boardmadang check` | Runs the same checks the site runs when you upload. |
-| `npx boardmadang pack` | If the checks pass, makes `<id>.zip` for uploading (`--out game.zip` to put it somewhere else). |
+| `npx boardmadang pack` | If the checks pass, makes `<id>.zip` for uploading (`--out game.zip` to put it somewhere else). For a game written with `moves()`, the zip also gets the small file that runs it. |
 
 Upload the zip on the **Register a game** page of boardmadang.com (<https://boardmadang.com/web/register.html>).
 You need to log in. The page runs the same checks in your browser. Then you play both sides and win one game (the clear check), fill in the listing, and register.
@@ -44,7 +44,122 @@ my-game/
 
 ## How a game works
 
-A game is one object. Here is the idea, using tic-tac-toe:
+A game is one object. You write the rules once: which moves are allowed, and what a move does. Here is tic-tac-toe:
+
+```js
+export default {
+  id: 'my-game',
+  board: { places: 'cells', rows: 3, cols: 3 }, // a 3×3 board, pieces go inside the squares
+  pieces: 'xo',                                  // built-in X and O pieces
+  maxActions: 9,                                 // the game must end within this many moves
+
+  // The starting position: an empty 3×3 grid.
+  setup: () => ({ grid: [[null, null, null], [null, null, null], [null, null, null]] }),
+
+  // The moves `player` may make right now: any empty square.
+  moves(state, player) {
+    const list = [];
+    state.grid.forEach((line, row) => line.forEach((owner, col) => {
+      if (owner === null) list.push({ row, col });
+    }));
+    return list;
+  },
+
+  // Make a move. `m` is one of the moves from moves(). You may change `state` directly.
+  move(state, m, player) {
+    state.grid[m.row][m.col] = player;
+  },
+
+  // Who won? 0 or 1, 'draw', or nothing while the game goes on.
+  winner(state) {
+    // (check for three in a row here)
+  },
+
+  // What to draw for this player.
+  view(state, player, lang) {
+    const pieces = [];
+    state.grid.forEach((line, row) => line.forEach((owner, col) => {
+      if (owner !== null) pieces.push({ row, col, piece: owner === 0 ? 'x' : 'o' });
+    }));
+    return { pieces };
+  },
+};
+```
+
+That's all. Boardmadang does the rest:
+
+- **Turns.** Players take turns. A click from the wrong player, or a move that isn't in `moves()`, is ignored.
+- **Hints and marks.** Squares you can play light up under the mouse, and the last move is marked.
+- **The text.** "Your turn", "Opponent's turn", "You won!", "You lost" and "Draw" are shown for you, in English and Korean. Return a `message` from `view()` to say something else.
+- **The end.** The game ends when `winner()` names a winner or `'draw'`, when the player to move has no moves (a draw), or after `maxActions` moves (a draw; 300 if you leave it out).
+- **The AI** learns from the same `moves()`.
+
+Both players' browsers run your code with the same clicks in the same order, so they always see the same board.
+Your code never deals with the network, the screen, or who the opponent is.
+On the site your code runs in a sandbox, so `fetch`, storage, `eval`, and `Worker` aren't available.
+
+## Moves
+
+`moves(state, player)` returns a list. Each move has one of three shapes:
+
+| Move | What the player does |
+|---|---|
+| `{ row, col }` | Clicks a square (tic-tac-toe, gomoku, reversi) |
+| `{ from: { row, col }, to: { row, col } }` | Clicks a piece, then the square it goes to (chess, checkers) |
+| `{ special: 'pass' }` | Presses a button below the board |
+
+You can add anything else to a move (the piece it captures, whether it promotes), and `move()` gets the same object back.
+
+**Picking a piece.** For `from` / `to` moves, boardmadang handles the two clicks. Clicking a piece selects it and shows where it can go, clicking another piece switches, and clicking it again cancels. The piece then slides to its new square.
+Pieces in hand work the same way: put the hand in a [panel](#panels-buttons-and-motion) and use its square as `from`.
+If two moves share the same `from` and `to` (choosing what a pawn becomes, say), the first one in the list is played.
+
+**Buttons.** List the names in `specialActions`, with the button text if you like, and return `{ special: name }` from `moves()` when it is allowed. The button is dimmed when it isn't.
+
+```js
+specialActions: { pass: { en: 'Pass', ko: '넘기기' } }, // or just ['pass']
+
+moves(state, player) {
+  const squares = placesFor(state, player);
+  return squares.length ? squares : [{ special: 'pass' }]; // pass only when there is nowhere to play
+},
+```
+
+**Moving again.** Return `'again'` from `move()` and the same player moves again (several jumps in checkers, an extra turn in mancala).
+If the piece that just moved can go on, it stays selected.
+
+```js
+move(state, m, player) {
+  // …move the piece and remove the one it jumped over…
+  state.jumping = canJumpAgain(state, m.to) ? m.to : null;
+  return state.jumping ? 'again' : undefined;
+},
+```
+
+**Winning.** `winner(state)` returns `0`, `1`, `'draw'`, or nothing. To show why, return `{ winner: 0, reason: { en: 'Three in a row', ko: '세 줄 완성' } }`.
+Two common rules are options on the game object: `noMoves: 'lose'` (a player with no moves loses, instead of a draw) and `repeat: 3` (the same position three times is a draw).
+
+Three complete games to read: [reversi](https://github.com/shin1244/boardmadang/blob/main/sdk/examples/reversi/index.js) (a Pass button), [checkers](https://github.com/shin1244/boardmadang/blob/main/sdk/examples/checkers/index.js) (forced captures, several jumps, kings) and [twelve janggi](https://github.com/shin1244/boardmadang/blob/main/sdk/examples/twelve/index.js) (pieces in hand, promotion).
+To try one, copy it over the `index.js` of a new game and run `npx boardmadang dev`.
+
+## Two rules your code must follow
+
+1. **Same input, same result.** Don't use `Math.random()` or `Date.now()`.
+   If you need randomness, use the `rng` passed to `setup(rng)` (`rng.next()`, `rng.int(n)`).
+   Otherwise the two players' boards drift apart.
+2. **Keep the state plain JSON.** Numbers, strings, booleans, arrays, plain objects.
+   No `Set`, `Map`, classes, or functions.
+
+`npx boardmadang check` catches both, plays 200 random games, and checks speed and size limits.
+
+One optional part: `observe(state, player)` gives the AI extra information that isn't on the board (like castling rights in chess).
+Resigning is built into the site, so your game doesn't handle it.
+
+## Writing `play()` yourself
+
+`moves()` and `move()` cover turn-based games where a move is a click, a piece move, or a button.
+If your game needs something else, such as a move that takes three clicks or your own way of picking pieces, write the game API directly.
+`npx boardmadang pack` turns a `moves()` game into exactly this, so the rest of this guide applies to both.
 
 ```js
 export default {
@@ -89,37 +204,16 @@ export default {
 };
 ```
 
-That's all. When someone clicks, boardmadang turns the click into `{ kind: 'click', row, col }` and calls `play()`.
-Both players' browsers run your `play()` with the same clicks in the same order, so they always see the same board.
-Your code never deals with the network, the screen, or who the opponent is.
-On the site your code runs in a sandbox, so `fetch`, storage, `eval`, and `Worker` aren't available.
-
-## Four rules your code must follow
-
-1. **Same input, same result.** Don't use `Math.random()` or `Date.now()`.
-   If you need randomness, use the `rng` passed to `setup(rng)` (`rng.next()`, `rng.int(n)`).
-   Otherwise the two players' boards drift apart.
-2. **Don't change the state you receive.** Copy it and return a new one.
-3. **Keep the state plain JSON.** Numbers, strings, booleans, arrays, plain objects.
-   No `Set`, `Map`, classes, or functions.
-4. **Ignore moves that aren't allowed** by returning the same state. Your game decides whose turn it is,
-   and `play()` only accepts moves from the player `turn()` names.
-
-`npx boardmadang check` catches all four, plays 200 random games, and checks speed and size limits.
-
-## Optional parts
-
-| Add this | When |
-|---|---|
-| `legal(state, player)` | Return the moves allowed right now. Shows hover hints and helps the AI learn. |
-| `observe(state, player)` | Extra info you can't see on the board (like castling rights in chess), for the AI. |
-| `specialActions: ['pass']` | Moves that aren't on the board (up to 8). Boardmadang shows them as buttons below the board and sends `{ kind: 'pass' }`. You can set the button text [as shown below](#panels-buttons-and-motion). |
-
-Resigning is built into the site, so your game doesn't handle it.
+- When someone clicks, boardmadang calls `play()` with `{ kind: 'click', row, col }`, or with `{ kind: 'pass' }` for a button listed in `specialActions: ['pass']`.
+- **Don't change the state you receive.** Copy it and return a new one.
+- **Ignore moves that aren't allowed** by returning the same state. Your game decides whose turn it is, and `play()` only accepts moves from the player `turn()` names.
+- `legal(state, player)` is optional. It returns the moves allowed right now, which gives hover hints and helps the AI learn.
+- `view()` writes its own `message` and adds its own marks, like `last-move`.
 
 ## Drawing (`view`)
 
 Return what to show. Boardmadang does the drawing.
+In a game written with `moves()`, the `ring`, `dot` and `last-move` marks and the `message` are added for you, so most games return only `pieces`.
 
 ```js
 view(state, player, lang) {
@@ -250,7 +344,7 @@ If it runs past the edge, the canvas grows to fit. On a flipped board it hangs f
 `from` on a piece can be a list square, `{ list, row, col }`, and a piece in a list can have a board square as `from`: it moves and changes size between the two.
 The AI doesn't see lists. If it needs to know what they show (the upcoming pieces, say), give it to the AI with `observe()`.
 
-**Buttons (`view().buttons`):** sets the order and text of the `specialActions` buttons. Write the text in `lang`.
+**Buttons (`view().buttons`):** sets the order and text of the `specialActions` buttons. Write the text in `lang`. (In a `moves()` game you can give the text in `specialActions` instead, and you don't need this.)
 Only the listed buttons are shown, so you can leave out buttons that can't be used now. If your game has `legal()`, buttons not in `legal()` are dimmed and can't be pressed.
 Without `buttons`, every `specialActions` entry is shown with its name, as before.
 
@@ -296,7 +390,7 @@ languages, and the timer. You can also fill it in on the site when you register.
 }
 ```
 
-- **Languages:** `full` means your game's own text (`message` in `view`, `reason` in `result`) is translated too.
+- **Languages:** `full` means your game's own text (messages, win reasons, button text) is translated too.
   `rulebook` means only the name, description, and rules are. Boardmadang passes one of your `full` languages as `lang`,
   so keep your in-game text in a small table per language.
 - **Timer:** each player gets this many minutes in total, like a chess clock (1 to 180, or `null` for none).
@@ -308,10 +402,13 @@ languages, and the timer. You can also fill it in on the site when you register.
 |---|---|
 | Board size (`rows`, `cols`) | 32 |
 | Kinds of pieces | 32 |
+| Piece name | 32 characters |
+| Special actions | 8, with names up to 24 characters |
+| Game id | 40 characters |
 | `maxActions` | 2,000 |
 | Game code | 256 KB |
 | State (as JSON) | 64 KB |
-| Time per `play()` | 2 ms on average, 50 ms at most |
+| Time per move (`play()`, or `moves()` + `move()`) | 2 ms on average, 50 ms at most |
 
 Big games are fine for people playing each other. The AI just gets a fixed training budget, so it ends up weaker in bigger games.
 
@@ -321,9 +418,11 @@ Add a type comment above your game to get autocomplete in VS Code and other edit
 For it to find the types, install the package in your game folder with `npm i -D boardmadang`.
 
 ```js
-/** @type {import('boardmadang').Game<State>} */
+/** @type {import('boardmadang').MovesGame<State>} */
 export default { /* … */ };
 ```
+
+Use `Game<State>` instead if you write `play()` yourself.
 
 The full types are in [game.d.ts](https://github.com/shin1244/boardmadang/blob/main/sdk/game.d.ts).
 

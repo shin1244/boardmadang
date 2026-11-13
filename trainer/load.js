@@ -6,6 +6,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { toGame } from '../sdk/playground/moves.js';
 import { Env } from './env.js';
 
 /** listing.json에서 완전 번역한 첫 언어. 없으면 'en' */
@@ -20,6 +21,7 @@ async function gameLang(dir) {
 }
 
 export async function loadEnv(dir) {
-  const game = (await import(pathToFileURL(path.resolve(dir, 'index.js')).href)).default;
+  // moves()와 move()로 쓴 게임이면 게임 API로 바꿉니다 (사이트에서 받은 코드 zip은 이미 바뀌어 있어 그대로 지나갑니다)
+  const game = toGame((await import(pathToFileURL(path.resolve(dir, 'index.js')).href)).default);
   return new Env(game, { lang: await gameLang(dir) });
 }

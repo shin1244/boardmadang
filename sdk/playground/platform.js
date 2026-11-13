@@ -1,6 +1,12 @@
 // 플랫폼이 게임에 주는 도구. 플레이그라운드와 실제 대국 화면이 같이 씁니다.
 // 양쪽 브라우저가 같은 결과를 내야 하므로 이 파일을 고치면 대국 중인 두 사람의 버전이 같아야 합니다.
 
+/**
+ * moves()와 move()로 쓴 게임인지 (playground/moves.js의 toGame이 지금의 게임 API로 바꿔 줍니다).
+ * play()가 있으면 이미 지금의 API로 쓴 게임입니다.
+ */
+export const usesMoves = (game) => typeof game?.moves === 'function' && typeof game?.move === 'function' && typeof game?.play !== 'function';
+
 /** 시드로 만드는 결정적 난수 (mulberry32). 게임의 setup(rng)에 넘깁니다. */
 export function makeRng(seed) {
   let a = seed >>> 0;

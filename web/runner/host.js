@@ -23,7 +23,7 @@
 // 탐색이 끝나면 { done: { action } | null }입니다 (둘 수가 없으면 null). 부를 때마다 시간 제한이 따로 걸립니다.
 // 관측은 학습할 때와 같은 코드(trainer/env.js의 encode)로 만들어서 학습한 신경망이 본 것과 한 글자도 다르지 않습니다.
 
-import { hashOf, makeRng } from '../../sdk/playground/platform.js';
+import { hashOf, makeRng, usesMoves } from '../../sdk/playground/platform.js';
 
 /** 구조화 복사로 보낼 수 없는 값(함수, 클래스)을 걸러 낸 JSON 복사본 */
 const plain = (v) => (v === undefined ? null : JSON.parse(JSON.stringify(v)));
@@ -68,6 +68,8 @@ export function createHost() {
     async load({ module }) {
       game = (await import(module)).default;
       if (!game || typeof game !== 'object') throw new Error('index.js needs a default export');
+      // moves()와 move()로 쓴 게임은 npx boardmadang pack이 게임 API로 바꾸는 코드를 zip에 같이 넣습니다. 폴더를 그냥 압축해 올리면 여기서 걸립니다
+      if (usesMoves(game)) throw new Error('this game is written with moves() and move(): upload the zip that "npx boardmadang pack" makes');
       for (const k of ['setup', 'play', 'result', 'view']) {
         if (typeof game[k] !== 'function') throw new Error(`${k}() is missing`);
       }

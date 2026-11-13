@@ -9,7 +9,7 @@ import {
   EFFECT_TYPES, FRAME_WIDTH, GAME_ID, LINE_WIDTH, LOOK_NAMES, MARK_TYPES, PIECE_SETS, PLACES, SHAPE_LIMITS,
   cleanPieces, fieldOf, isCell, isColor, isInt, isSpecialKind, knowsPiece, listsOf, pieceName, starsOf, validWidth,
 } from './playground/board.js';
-import { hashOf, makeRng } from './playground/platform.js';
+import { hashOf, makeRng, usesMoves } from './playground/platform.js';
 
 /**
  * 업로드할 때 검사하는 상한. 판과 기물의 크기(SHAPE_LIMITS: boardSize, pieceKinds, maxActions 등)는
@@ -26,7 +26,7 @@ export const GAME_LIMITS = {
 
 /** 목록을 문제 글에 쓸 모양으로: 'a', 'b', or 'c' */
 const quoted = (list) => list.map((x) => `'${x}'`);
-const oneOf = (list) => [...quoted(list).slice(0, -1), `or ${quoted(list).at(-1)}`].join(', ');
+const oneOf = (list) => [...quoted(list.slice(0, -1)), `or '${list[list.length - 1]}'`].join(', ');
 
 /** JSON으로 그대로 옮길 수 없는 값의 위치. 문제없으면 null */
 export function findNonJson(v, where = 'state') {
@@ -58,10 +58,10 @@ function boardProblems(b, where) {
   if (!PLACES.includes(b.places)) p.push(`${where}.places: must be ${oneOf(PLACES)}`);
   const badSize = ['rows', 'cols'].filter((k) => !isInt(b[k], 1, GAME_LIMITS.boardSize));
   for (const k of badSize) p.push(`${where}.${k}: must be a whole number from 1 to ${GAME_LIMITS.boardSize}`);
-  // 렌더러는 틀린 값을 말없이 기본값으로 그리므로 (오타가 드러나지 않음) 여기서 알려 줍니다
-  if (b.look !== undefined && !LOOK_NAMES.includes(b.look)) p.push(`${where}.look: must be ${oneOf(LOOK_NAMES)}`);
-  if (b.labels !== undefined && typeof b.labels !== 'boolean') p.push(`${where}.labels: must be true or false`);
-  if (b.flipForPlayer !== undefined && b.flipForPlayer !== 0 && b.flipForPlayer !== 1) p.push(`${where}.flipForPlayer: must be 0 or 1`);
+  // 렌더러는 틀린 값을 말없이 기본값으로 그리므로 (오타가 드러나지 않음) 여기서 알려 줍니다. 없거나 null이면 정하지 않은 것입니다
+  if (b.look != null && !LOOK_NAMES.includes(b.look)) p.push(`${where}.look: must be ${oneOf(LOOK_NAMES)}`);
+  if (b.labels != null && typeof b.labels !== 'boolean') p.push(`${where}.labels: must be true or false`);
+  if (b.flipForPlayer != null && b.flipForPlayer !== 0 && b.flipForPlayer !== 1) p.push(`${where}.flipForPlayer: must be 0 or 1`);
   // 화점, 판 밖 영역(areas), 판 옆 목록(lists)은 rows, cols가 맞을 때만 봅니다 (규칙은 렌더러의 starsOf, fieldOf, listsOf 하나씩)
   if (!badSize.length) p.push(...[...starsOf(b).problems, ...fieldOf(b).problems, ...listsOf(b).problems].map((x) => `${where}.${x}`));
   return p;
@@ -72,6 +72,10 @@ const piecesOk = (pc) => cleanPieces(pc) !== null;
 
 /** 필수 멤버와 제한값 검사. 업로드 검사의 첫 단계와 같습니다. */
 export function checkMembers(g) {
+  // moves()와 move()로 쓴 게임은 게임 API로 바꾼 뒤에 검사합니다 (playground/moves.js의 toGame). 여기까지 그대로 왔으면 바꾸지 않은 것입니다
+  if (usesMoves(g)) {
+    return ['This game is written with moves() and move(), which have to be turned into the game API first. Use "npx boardmadang check", and upload the zip that "npx boardmadang pack" makes.'];
+  }
   const p = [];
   const fn = (k) => typeof g[k] === 'function';
   if (typeof g.id !== 'string' || !GAME_ID.test(g.id)) p.push(`id: must use only lowercase letters, numbers, and - (up to ${GAME_LIMITS.idChars} characters)`);

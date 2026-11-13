@@ -15,11 +15,12 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { GAME_LIMITS, checkGame, checkThumbnail } from '../check.js';
 import { startDev } from '../lib/dev.js';
-import { codeFiles, codeVersion, readJson } from '../lib/games.js';
+import { packedCode, readJson, versionOf } from '../lib/games.js';
 import { zip } from '../lib/zip.js';
 import { GAME_ID, SHAPE_LIMITS } from '../playground/board.js';
 import { LANGS, fullLangs, validateListing } from '../playground/listing.js';
-import { makeRng } from '../playground/platform.js';
+import { toGame } from '../playground/moves.js';
+import { makeRng, usesMoves } from '../playground/platform.js';
 
 const SDK = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const VERSION = JSON.parse(fs.readFileSync(path.join(SDK, 'package.json'), 'utf8')).version;
@@ -91,7 +92,7 @@ function newGame(dir) {
 
 // ---- check ----
 
-/** 게임 모듈을 불러옵니다. index.js가 export를 쓰므로 ES 모듈로 읽혀야 합니다. */
+/** 게임 모듈을 불러옵니다 (index.js가 내보낸 그대로). index.js가 export를 쓰므로 ES 모듈로 읽혀야 합니다. */
 async function loadGame(folder) {
   const file = path.join(folder, 'index.js');
   if (!fs.existsSync(file)) throw new Error(`${file} not found. Run this in your game folder, or name the folder.`);
@@ -122,7 +123,8 @@ function workingLangs(game) {
 
 /**
  * 업로드 검사. 문제가 있으면 problems에 쌓고, 화면에 줄마다 씁니다.
- * @returns {Promise<{ problems: string[], game: object | null, files: string[] }>}
+ * files는 올릴 zip에 들어갈 코드 파일입니다 (lib/games.js의 packedCode).
+ * @returns {Promise<{ problems: string[], game: object | null, files: { name: string, data: Buffer }[] }>}
  */
 async function runCheck(folder, { games = 200 } = {}) {
   folder = path.resolve(folder);
@@ -130,19 +132,21 @@ async function runCheck(folder, { games = 200 } = {}) {
   const fail = (s) => { problems.push(s); bad(s); };
   say(`Checking ${folder}`);
 
-  // 파일
-  const files = codeFiles(folder);
-  const bytes = files.reduce((n, f) => n + fs.statSync(path.join(folder, f)).size, 0);
-  if (bytes > GAME_LIMITS.codeBytes) fail(`game code is ${(bytes / 1024).toFixed(1)}KB (limit ${GAME_LIMITS.codeBytes / 1024}KB)`);
-  else good(`${files.length} code file${files.length === 1 ? '' : 's'}, ${(bytes / 1024).toFixed(1)}KB · version ${codeVersion(folder)}`);
-
+  // 게임과 올릴 파일. moves()로 쓴 게임은 게임 API로 바꿔서 검사하고, 올릴 때도 그렇게 바꾸는 코드를 같이 넣습니다
   let game;
+  let files = [];
   try {
-    game = await loadGame(folder);
+    const raw = await loadGame(folder);
+    files = packedCode(folder, raw);
+    game = toGame(raw);
+    if (usesMoves(raw)) good('written with moves() and move(): boardmadang handles turns, piece picking, and hints');
   } catch (e) {
     fail(e.message);
     return { problems, game: null, files };
   }
+  const bytes = files.reduce((n, f) => n + f.data.length, 0);
+  if (bytes > GAME_LIMITS.codeBytes) fail(`game code is ${(bytes / 1024).toFixed(1)}KB (limit ${GAME_LIMITS.codeBytes / 1024}KB)`);
+  else good(`${files.length} code file${files.length === 1 ? '' : 's'}, ${(bytes / 1024).toFixed(1)}KB · version ${versionOf(files)}`);
 
   // 등록 정보
   const listing = readJson(path.join(folder, 'listing.json'));
@@ -189,13 +193,16 @@ async function pack(folder, opts) {
   const { problems, game, files } = await runCheck(folder, opts);
   if (problems.length) return false;
 
-  const names = [...files];
-  for (const extra of ['listing.json', 'thumbnail.json']) if (fs.existsSync(path.join(folder, extra))) names.push(extra);
+  const entries = [...files];
+  for (const extra of ['listing.json', 'thumbnail.json']) {
+    if (fs.existsSync(path.join(folder, extra))) entries.push({ name: extra, data: fs.readFileSync(path.join(folder, extra)) });
+  }
   const out = path.resolve(opts.out ?? path.join(folder, `${game.id}.zip`));
-  const data = zip(names.map((name) => ({ name, data: fs.readFileSync(path.join(folder, ...name.split('/'))) })));
+  const data = zip(entries);
   fs.writeFileSync(out, data);
   say(`Made ${out} (${(data.length / 1024).toFixed(1)}KB)`);
-  for (const n of names) say(`    ${n}`);
+  for (const { name } of entries) say(`    ${name}`);
+  if (entries.some((f) => f.name === 'index.game.js')) say('    (index.game.js is your index.js. pack added index.js and boardmadang/ to run its moves() and move().)');
   say('Upload it on the "Register a game" page: https://boardmadang.com/web/register.html');
   return true;
 }

@@ -25,7 +25,7 @@ npx boardmadang dev
 | `npx boardmadang new <폴더>` | 틱택토에서 시작하는 새 게임을 만듭니다. 폴더 이름이 게임 id가 됩니다. |
 | `npx boardmadang dev` | 플레이그라운드를 엽니다. 혼자 양쪽을 두고 [썸네일](#썸네일)을 찍습니다. |
 | `npx boardmadang check` | 사이트에 올릴 때와 같은 검사를 합니다. |
-| `npx boardmadang pack` | 검사를 통과하면 올릴 `<id>.zip`을 만듭니다 (다른 곳에 만들려면 `--out game.zip`). |
+| `npx boardmadang pack` | 검사를 통과하면 올릴 `<id>.zip`을 만듭니다 (다른 곳에 만들려면 `--out game.zip`). `moves()`로 쓴 게임이면 그것을 돌리는 작은 파일도 zip에 같이 넣습니다. |
 
 zip은 boardmadang.com의 **게임 등록** 화면(<https://boardmadang.com/web/register.html>)에서 올립니다.
 로그인이 필요합니다. 화면이 브라우저에서 같은 검사를 한 번 더 하고, 혼자 양쪽을 둬서 한 판을 이기면(클리어 체크) 등록 정보를 넣어 등록합니다.
@@ -44,7 +44,122 @@ my-game/
 
 ## 게임은 이렇게 생겼습니다
 
-게임은 객체 하나입니다. 틱택토로 보면 이렇습니다.
+게임은 객체 하나입니다. 규칙은 한 번만 씁니다: 어떤 수를 둘 수 있는지, 그 수를 두면 어떻게 되는지. 틱택토로 보면 이렇습니다.
+
+```js
+export default {
+  id: 'my-game',
+  board: { places: 'cells', rows: 3, cols: 3 }, // 3×3 판, 기물은 칸 안에 놓임
+  pieces: 'xo',                                  // 내장된 X, O 기물
+  maxActions: 9,                                 // 이 수 안에 끝나야 함
+
+  // 시작 판: 빈 3×3
+  setup: () => ({ grid: [[null, null, null], [null, null, null], [null, null, null]] }),
+
+  // player가 지금 둘 수 있는 수: 빈칸이면 어디든
+  moves(state, player) {
+    const list = [];
+    state.grid.forEach((line, row) => line.forEach((owner, col) => {
+      if (owner === null) list.push({ row, col });
+    }));
+    return list;
+  },
+
+  // 수를 둡니다. m은 moves()가 돌려준 수 가운데 하나이고, state를 그대로 고쳐도 됩니다
+  move(state, m, player) {
+    state.grid[m.row][m.col] = player;
+  },
+
+  // 누가 이겼나요? 0이나 1, 'draw', 아직 안 끝났으면 아무것도 안 돌려줍니다
+  winner(state) {
+    // (세 칸이 이어졌는지는 여기서 봅니다)
+  },
+
+  // 이 플레이어에게 그릴 것
+  view(state, player, lang) {
+    const pieces = [];
+    state.grid.forEach((line, row) => line.forEach((owner, col) => {
+      if (owner !== null) pieces.push({ row, col, piece: owner === 0 ? 'x' : 'o' });
+    }));
+    return { pieces };
+  },
+};
+```
+
+이게 전부입니다. 나머지는 보드마당이 합니다.
+
+- **차례.** 번갈아 둡니다. 차례가 아닌 쪽의 클릭과 `moves()`에 없는 수는 무시합니다.
+- **표시.** 둘 수 있는 칸은 마우스를 올리면 표시되고, 마지막 수가 표시됩니다.
+- **안내 글자.** "내 차례", "상대 차례", "이겼습니다!", "졌습니다", "무승부"를 한국어와 영어로 보여 줍니다. 다른 말을 쓰려면 `view()`가 `message`를 돌려주면 됩니다.
+- **끝.** `winner()`가 이긴 쪽이나 `'draw'`를 돌려주거나, 둘 차례인 쪽이 둘 수 있는 수가 없거나(무승부), `maxActions`번을 두면(무승부. 안 적으면 300) 끝납니다.
+- **AI**도 같은 `moves()`로 배웁니다.
+
+두 플레이어의 브라우저가 같은 클릭을 같은 순서로 게임 코드에 넣으므로, 둘은 늘 같은 판을 봅니다.
+게임 코드는 네트워크, 화면, 상대가 누구인지를 전혀 신경 쓰지 않아도 됩니다.
+사이트에서는 게임 코드를 샌드박스에 가둬서 돌리므로 `fetch`, 저장소, `eval`, `Worker`는 쓸 수 없습니다.
+
+## 수
+
+`moves(state, player)`는 목록을 돌려줍니다. 수의 모양은 셋입니다.
+
+| 수 | 플레이어가 하는 일 |
+|---|---|
+| `{ row, col }` | 칸 하나를 누릅니다 (틱택토, 오목, 리버시) |
+| `{ from: { row, col }, to: { row, col } }` | 기물을 누르고, 갈 칸을 누릅니다 (체스, 체커) |
+| `{ special: 'pass' }` | 판 아래의 버튼을 누릅니다 |
+
+수에는 다른 것을 얼마든지 붙여도 됩니다 (잡는 기물, 승급 여부 등). `move()`가 그대로 돌려받습니다.
+
+**기물 고르기.** `from` / `to`가 있는 수는 클릭 두 번을 보드마당이 맡습니다. 기물을 누르면 고르고 갈 수 있는 곳을 보여 주며, 다른 기물을 누르면 바꾸고, 다시 누르면 취소합니다. 둔 기물은 새 칸으로 미끄러져 갑니다.
+손에 든 기물도 같습니다. 손을 [판 밖 패널](#판-밖-패널-버튼-움직임)에 두고 그 칸을 `from`으로 쓰면 됩니다.
+`from`과 `to`가 같은 수가 여럿이면(승급할 기물 고르기 등) 목록의 첫 번째를 둡니다.
+
+**버튼.** `specialActions`에 이름을 적고(버튼 글자도 같이 적을 수 있습니다), 누를 수 있을 때 `moves()`가 `{ special: 이름 }`을 돌려줍니다. 누를 수 없을 때는 버튼이 흐려집니다.
+
+```js
+specialActions: { pass: { en: 'Pass', ko: '넘기기' } }, // 이름만 적어도 됩니다: ['pass']
+
+moves(state, player) {
+  const squares = placesFor(state, player);
+  return squares.length ? squares : [{ special: 'pass' }]; // 둘 곳이 없을 때만 넘기기
+},
+```
+
+**이어서 두기.** `move()`가 `'again'`을 돌려주면 같은 플레이어가 한 번 더 둡니다 (체커의 연속 뛰기, 만칼라의 한 번 더).
+방금 옮긴 기물로 이어서 둘 수 있으면 그 기물이 고른 채로 남습니다.
+
+```js
+move(state, m, player) {
+  // …기물을 옮기고 뛰어넘은 기물을 치웁니다…
+  state.jumping = canJumpAgain(state, m.to) ? m.to : null;
+  return state.jumping ? 'again' : undefined;
+},
+```
+
+**이기는 조건.** `winner(state)`는 `0`, `1`, `'draw'`를 돌려주거나 아무것도 돌려주지 않습니다. 이유를 보여 주려면 `{ winner: 0, reason: { en: 'Three in a row', ko: '세 줄 완성' } }`처럼 돌려줍니다.
+자주 쓰는 규칙 두 가지는 게임 객체에 적기만 하면 됩니다: `noMoves: 'lose'`(둘 수 있는 수가 없으면 무승부 대신 그 플레이어가 짐), `repeat: 3`(같은 판이 세 번 나오면 무승부).
+
+끝까지 쓴 게임 셋을 읽어 보세요: [리버시](https://github.com/shin1244/boardmadang/blob/main/sdk/examples/reversi/index.js)(넘기기 버튼), [체커](https://github.com/shin1244/boardmadang/blob/main/sdk/examples/checkers/index.js)(반드시 잡기, 연속 뛰기, 왕), [십이장기](https://github.com/shin1244/boardmadang/blob/main/sdk/examples/twelve/index.js)(손에 든 기물, 승급).
+둬 보려면 새 게임의 `index.js`에 덮어쓰고 `npx boardmadang dev`를 실행하면 됩니다.
+
+## 꼭 지킬 두 가지
+
+1. **같은 입력이면 같은 결과.** `Math.random()`, `Date.now()`를 쓰지 마세요.
+   무작위가 필요하면 `setup(rng)`로 받은 `rng`를 씁니다 (`rng.next()`, `rng.int(n)`).
+   어기면 두 플레이어의 판이 서로 달라집니다.
+2. **상태는 평범한 JSON으로.** 숫자, 글자, 참/거짓, 배열, 평범한 객체만 씁니다.
+   `Set`, `Map`, 클래스, 함수는 넣지 마세요.
+
+`npx boardmadang check`가 두 가지를 모두 잡아 주고, 랜덤 대국 200판으로 속도와 크기 제한도 봅니다.
+
+있으면 좋은 것이 하나 있습니다. `observe(state, player)`는 판에 안 보이는 정보(체스의 캐슬링 권리 같은 것)를 AI에게 알려 줍니다.
+기권은 사이트에 이미 있어서 게임이 처리하지 않습니다.
+
+## `play()`를 직접 쓰기
+
+`moves()`와 `move()`는 수가 클릭 한 번, 기물 옮기기, 버튼인 턴제 게임을 다룹니다.
+클릭 세 번이 한 수이거나 기물 고르는 방식을 직접 정해야 하는 게임이면 게임 API를 직접 씁니다.
+`npx boardmadang pack`이 `moves()`로 쓴 게임을 바로 이 모양으로 바꿔 올리므로, 이 안내서의 나머지는 양쪽에 똑같이 적용됩니다.
 
 ```js
 export default {
@@ -89,37 +204,16 @@ export default {
 };
 ```
 
-이게 전부입니다. 누가 칸을 누르면 보드마당이 그 클릭을 `{ kind: 'click', row, col }`로 바꿔 `play()`를 부릅니다.
-두 플레이어의 브라우저가 같은 클릭을 같은 순서로 `play()`에 넣으므로, 둘은 늘 같은 판을 봅니다.
-게임 코드는 네트워크, 화면, 상대가 누구인지를 전혀 신경 쓰지 않아도 됩니다.
-사이트에서는 게임 코드를 샌드박스에 가둬서 돌리므로 `fetch`, 저장소, `eval`, `Worker`는 쓸 수 없습니다.
-
-## 꼭 지킬 네 가지
-
-1. **같은 입력이면 같은 결과.** `Math.random()`, `Date.now()`를 쓰지 마세요.
-   무작위가 필요하면 `setup(rng)`로 받은 `rng`를 씁니다 (`rng.next()`, `rng.int(n)`).
-   어기면 두 플레이어의 판이 서로 달라집니다.
-2. **받은 상태를 고치지 마세요.** 복사해서 새 상태를 돌려줍니다.
-3. **상태는 평범한 JSON으로.** 숫자, 글자, 참/거짓, 배열, 평범한 객체만 씁니다.
-   `Set`, `Map`, 클래스, 함수는 넣지 마세요.
-4. **둘 수 없는 수는 무시합니다.** 받은 상태를 그대로 돌려주면 됩니다. 누구 차례인지는 게임이 정하고,
-   `play()`는 `turn()`이 말한 플레이어의 수만 받아들입니다.
-
-`npx boardmadang check`가 네 가지를 모두 잡아 주고, 랜덤 대국 200판으로 속도와 크기 제한도 봅니다.
-
-## 있으면 좋은 것
-
-| 추가할 것 | 언제 |
-|---|---|
-| `legal(state, player)` | 지금 둘 수 있는 수 목록. 마우스를 올렸을 때 표시가 나오고, AI 학습에 도움이 됩니다. |
-| `observe(state, player)` | 판에 안 보이는 정보 (체스의 캐슬링 권리 같은 것). AI가 씁니다. |
-| `specialActions: ['pass']` | 판 밖의 행동 (8개까지). 보드마당이 판 아래 버튼으로 보여주고 `{ kind: 'pass' }`를 보냅니다. 버튼 글자는 [아래](#판-밖-패널-버튼-움직임)처럼 정할 수 있습니다. |
-
-기권은 사이트에 이미 있어서 게임이 처리하지 않습니다.
+- 누가 칸을 누르면 보드마당이 `{ kind: 'click', row, col }`로 `play()`를 부릅니다. `specialActions: ['pass']`에 적은 버튼이면 `{ kind: 'pass' }`입니다.
+- **받은 상태를 고치지 마세요.** 복사해서 새 상태를 돌려줍니다.
+- **둘 수 없는 수는 무시합니다.** 받은 상태를 그대로 돌려주면 됩니다. 누구 차례인지는 게임이 정하고, `play()`는 `turn()`이 말한 플레이어의 수만 받아들입니다.
+- `legal(state, player)`은 없어도 됩니다. 지금 둘 수 있는 수 목록을 돌려주면 마우스를 올렸을 때 표시가 나오고, AI 학습에 도움이 됩니다.
+- `view()`가 `message`와 `last-move` 같은 표시를 직접 넣습니다.
 
 ## 그리기 (`view`)
 
 보여줄 것을 돌려주면 그리는 건 보드마당이 합니다.
+`moves()`로 쓴 게임은 `ring`, `dot`, `last-move` 표시와 `message`를 보드마당이 붙이므로, 대개 `pieces`만 돌려주면 됩니다.
 
 ```js
 view(state, player, lang) {
@@ -247,7 +341,7 @@ view(state, player, lang) {
 기물의 `from`에 목록의 칸 `{ list, row, col }`을 줄 수 있고, 목록 안 기물의 `from`에 판의 칸을 줄 수도 있습니다. 둘 사이를 오가며 크기도 바뀝니다.
 AI는 목록을 보지 못합니다. 목록에 보이는 것(앞으로 나올 기물 같은 것)을 AI가 알아야 하면 `observe()`로 넘깁니다.
 
-**버튼 (`view().buttons`):** `specialActions`의 버튼을 어떤 순서로, 어떤 글자로 보일지 정합니다. 글자는 `lang`으로 씁니다.
+**버튼 (`view().buttons`):** `specialActions`의 버튼을 어떤 순서로, 어떤 글자로 보일지 정합니다. 글자는 `lang`으로 씁니다. (`moves()`로 쓴 게임은 `specialActions`에 글자를 같이 적으면 되어서 이것이 필요 없습니다.)
 적은 버튼만 보이므로 지금 쓸 수 없는 버튼은 빼도 되고, `legal()`이 있으면 `legal()`에 없는 버튼은 흐리게 보이고 눌리지 않습니다.
 `buttons`를 주지 않으면 예전처럼 `specialActions` 전부가 이름 그대로 보입니다.
 
@@ -293,7 +387,7 @@ AI는 목록을 보지 못합니다. 목록에 보이는 것(앞으로 나올 �
 }
 ```
 
-- **언어:** `full`(완전 번역)은 게임 안 글자(`view`의 `message`, `result`의 `reason`)까지 그 언어로 나옵니다.
+- **언어:** `full`(완전 번역)은 게임 안 글자(안내 글자, 이긴 이유, 버튼 글자)까지 그 언어로 나옵니다.
   `rulebook`(일부 번역)은 이름, 소개, 룰북만입니다. 보드마당은 `full`로 고른 언어 중 하나를 `lang`으로 넘기므로,
   게임 안 글자는 언어별 작은 표로 두면 편합니다.
 - **타이머:** 체스 시계처럼 각자 쓸 수 있는 총 시간(분)입니다 (1~180, 없으면 `null`).
@@ -305,10 +399,13 @@ AI는 목록을 보지 못합니다. 목록에 보이는 것(앞으로 나올 �
 |---|---|
 | 판 크기 (`rows`, `cols`) | 32 |
 | 기물 종류 | 32 |
+| 기물 이름 | 32자 |
+| 특수 행동 | 8개, 이름은 24자 |
+| 게임 id | 40자 |
 | `maxActions` | 2,000 |
 | 게임 코드 | 256 KB |
 | 상태 (JSON) | 64 KB |
-| `play()` 한 번 | 평균 2 ms, 최대 50 ms |
+| 한 수 (`play()`, 또는 `moves()` + `move()`) | 평균 2 ms, 최대 50 ms |
 
 큰 게임도 사람끼리 대전은 똑같이 됩니다. AI는 정해진 학습 예산만 받아서, 큰 게임일수록 약하게 나올 뿐입니다.
 
@@ -318,9 +415,11 @@ AI는 목록을 보지 못합니다. 목록에 보이는 것(앞으로 나올 �
 타입을 찾으려면 게임 폴더에 `npm i -D boardmadang`으로 패키지를 설치하세요.
 
 ```js
-/** @type {import('boardmadang').Game<State>} */
+/** @type {import('boardmadang').MovesGame<State>} */
 export default { /* … */ };
 ```
+
+`play()`를 직접 쓰면 `Game<State>`를 씁니다.
 
 전체 타입은 [game.d.ts](https://github.com/shin1244/boardmadang/blob/main/sdk/game.d.ts)에 있습니다.
 

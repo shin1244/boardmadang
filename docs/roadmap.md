@@ -8,7 +8,7 @@
 - **대전**: 빠른 매칭, 방 만들기와 초대 링크, 내 차례면 초록 판 테두리, 대국 시계, 무승부 제안, 재대결, 관전, 기보 다시보기, 이모티콘, 의견과 신고
 - **링크 미리보기**: 카톡, 디스코드에 주소를 붙이면 그림(`web/og.png`)과 소개가 나옵니다 (og 태그). 사이트 아이콘
 - **게임 코드 샌드박스**: 사이트 화면은 게임 코드를 출처 없는 iframe 안의 Worker에서만 돌립니다 ([architecture.md](architecture.md#보안))
-- **npm 패키지 `boardmadang` 0.2.4**: `npx boardmadang new / dev / check / pack`, 판을 찍는 썸네일, 칸 테두리 두께(`width`)와 칸을 잇는 선(`lines`), 장기 · 쇼기 말 같은 글자 패 기물,
+- **npm 패키지 `boardmadang` 0.3.0**: `npx boardmadang new / dev / check / pack`, 규칙을 한 번만 쓰는 `moves()` · `move()` 형태, 판을 찍는 썸네일, 칸 테두리 두께(`width`)와 칸을 잇는 선(`lines`), 장기 · 쇼기 말 같은 글자 패 기물,
   판 밖 패널(`board.areas`)과 판 좌표 밖의 목록(`board.lists`), 특수 행동 버튼 글자(`view().buttons`), 클릭 옮기기(`view().aliases`), 떨어지고 미끄러지는 움직임(`pieces[].from`),
   잡힌 기물이 갈라지고 지워진 기물이 빛나며 사라지는 효과(`view().effects`), 이름 옆 플레이어 기물(`playerPieces`), 내 차례면 판의 초록 테두리 ([sdk/README.ko.md](../sdk/README.ko.md#판-밖-패널-버튼-움직임))
 - **게임**: 틱택토 하나

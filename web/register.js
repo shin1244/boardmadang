@@ -16,7 +16,7 @@
 // 자동 검사와 직접 깨기는 이 브라우저에서 돌기 때문에 서버는 결과를 믿지 않습니다 (모양만 봅니다).
 // 검사는 올리는 사람이 문제를 미리 알게 하려는 것이고, 클리어는 적어도 한 번은 끝까지 둘 수 있는 게임이라는 표시입니다.
 
-import { BoardView, attachInput, buttonsOf, paintPlayerDot } from '/sdk/playground/board.js';
+import { BoardView, SHAPE_LIMITS, attachInput, buttonsOf, paintPlayerDot } from '/sdk/playground/board.js';
 import { LANGS, LANG_NAMES, LIMITS, NO_TIMER, TIMER_MINUTES, fullLangs, gameLang, isRtl, localize, validateListing } from '/sdk/playground/listing.js';
 import { makeThumbnail, sameAction, validateThumbnail } from '/sdk/check.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
@@ -29,8 +29,8 @@ const TEXT_FIELDS = ['name', 'description', 'rulebook'];
 const DEFAULT_TIMER = { minutes: 10, custom: true };
 /** 자동 검사에서 두는 랜덤 대국 수 (npx boardmadang check는 200판) */
 const CHECK_GAMES = 100;
-/** 게임 id 길이. 대전 서버가 받는 길이입니다 */
-const MAX_ID = 40;
+/** 게임 id 길이. 대전 서버가 받는 길이입니다 (검사 도구와 같은 값) */
+const MAX_ID = SHAPE_LIMITS.idChars;
 /** 단계 번호. 직접 깨기는 사이트에서만 합니다 (stepsOf) */
 const STEP = { file: 1, clear: 2, langs: 3, texts: 4 };
 const BOARD_PX = 420;
