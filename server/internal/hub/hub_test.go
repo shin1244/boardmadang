@@ -142,6 +142,18 @@ func (p *player) result(winner *int) {
 	p.send(protocol.Result{Type: protocol.TypeResult, Winner: winner})
 }
 
+// sync는 서버가 이 연결로 받은 메시지를 여기까지 다 처리하기를 기다립니다. 대국 중에만 씁니다.
+// 서버는 한 연결의 메시지를 차례로 처리하므로, 모르는 종류를 보내고 그 error가 오면 앞서 보낸 것(답이 없는 해시 등)은 처리가 끝난 것입니다.
+func (p *player) sync() {
+	p.t.Helper()
+	p.say("sync")
+	var e protocol.Error
+	p.expect(protocol.TypeError, &e)
+	if e.Message != "unknown type" {
+		p.t.Fatalf("sync: error = %q, want unknown type", e.Message)
+	}
+}
+
 func (p *player) expectEnded(winner *int, reason string) {
 	p.t.Helper()
 	var e protocol.Ended
@@ -184,6 +196,10 @@ func match(t *testing.T, srv *httptest.Server) [2]*player {
 	}
 	ps[0].hash(-1, "start")
 	ps[1].hash(-1, "start")
+	// 시작 해시는 답이 없습니다. 기다리지 않으면 상대가 바로 대국을 끝냈을 때(기권 등) 늦게 처리된 해시가
+	// "not in a room" 오류로 돌아와 다음 expect에 끼어듭니다.
+	ps[0].sync()
+	ps[1].sync()
 	return ps
 }
 
