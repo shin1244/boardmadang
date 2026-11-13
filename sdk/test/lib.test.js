@@ -188,7 +188,7 @@ test('npx boardmadang new → check → pack: 새 게임은 moves()로 쓴 틱�
 });
 
 test('예제 게임들도 npx boardmadang check를 통과합니다', () => {
-  for (const name of ['twelve', 'reversi', 'checkers']) {
+  for (const name of ['twelve', 'reversi', 'checkers', 'soccer']) {
     assert.match(cli('check', path.join(SDK, 'examples', name), '--games', '30'), /All checks passed\./, name);
   }
 });
