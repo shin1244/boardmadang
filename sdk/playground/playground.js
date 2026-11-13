@@ -8,19 +8,17 @@
 //
 // 실제 플랫폼과 다른 점: 게임 코드를 Web Worker가 아니라 이 페이지에서 바로 실행합니다.
 
-import { checkGame, checkMembers, checkThumbnail, drawnPart, findNonJson, makeThumbnail, sameAction } from '../check.js';
-import { BoardView, attachInput, buttonsOf, paintPlayerDot } from './board.js';
+// 한 수마다의 검사(상태, 차례, 언어, 다시 두기)는 명령줄의 검사(../check.js)와 같은 함수를 씁니다. 여기에 다시 적지 않습니다.
+import {
+  callGame, checkGame, checkMembers, checkThumbnail, langProblems, makeThumbnail, mutationProblems, observeProblems, replayProblems,
+  sameAction, stateProblems, turnProblems,
+} from '../check.js';
+import { BoardView, GAME_ID, attachInput, buttonsOf, paintPlayerDot } from './board.js';
 import { LANGS, LANG_NAMES, fullLangs, localize } from './listing.js';
 import { hashOf, makeRng } from './platform.js';
 
 const $ = (sel) => document.querySelector(sel);
 const gameId = new URLSearchParams(location.search).get('game') || 'tictactoe';
-
-// ---- 플랫폼 도구 (검사는 ../check.js에 있고 명령줄과 같이 씁니다) ----
-
-function fmtAction(a) {
-  return a.kind === 'click' ? `click (${a.row}, ${a.col})` : a.kind;
-}
 
 // ---- 대국 ----
 
@@ -31,7 +29,6 @@ let lang = 'ko'; // 지금 게임에 넘기는 언어
 let boards = [];
 const hover = [null, null];
 const warnings = new Set();
-const playMs = [];
 
 let seed;
 let state;
@@ -46,19 +43,22 @@ function warn(msg) {
   warnings.add(msg);
 }
 
+/** 게임 함수 하나를 부릅니다. 오류가 나면 Checks에 알리고(어느 함수인지 붙여서) fallback을 돌려줍니다 */
+function attempt(name, f, fallback) {
+  try {
+    return callGame(name, f);
+  } catch (e) {
+    warn(e.message);
+    return fallback;
+  }
+}
+
 function newGame(s) {
   seed = s >>> 0;
   $('#seed').value = seed;
   warnings.clear();
-  playMs.length = 0;
-  try {
-    state = game.setup(makeRng(seed));
-  } catch (e) {
-    warn(`setup() threw an error: ${e.message}`);
-    state = null;
-  }
-  const bad = findNonJson(state);
-  if (bad) warn(`setup() returned a state with a non-JSON value: ${bad}`);
+  state = attempt('setup()', () => game.setup(makeRng(seed)), null);
+  for (const p of stateProblems(state, 'setup()')) warn(p);
   stateHash = hashOf(state);
   log = [];
   moves = 0;
@@ -74,19 +74,10 @@ function dispatch(player, action) {
   if (ended) return;
 
   const before = JSON.stringify(state);
-  let next;
-  try {
-    const t = performance.now();
-    next = game.play(state, player, action);
-    playMs.push(performance.now() - t);
-  } catch (e) {
-    warn(`play() threw an error: ${e.message}`);
-    render();
-    return;
-  }
-  if (JSON.stringify(state) !== before) warn('play() changed the state it received. Copy it and return a new state.');
-  const bad = findNonJson(next);
-  if (bad) warn(`play() returned a state with a non-JSON value: ${bad}`);
+  const failed = {};
+  const next = attempt('play()', () => game.play(state, player, action), failed);
+  if (next === failed) return render();
+  for (const p of [...mutationProblems(state, before), ...stateProblems(next, 'play()')]) warn(p);
 
   const h = hashOf(next);
   const changed = h !== stateHash;
@@ -110,9 +101,8 @@ function dispatch(player, action) {
   render();
 }
 
-/** 그 판에서 둘 차례인 플레이어. turn()이 없거나 오류면 null (그러면 상태를 바꾼 행동마다 한 수) */
+/** 그 판에서 둘 차례인 플레이어. 오류면 null (그러면 상태를 바꾼 행동마다 한 수). 오류는 checkTurn이 알립니다 */
 function turnOf(s) {
-  if (typeof game.turn !== 'function') return null;
   try {
     return game.turn(s);
   } catch {
@@ -122,42 +112,22 @@ function turnOf(s) {
 
 /** turn()은 0, 1, null만 돌려줘야 합니다. 플랫폼이 대국 시계를 이걸로 돌립니다. */
 function checkTurn() {
-  if (!game.turn) return;
-  let t;
-  try {
-    t = game.turn(state);
-  } catch (e) {
-    warn(`turn() threw an error: ${e.message}`);
-    return;
-  }
-  if (t !== 0 && t !== 1 && t !== null) warn(`turn() must return 0, 1, or null (got ${JSON.stringify(t)})`);
-  if (ended && t !== null) warn('turn() must return null once the game is over, so the clock stops.');
+  const failed = {};
+  const t = attempt('turn()', () => game.turn(state), failed);
+  if (t !== failed) for (const p of turnProblems(t, !!ended)) warn(p);
 }
 
 /** 끝났는지 확인합니다. maxActions에 이르면 플랫폼이 무승부로 끝냅니다. */
 function checkResult() {
-  let r = null;
-  try {
-    r = game.result(state, lang);
-  } catch (e) {
-    warn(`result() threw an error: ${e.message}`);
-  }
+  let r = attempt('result()', () => game.result(state, lang), null);
   if (!r && moves >= game.maxActions) r = { winner: null, reason: 'maxActions' };
   if (r) ended = r;
 }
 
 /** 승자와 판 그림은 lang과 상관없이 같아야 합니다. 글자(message, reason)만 언어마다 다릅니다. */
 function checkLangs() {
-  if (langs.length < 2) return;
   try {
-    const drawn = (p, l) => JSON.stringify(drawnPart(game.view(state, p, l)));
-    const winner = (l) => { const r = game.result(state, l); return r ? String(r.winner) : '-'; };
-    for (const p of [0, 1]) {
-      if (langs.some((l) => drawn(p, l) !== drawn(p, langs[0]))) {
-        warn('view() changes more than the message depending on lang. The board must look the same in every language.');
-      }
-    }
-    if (langs.some((l) => winner(l) !== winner(langs[0]))) warn('result() returns a different winner depending on lang.');
+    for (const p of langProblems(game, state, langs)) warn(p);
   } catch {
     // 오류는 render와 checkResult에서 이미 알렸습니다.
   }
@@ -167,11 +137,7 @@ function checkLangs() {
 function checkReplay() {
   if (log.length > 500) return;
   try {
-    let s = game.setup(makeRng(seed));
-    for (const { player, action } of log) s = game.play(s, player, action);
-    if (hashOf(s) !== stateHash) {
-      warn('Replaying the same seed and moves gave a different state. Check for Math.random() or Date.now().');
-    }
+    for (const p of replayProblems(game, seed, log, stateHash)) warn(p);
   } catch {
     // 오류는 dispatch에서 이미 알렸습니다.
   }
@@ -192,12 +158,7 @@ function resign(player) {
 
 function legalOf(player) {
   if (!game.legal || ended) return null;
-  try {
-    return game.legal(state, player);
-  } catch (e) {
-    warn(`legal() threw an error: ${e.message}`);
-    return null;
-  }
+  return attempt('legal()', () => game.legal(state, player), null);
 }
 
 // ---- 랜덤 대국: 업로드 검사의 실행 단계를 그대로 해봅니다 (npx boardmadang check와 같음) ----
@@ -239,13 +200,9 @@ function showThumbnail(thumb, note) {
 }
 
 async function snapshot(player) {
-  let view;
-  try {
-    view = game.view(state, player, lang);
-  } catch (e) {
-    warn(`view() threw an error: ${e.message}`);
-    return render();
-  }
+  const failed = {};
+  const view = attempt('view()', () => game.view(state, player, lang), failed);
+  if (view === failed) return render();
   const thumb = makeThumbnail(game, player, view);
   try {
     const res = await fetch(`/api/games/${encodeURIComponent(gameId)}/thumbnail`, {
@@ -263,15 +220,14 @@ async function snapshot(player) {
 
 // ---- 화면 ----
 
+function fmtAction(a) {
+  return a.kind === 'click' ? `click (${a.row}, ${a.col})` : a.kind;
+}
+
 function render() {
   for (const p of [0, 1]) {
     const panel = $(`#player-${p}`);
-    let view = { pieces: [] };
-    try {
-      view = game.view(state, p, lang) ?? view;
-    } catch (e) {
-      warn(`view() threw an error: ${e.message}`);
-    }
+    const view = attempt('view()', () => game.view(state, p, lang), null) ?? { pieces: [] };
     boards[p].draw(view, { flip: game.board.flipForPlayer === p, hover: hover[p], myTurn: !ended && turnOf(state) === p });
     panel.querySelector('.message').textContent = view.message ?? '';
     for (const b of panel.querySelectorAll('button:not(.snapshot)')) b.disabled = !!ended;
@@ -301,16 +257,10 @@ function render() {
 
   $('#state').textContent = JSON.stringify(state, null, 1);
 
-  if (game.observe) {
-    try {
-      const o = game.observe(state, 0);
-      const { rows, cols } = game.board;
-      const ok = Array.isArray(o) && o.every((ch) => Array.isArray(ch) && ch.length === rows
-        && ch.every((row) => Array.isArray(row) && row.length === cols && row.every((x) => typeof x === 'number')));
-      if (!ok) warn(`observe() must return numbers shaped [channel][${rows}][${cols}].`);
-    } catch (e) {
-      warn(`observe() threw an error: ${e.message}`);
-    }
+  try {
+    for (const p of observeProblems(game, state)) warn(p);
+  } catch (e) {
+    warn(e.message); // observe()가 던진 오류
   }
 
   const checks = $('#checks');
@@ -440,7 +390,7 @@ function showTitle() {
 }
 
 async function main() {
-  if (!/^[a-z0-9-]+$/.test(gameId)) throw new Error('game may use only lowercase letters, numbers, and -');
+  if (!GAME_ID.test(gameId)) throw new Error('game may use only lowercase letters, numbers, and -');
   // 개발 서버가 games/<id>와 깃허브에 올리지 않는 games/private/<id>를 찾아 등록 정보와 같이 알려줍니다.
   const entry = (await (await fetch('/api/games')).json()).find((g) => g.id === gameId);
   if (!entry) throw new Error("the dev server couldn't find this game");
