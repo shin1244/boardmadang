@@ -4,13 +4,18 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import classic from '../../games/tictactoe/index.js';
 import { checkGame } from '../check.js';
+import { buttonsOf } from '../playground/board.js';
 import { makeRng } from '../playground/platform.js';
+import checkersDef from './checkers/index.js';
+import reversiDef from './reversi/index.js';
 import { isSimple, toGame } from './simple.js';
 import tictactoeDef from './tictactoe/index.js';
 import twelveDef from './twelve/index.js';
 
 const tictactoe = toGame(tictactoeDef);
 const twelve = toGame(twelveDef);
+const reversi = toGame(reversiDef);
+const checkers = toGame(checkersDef);
 
 function seeded(seed = 1) {
   let a = seed;
@@ -22,10 +27,17 @@ function seeded(seed = 1) {
 const click = (row, col) => ({ kind: 'click', row, col });
 /** 둘 차례인 플레이어가 칸들을 차례로 누릅니다 (기물 누르기 → 갈 곳 누르기) */
 const press = (game, state, ...cells) => cells.reduce((s, [row, col]) => game.play(s, game.turn(s), click(row, col)), state);
+/** 시작 상태에서 판만 바꾼 상태. cells는 { 'row,col': 값 } */
+function withGrid(game, cells, turn = 0) {
+  const start = game.setup(makeRng(1));
+  const grid = start.game.grid.map((line, row) => line.map((_, col) => cells[`${row},${col}`] ?? null));
+  return { ...start, turn, game: { ...start.game, grid } };
+}
+const cellsIn = (game, state, player) => game.legal(state, player).map((a) => (a.kind === 'click' ? `${a.row},${a.col}` : a.kind)).sort();
 const marksOf = (game, state, player, type) => game.view(state, player, 'en').marks.filter((m) => m.type === type).map((m) => [m.row, m.col]);
 
-test('두 예제가 지금의 검사를 그대로 통과합니다 (랜덤 대국 200판, legal()과 play()가 어긋나지 않음)', () => {
-  for (const game of [tictactoe, twelve]) {
+test('예제 넷이 지금의 검사를 그대로 통과합니다 (랜덤 대국 200판, legal()과 play()가 어긋나지 않음)', () => {
+  for (const game of [tictactoe, twelve, reversi, checkers]) {
     const r = checkGame(game, { n: 200, langs: ['ko', 'en'], random: seeded() });
     assert.deepEqual(r.problems, [], game.id);
     assert.deepEqual(r.warnings, [], game.id);
@@ -164,4 +176,102 @@ test('둘 수 있는 수가 없으면 무승부(기본)이거나, noMoves: lose�
     assert.equal(game.maxActions, 300, '안 적으면 300');
     assert.deepEqual(checkGame(game, { n: 20, langs: ['ko', 'en'] }).problems, []);
   }
+});
+
+// ---- 특수 행동 (리버시의 넘기기) ----
+
+test('리버시: 뒤집을 수 있는 칸에만 두고, 사이에 낀 돌이 뒤집힙니다', () => {
+  const start = reversi.setup(makeRng(1));
+  assert.deepEqual(cellsIn(reversi, start, 0), ['2,3', '3,2', '4,5', '5,4']);
+  const s = press(reversi, start, [2, 3]);
+  assert.deepEqual([s.game.grid[2][3], s.game.grid[3][3], s.game.grid[4][3]], [0, 0, 0]);
+  assert.equal(reversi.turn(s), 1);
+  assert.equal(press(reversi, start, [0, 0]), start, '뒤집을 돌이 없는 칸은 무시합니다');
+});
+
+test('특수 행동: moves()에 있을 때만 누를 수 있고, 버튼 글자는 언어마다 나옵니다', () => {
+  assert.deepEqual(reversi.specialActions, ['pass']);
+  const start = reversi.setup(makeRng(1));
+  // 둘 곳이 있으면 넘기기는 흐립니다 (화면이 쓰는 buttonsOf 그대로)
+  assert.deepEqual(buttonsOf(reversi.specialActions, reversi.view(start, 0, 'ko'), reversi.legal(start, 0)), [{ kind: 'pass', label: '넘기기', disabled: true }]);
+  assert.equal(reversi.view(start, 0, 'en').buttons[0].label, 'Pass');
+  assert.equal(reversi.view(start, 0, 'ja').buttons[0].label, 'Pass', '적지 않은 언어는 영어로');
+  assert.equal(reversi.play(start, 0, { kind: 'pass' }), start, '둘 곳이 있으면 넘기기를 무시합니다');
+
+  // 검은 돌은 둘 곳이 없고 흰 돌은 있는 판: 넘기기만 됩니다
+  const stuck = withGrid(reversi, { '0,0': 1, '0,1': 0 });
+  assert.deepEqual(cellsIn(reversi, stuck, 0), ['pass']);
+  assert.deepEqual(buttonsOf(reversi.specialActions, reversi.view(stuck, 0, 'en'), reversi.legal(stuck, 0)), [{ kind: 'pass', label: 'Pass', disabled: false }]);
+  assert.equal(reversi.play(stuck, 0, click(0, 2)), stuck);
+  const passed = reversi.play(stuck, 0, { kind: 'pass' });
+  assert.equal(reversi.turn(passed), 1);
+  assert.deepEqual(marksOf(reversi, passed, 0, 'last-move'), [], '넘기기에는 마지막 수 표시가 없습니다');
+  // 흰 돌이 두면 둘 다 둘 곳이 없어 끝나고, 돌이 많은 쪽이 이깁니다
+  const over = press(reversi, passed, [0, 2]);
+  assert.deepEqual(reversi.result(over, 'en'), { winner: 1 });
+});
+
+test('특수 행동을 이름 목록으로만 적으면 버튼 글자는 그 이름입니다', () => {
+  const game = toGame({
+    id: 'only-pass', board: { places: 'cells', rows: 1, cols: 1 }, pieces: 'xo', specialActions: ['pass'],
+    setup: () => ({ n: 0 }),
+    moves: (s) => (s.n < 4 ? [{ special: 'pass' }] : []),
+    move: (s) => { s.n += 1; },
+    view: () => ({ pieces: [] }),
+  });
+  const start = game.setup(makeRng(1));
+  assert.deepEqual(game.view(start, 0, 'ko').buttons, [{ kind: 'pass', label: 'pass' }]);
+  assert.equal(game.play(start, 0, { kind: 'pass' }).game.n, 1);
+  assert.deepEqual(checkGame(game, { n: 20, langs: ['ko', 'en'] }).problems, []);
+});
+
+// ---- 이어서 두기 (체커의 연속 뛰기) ----
+
+test('체커: 잡을 수 있으면 반드시 잡고, 같은 기물로 더 잡을 수 있으면 차례가 넘어가지 않습니다', () => {
+  const start = withGrid(checkers, { '5,2': 'm0', '7,0': 'm0', '4,3': 'm1', '2,5': 'm1', '0,1': 'm1' });
+  assert.deepEqual(cellsIn(checkers, start, 0), ['5,2'], '한 칸 갈 수 있는 다른 졸(7,0)은 고를 수 없습니다');
+  const first = press(checkers, start, [5, 2], [3, 4]);
+  assert.equal(first.game.grid[4][3], null, '뛰어넘은 돌을 잡습니다');
+  assert.equal(checkers.turn(first), 0, '더 잡을 수 있으니 차례는 그대로');
+  assert.deepEqual(first.pick, { row: 3, col: 4 }, '옮긴 기물이 고른 채로 남습니다');
+  assert.deepEqual(marksOf(checkers, first, 0, 'dot'), [[1, 6]]);
+  assert.deepEqual(cellsIn(checkers, first, 0), ['1,6'], '뛰던 기물로만 이어서 둡니다');
+  assert.equal(checkers.play(first, 1, click(0, 1)), first, '상대는 아직 둘 수 없습니다');
+  const second = press(checkers, first, [1, 6]);
+  assert.equal(second.game.grid[2][5], null);
+  assert.equal(checkers.turn(second), 1);
+  assert.equal(second.pick, null);
+  assert.equal(second.game.jumping, null);
+});
+
+test('체커: 끝줄에 닿은 졸은 왕이 되고, 상대가 움직일 기물이 없으면 이깁니다', () => {
+  const crowned = press(checkers, withGrid(checkers, { '1,2': 'm0', '5,6': 'm1' }), [1, 2], [0, 1]);
+  assert.equal(crowned.game.grid[0][1], 'k0');
+  assert.deepEqual(checkers.view(crowned, 0, 'en').text, [{ row: 0, col: 1, text: 'K' }]);
+  // 왕은 뒤로도 갑니다
+  const king = withGrid(checkers, { '3,2': 'k0', '7,6': 'm1' });
+  assert.deepEqual(marksOf(checkers, press(checkers, king, [3, 2]), 0, 'dot').sort(), [[2, 1], [2, 3], [4, 1], [4, 3]]);
+  const won = press(checkers, withGrid(checkers, { '5,2': 'm0', '4,3': 'm1' }), [5, 2], [3, 4]);
+  assert.deepEqual(checkers.result(won, 'en'), { winner: 0, reason: 'No moves left' });
+});
+
+test("이어서 두기: 'again'을 돌려줬어도 둘 수가 없으면 차례를 넘깁니다", () => {
+  const game = toGame({
+    id: 'again', board: { places: 'cells', rows: 1, cols: 2 }, pieces: 'xo',
+    setup: () => ({ left: 3 }),
+    // 선공만 세 번까지 이어서 둡니다
+    moves: (s, player) => (player === 0 && s.left > 0 ? [{ row: 0, col: 0 }] : player === 1 ? [{ row: 0, col: 1 }] : []),
+    move(s, m, player) {
+      if (player === 0) s.left -= 1;
+      return 'again';
+    },
+    view: () => ({ pieces: [] }),
+  });
+  let s = game.setup(makeRng(1));
+  for (const left of [2, 1]) {
+    s = game.play(s, 0, click(0, 0));
+    assert.deepEqual([s.game.left, game.turn(s)], [left, 0]);
+  }
+  s = game.play(s, 0, click(0, 0));
+  assert.deepEqual([s.game.left, game.turn(s)], [0, 1], '선공이 더 둘 수 없으니 후공 차례');
 });

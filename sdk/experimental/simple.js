@@ -6,22 +6,26 @@
 //
 //   export default {
 //     id, board, pieces,               지금과 같습니다 (maxActions는 안 적으면 300)
+//     specialActions                   판 밖의 행동(버튼). 이름 목록 ['pass']이거나, 버튼 글자까지 { pass: { en: 'Pass', ko: '넘기기' } }
 //     setup(rng)                       시작 상태
 //     moves(state, player)             player가 지금 둘 수 있는 수의 목록
-//     move(state, m, player)           그 수를 둡니다. 받은 state를 그대로 고쳐도 됩니다. m은 moves()가 돌려준 바로 그 수입니다
+//     move(state, m, player)           그 수를 둡니다. 받은 state를 그대로 고쳐도 됩니다. m은 moves()가 돌려준 바로 그 수입니다.
+//                                      'again'을 돌려주면 차례가 넘어가지 않고 같은 플레이어가 이어서 둡니다
 //     winner(state)                    0 | 1 (이긴 쪽) | 'draw' | 그 밖(아직 안 끝남)
 //     view(state, player, lang)        그릴 것 (지금의 view()와 같은 모양)
 //     noMoves: 'draw' | 'lose'         둘 수 있는 수가 없으면 무승부(기본)인지, 그 플레이어가 지는지
 //     repeat: 3                        같은 판(판과 차례)이 이만큼 나오면 무승부 (안 적으면 보지 않음)
 //   }
 //
-// 수(move)의 모양은 둘입니다.
+// 수(move)의 모양은 셋입니다.
 //   { row, col }                칸 하나를 누르는 수 (틱택토, 오목)
 //   { from, to }                기물을 골라서(from) 옮기는 수 (체스, 장기). 판 밖 영역의 칸에서 오면 "손에서 내려놓기"입니다
+//   { special: 'pass' }         판 아래 버튼을 누르는 수 (specialActions에 적은 이름). moves()에 없을 때는 버튼이 흐려집니다
 // 수에는 다른 칸을 얼마든지 붙여도 되고(잡는 기물, 승급 여부 등), move()가 그대로 돌려받습니다.
 //
 // 플랫폼이 대신 하는 일
-//   차례          한 수마다 번갈아 둡니다. 차례가 아닌 쪽의 수와 moves()에 없는 수는 무시합니다
+//   차례          한 수마다 번갈아 둡니다 (move()가 'again'을 돌려주면 한 번 더). 차례가 아닌 쪽의 수와 moves()에 없는 수는 무시합니다
+//   이어서 두기    옮긴 기물로 이어서 둘 수 있으면 그 기물을 고른 채로 둡니다 (체커의 연속 뛰기)
 //   기물 고르기    from이 있는 수는 "기물 누르기 → 갈 곳 누르기"로 받고, 다른 기물을 누르면 바꾸고, 다시 누르면 취소합니다
 //   표시          고른 기물(ring), 갈 수 있는 곳(dot), 마지막 수(last-move), 방금 움직인 기물의 움직임(from)을 화면에 붙입니다
 //   끝           winner(), 둘 수 없음(noMoves), 같은 판 반복(repeat)을 한 수마다 봅니다
@@ -53,8 +57,14 @@ export const isSimple = (def) => typeof def?.moves === 'function' && typeof def?
  */
 export function toGame(def) {
   if (!isSimple(def)) return def;
-  const { setup, moves, move, winner, view, noMoves = 'draw', repeat = 0, observe, ...rest } = def;
+  const { setup, moves, move, winner, view, noMoves = 'draw', repeat = 0, observe, specialActions, ...rest } = def;
   const movesOf = (st) => (st.end ? [] : moves(st.game, st.turn) ?? []);
+  // 특수 행동: 이름 목록이거나, 이름 → 버튼 글자 (글자 하나, 또는 언어별 글자)
+  const specials = Array.isArray(specialActions) ? specialActions : Object.keys(specialActions ?? {});
+  const labelOf = (kind, lang) => {
+    const label = Array.isArray(specialActions) ? kind : specialActions[kind];
+    return typeof label === 'string' ? label : label?.[lang] ?? label?.en ?? kind;
+  };
 
   /** 시작할 때와 한 수를 둔 뒤: 끝났으면 st.end에 적습니다 */
   function settle(st) {
@@ -74,22 +84,30 @@ export function toGame(def) {
   return {
     maxActions: 300,
     ...rest,
+    ...(specials.length ? { specialActions: specials } : {}),
 
     setup: (rng) => settle({ game: setup(rng), turn: 0, pick: null, last: null, end: null, ...(repeat ? { seen: {} } : {}) }),
 
     turn: (st) => (st.end ? null : st.turn),
 
     play(st, player, action) {
-      if (st.end || player !== st.turn || action?.kind !== 'click') return st;
-      const at = { row: action.row, col: action.col };
+      if (st.end || player !== st.turn) return st;
+      const at = action?.kind === 'click' ? { row: action.row, col: action.col } : null;
       const all = movesOf(st);
-      // 고른 기물의 갈 곳이거나, 칸 하나를 누르는 수
-      const m = all.find((x) => (x.from ? same(x.from, st.pick) && same(x.to, at) : same(x, at)));
+      // 버튼이면 그 특수 행동, 칸이면 고른 기물의 갈 곳이거나 칸 하나를 누르는 수
+      const m = all.find((x) => (!at ? x.special !== undefined && x.special === action?.kind
+        : x.from ? same(x.from, st.pick) && same(x.to, at) : same(x, at)));
       if (m) {
-        const next = { ...clone(st), pick: null, last: m.from ? { from: cell(m.from), to: cell(m.to) } : { to: cell(m) }, turn: 1 - player };
-        move(next.game, clone(m), player);
-        return settle(next);
+        const next = { ...clone(st), pick: null, last: m.special !== undefined ? null : m.from ? { from: cell(m.from), to: cell(m.to) } : { to: cell(m) } };
+        const again = move(next.game, clone(m), player) === 'again';
+        // 이어서 두겠다고 했어도 둘 수가 없으면 차례를 넘깁니다
+        if (!again || !(moves(next.game, player) ?? []).length) next.turn = 1 - player;
+        settle(next);
+        // 방금 옮긴 기물로 이어서 두는 것이면 그 기물을 고른 채로 둡니다
+        if (next.turn === player && m.to && movesOf(next).some((x) => same(x.from, m.to))) next.pick = cell(m.to);
+        return next;
       }
+      if (!at) return st;
       // 기물 고르기: 다시 누르면 취소, 다른 기물을 누르면 바꿉니다. 차례는 그대로입니다
       if (same(st.pick, at)) return { ...st, pick: null };
       if (all.some((x) => same(x.from, at))) return { ...st, pick: at };
@@ -98,8 +116,12 @@ export function toGame(def) {
 
     legal(st, player) {
       if (player !== st.turn) return [];
-      const cells = movesOf(st).map((m) => (!m.from || !same(m.from, st.pick) ? m.from ?? m : m.to));
-      return cells.filter((c, i) => cells.findIndex((x) => same(x, c)) === i).map((c) => ({ kind: 'click', row: c.row, col: c.col }));
+      const all = movesOf(st);
+      const cells = all.filter((m) => m.special === undefined).map((m) => (!m.from || !same(m.from, st.pick) ? m.from ?? m : m.to));
+      return [
+        ...cells.filter((c, i) => cells.findIndex((x) => same(x, c)) === i).map((c) => ({ kind: 'click', row: c.row, col: c.col })),
+        ...specials.filter((kind) => all.some((m) => m.special === kind)).map((kind) => ({ kind })),
+      ];
     },
 
     result(st, lang) {
@@ -122,7 +144,9 @@ export function toGame(def) {
       const message = st.end
         ? (st.end.winner === null ? text.draw : st.end.winner === player ? text.won : text.lost)
         : (player === st.turn ? text.mine : text.theirs);
-      return { ...v, pieces, marks, message: v.message ?? message };
+      // 버튼을 늘 알려 줘야 플랫폼이 지금 못 누르는 버튼(legal()에 없는 것)을 흐리게 보여 줍니다
+      const buttons = specials.length ? { buttons: v.buttons ?? specials.map((kind) => ({ kind, label: labelOf(kind, lang) })) } : {};
+      return { ...v, ...buttons, pieces, marks, message: v.message ?? message };
     },
 
     ...(observe ? { observe: (st, player) => observe(st.game, player) } : {}),
