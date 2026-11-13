@@ -31,10 +31,16 @@ type fixture struct {
 func setup(t *testing.T) *fixture {
 	t.Helper()
 	dir := t.TempDir()
+	f := &fixture{dir: dir}
+	clock := base.Add(10 * time.Minute)
+	f.clock = &clock
+	now := func() time.Time { return *f.clock }
 	accounts, err := account.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// 정지가 끝났는지는 계정 저장소가 자기 시계로 봅니다. 운영자 API와 같은 시계를 줘야 테스트가 실제 날짜에 달리지 않습니다
+	accounts.SetClock(now)
 	comments, err := comment.Open(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -42,7 +48,6 @@ func setup(t *testing.T) *fixture {
 	comments.Names = accounts
 	// 올린 게임은 등록 절차 대신 game.json을 바로 씁니다
 	meta := `{"id":"dots","owner":"%s","version":"0123456789abcdef","listing":{},"thumbnail":null,"created":"2026-11-01T00:00:00Z","published":[{"version":"0123456789abcdef","at":"2026-11-01T00:00:00Z"}]}`
-	f := &fixture{dir: dir}
 	f.boss, _, _ = accounts.Create("google", "1", "boss")
 	f.author, _, _ = accounts.Create("google", "2", "author")
 	f.r1, _, _ = accounts.Create("google", "3", "report1")
@@ -67,9 +72,7 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	f.h.IDs, f.h.Comments, f.h.Uploads, f.h.Accounts = ids, comments, uploads, accounts
-	clock := base.Add(10 * time.Minute)
-	f.clock = &clock
-	f.h.now = func() time.Time { return *f.clock }
+	f.h.now = now
 	f.mux = http.NewServeMux()
 	f.mux.HandleFunc("GET /api/admin", f.h.ServeState)
 	f.mux.HandleFunc("POST /api/admin/actions", f.h.ServeAction)

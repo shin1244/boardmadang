@@ -158,6 +158,12 @@ func (s *Store) put(a *Account) {
 	s.bySub[a.Provider+":"+a.Sub] = a
 }
 
+// SetClock은 Store가 지금 시각을 읽는 곳을 바꿉니다. 다른 패키지의 테스트가 자기 시계와 맞추려고 씁니다.
+// 정지가 끝났는지는 Store의 시계로 보므로, 시계가 둘이면 테스트가 실제 날짜에 따라 깨집니다. Store를 쓰기 전에 부릅니다.
+func (s *Store) SetClock(now func() time.Time) {
+	s.now = now
+}
+
 // Name은 계정 이름입니다. identity.Members를 채웁니다.
 func (s *Store) Name(id string) (string, bool) {
 	s.mu.Lock()
