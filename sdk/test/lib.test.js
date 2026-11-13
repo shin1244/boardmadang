@@ -1,11 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { checkGame } from '../check.js';
 import { startDev } from '../lib/dev.js';
-import { codeFiles, codeVersion, gameEntry } from '../lib/games.js';
+import { codeFiles, codeVersion, gameEntry, packedCode, versionOf } from '../lib/games.js';
 import { crc32, unzip, zip } from '../lib/zip.js';
 
 /** 임시 폴더에 files(슬래시 경로 → 내용)를 씁니다 */
@@ -138,4 +141,54 @@ test('개발 서버: 폴더 이름으로 만든 id는 게임 id 규칙(소문자
   const { id } = await devServer(t, `My Game_${'x'.repeat(60)}`);
   assert.match(id, /^[a-z0-9-]{1,40}$/);
   assert.ok(id.startsWith('my-game-x'));
+});
+
+// ---- moves()로 쓴 게임을 올릴 때 (lib/games.js의 packedCode, npx boardmadang pack) ----
+
+const SDK = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const cli = (...args) => execFileSync(process.execPath, [path.join(SDK, 'bin', 'boardmadang.js'), ...args], { encoding: 'utf8' });
+const readExample = (name) => fs.readFileSync(path.join(SDK, 'examples', name, 'index.js'), 'utf8');
+
+test('packedCode: 게임 API로 쓴 게임은 폴더의 코드 그대로, moves()로 쓴 게임은 변환기를 같이 넣습니다', async () => {
+  const plain = tree({ 'index.js': 'export default { play() {} };\n', 'rules.mjs': 'export const a = 1;\n' });
+  const plainFiles = packedCode(plain, { play() {} });
+  assert.deepEqual(plainFiles.map((f) => f.name), ['index.js', 'rules.mjs']);
+  assert.equal(versionOf(plainFiles), codeVersion(plain), '사이트가 계산하는 버전과 같은 계산');
+
+  const dir = tree({ 'index.js': readExample('checkers'), 'package.json': '{"type":"module"}' });
+  const raw = (await import(pathToFileURL(path.join(dir, 'index.js')).href)).default;
+  const files = packedCode(dir, raw);
+  assert.deepEqual(files.map((f) => f.name), ['boardmadang/moves.js', 'boardmadang/platform.js', 'index.game.js', 'index.js']);
+  assert.equal(files[2].data.toString(), readExample('checkers'), '제작자의 index.js는 이름만 바뀝니다');
+  assert.equal(files[0].data.toString(), fs.readFileSync(path.join(SDK, 'playground', 'moves.js'), 'utf8'), '변환기는 SDK의 파일 그대로');
+  assert.notEqual(versionOf(files), codeVersion(dir));
+
+  // 이미 그 이름을 쓰고 있으면 알려 줍니다
+  fs.writeFileSync(path.join(dir, 'index.game.js'), 'export default 1;\n');
+  assert.throws(() => packedCode(dir, raw), /index\.game\.js: pack needs this name/);
+});
+
+test('npx boardmadang new → check → pack: 새 게임은 moves()로 쓴 틱택토이고, zip을 풀면 게임 API로 된 게임입니다', async () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'bm-new-'));
+  const dir = path.join(base, 'my-game');
+  cli('new', dir);
+  assert.match(fs.readFileSync(path.join(dir, 'index.js'), 'utf8'), /id: 'my-game'/);
+  assert.match(cli('check', dir, '--games', '50'), /written with moves\(\) and move\(\)[\s\S]*All checks passed\./);
+
+  const zipFile = path.join(base, 'out.zip');
+  assert.match(cli('pack', dir, '--games', '50', '--out', zipFile), /index\.game\.js is your index\.js/);
+  const entries = unzip(fs.readFileSync(zipFile));
+  assert.deepEqual(entries.map((e) => e.name), ['boardmadang/moves.js', 'boardmadang/platform.js', 'index.game.js', 'index.js', 'listing.json']);
+  // 사이트가 하듯이: zip을 풀어 index.js를 불러오면 play()가 있는 게임이고, 검사를 통과합니다
+  const out = tree({ ...Object.fromEntries(entries.map((e) => [e.name, e.data])), 'package.json': '{"type":"module"}' });
+  const game = (await import(pathToFileURL(path.join(out, 'index.js')).href)).default;
+  assert.equal(typeof game.play, 'function');
+  assert.equal(game.id, 'my-game');
+  assert.deepEqual(checkGame(game, { n: 50, langs: ['en', 'ko'] }).problems, []);
+});
+
+test('예제 게임들도 npx boardmadang check를 통과합니다', () => {
+  for (const name of ['twelve', 'reversi', 'checkers']) {
+    assert.match(cli('check', path.join(SDK, 'examples', name), '--games', '30'), /All checks passed\./, name);
+  }
 });

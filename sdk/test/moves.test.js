@@ -1,17 +1,19 @@
-// 시제품(simple.js)의 테스트: "둘 수 있는 수" 형태로 쓴 게임이 지금의 게임 API로 바뀌어 원래 검사를 통과하는지,
-// 그리고 플랫폼이 대신 하는 일(차례, 기물 고르기, 표시, 끝)이 맞는지 봅니다.
+// moves()와 move()로 쓴 게임(playground/moves.js): 게임 API로 바뀌어 원래 검사를 통과하는지,
+// 그리고 toGame()이 대신 하는 일(차례, 기물 고르기, 표시, 끝, 특수 행동, 이어서 두기)이 맞는지 봅니다.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import classic from '../../games/tictactoe/index.js';
-import { checkGame } from '../check.js';
+import { checkGame, checkMembers } from '../check.js';
+import checkersDef from '../examples/checkers/index.js';
+import reversiDef from '../examples/reversi/index.js';
+import twelveDef from '../examples/twelve/index.js';
 import { buttonsOf } from '../playground/board.js';
-import { makeRng } from '../playground/platform.js';
-import checkersDef from './checkers/index.js';
-import reversiDef from './reversi/index.js';
-import { isSimple, toGame } from './simple.js';
-import tictactoeDef from './tictactoe/index.js';
-import twelveDef from './twelve/index.js';
+import { toGame } from '../playground/moves.js';
+import { makeRng, usesMoves } from '../playground/platform.js';
+import template from '../template/index.js';
 
+// npx boardmadang new가 만드는 게임 (틱택토). id만 폴더 이름 대신 넣습니다
+const tictactoeDef = { ...template, id: 'tictactoe' };
 const tictactoe = toGame(tictactoeDef);
 const twelve = toGame(twelveDef);
 const reversi = toGame(reversiDef);
@@ -46,12 +48,22 @@ test('예제 넷이 지금의 검사를 그대로 통과합니다 (랜덤 대국
   }
 });
 
-test('이미 지금의 API로 쓴 게임은 그대로 둡니다', () => {
-  assert.ok(isSimple(tictactoeDef) && !isSimple(classic));
+test('이미 게임 API로 쓴 게임은 그대로 둡니다. 바꾸지 않은 채로 검사하면 어떻게 하라고 알려 줍니다', () => {
+  assert.ok(usesMoves(tictactoeDef) && !usesMoves(classic) && !usesMoves(tictactoe));
   assert.equal(toGame(classic), classic);
+  const p = checkMembers(tictactoeDef);
+  assert.ok(p.length === 1 && p[0].includes('npx boardmadang pack'), p.join(' / '));
 });
 
-test('틱택토: 지금 형태로 쓴 것(games/tictactoe)과 같은 판, 같은 결과입니다', () => {
+test('이긴 이유: winner()가 { winner, reason }을 주면 언어에 맞는 글자로 나옵니다', () => {
+  const won = press(tictactoe, tictactoe.setup(makeRng(1)), [0, 0], [1, 0], [0, 1], [1, 1], [0, 2]);
+  assert.deepEqual(tictactoe.result(won, 'ko'), { winner: 0, reason: '세 줄 완성' });
+  assert.deepEqual(tictactoe.result(won, 'ja'), { winner: 0, reason: 'Three in a row' }, '적지 않은 언어는 영어로');
+  const text = toGame({ ...tictactoeDef, winner: () => ({ winner: 'draw', reason: 'agreed' }) });
+  assert.deepEqual(text.result(text.setup(makeRng(1)), 'ko'), { winner: null, reason: 'agreed' }, '글자 하나면 어느 언어든 그 글자');
+});
+
+test('틱택토(템플릿): 게임 API로 쓴 것(games/tictactoe)과 같은 판, 같은 결과입니다', () => {
   const random = seeded(7);
   const piecesOf = (game, s) => game.view(s, 0, 'en').pieces.map((p) => `${p.row},${p.col},${p.piece}`).sort();
   for (let n = 0; n < 300; n++) {

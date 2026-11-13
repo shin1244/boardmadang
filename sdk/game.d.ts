@@ -1,6 +1,7 @@
 // 보드마당 게임 API 타입 정의.
 // 게임은 JS로 만들어도 됩니다. JS 파일 위에 아래처럼 적으면 편집기 자동완성을 받을 수 있습니다.
-//   /** @type {import('boardmadang').Game<State>} */          npm 패키지 (npm i -D boardmadang)
+//   /** @type {import('boardmadang').MovesGame<State>} */     npm 패키지 (npm i -D boardmadang). moves()와 move()로 쓴 게임
+//   /** @type {import('boardmadang').Game<State>} */          play()를 직접 쓴 게임
 //   /** @type {import('../../sdk/game').Game<State>} */       이 레포의 games/ 안에서
 
 /** 0 = 선공, 1 = 후공 */
@@ -344,5 +345,71 @@ export interface Game<S> {
    * (선택) 판에 안 보이는 상태를 AI에게 알려줄 추가 정보.
    * [채널][row][col] 형태의 숫자 배열입니다. 예: 체스의 캐슬링 권리, 바둑의 패 자리.
    */
+  observe?(state: S, player: Player): number[][][];
+}
+
+// ---- moves()와 move()로 쓰는 게임 (playground/moves.js) ----
+// 규칙을 한 번만 씁니다: 둘 수 있는 수(moves)와 그 수를 두면(move). 차례, 반칙 걸러 내기, 기물 고르기, 표시, 안내 글자는 보드마당이 맡습니다.
+// npx boardmadang의 도구들이 이것을 위의 Game으로 바꿔서 쓰고, pack은 바꾸는 코드를 zip에 같이 넣습니다.
+
+/** 글자 하나, 또는 언어별 글자. 그 언어가 없으면 영어(en)를 씁니다 */
+export type Text = string | Localized;
+
+/**
+ * 수 하나. 모양은 셋이고, 다른 칸을 얼마든지 붙여도 됩니다 (잡는 기물, 승급 여부 등. move()가 그대로 돌려받습니다).
+ * - `{ row, col }`: 칸 하나를 누르는 수
+ * - `{ from, to }`: 기물을 누르고(from) 갈 칸을 누르는(to) 수. 판 밖 영역의 칸에서 오면 손에서 내려놓기입니다
+ * - `{ special }`: 판 아래 버튼을 누르는 수 (specialActions에 적은 이름)
+ */
+export interface Move {
+  row?: number;
+  col?: number;
+  from?: Cell;
+  to?: Cell;
+  special?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [extra: string]: any;
+}
+
+export interface MovesGame<S, M extends Move = Move> {
+  /** 영문 소문자, 숫자, -로 된 id (40자까지. URL에 쓰입니다) */
+  id: string;
+  board: BoardConfig;
+  pieces: Game<S>['pieces'];
+  playerPieces?: [string, string];
+  /** 판 아래 버튼 (8개까지). 이름 목록이거나, 이름마다 버튼 글자. 예: `{ pass: { en: 'Pass', ko: '넘기기' } }` */
+  specialActions?: string[] | Record<string, Text>;
+  /** 둔 수(차례가 넘어간 행동)가 이 횟수에 이르면 무승부로 끝납니다. 안 적으면 300 */
+  maxActions?: number;
+  /** 둘 차례인 플레이어가 둘 수 있는 수가 없을 때: 무승부('draw', 기본)이거나 그 플레이어가 집니다('lose') */
+  noMoves?: 'draw' | 'lose';
+  /** 같은 판(상태와 차례)이 이만큼 나오면 무승부. 안 적으면 보지 않습니다 */
+  repeat?: number;
+
+  /** 시작 상태. 상태는 JSON으로 그대로 직렬화할 수 있어야 합니다 (Set, Map, 클래스 금지). */
+  setup(rng: Rng): S;
+
+  /** player가 지금 둘 수 있는 수. 차례가 아닌 쪽의 수와 여기에 없는 수는 보드마당이 무시합니다. */
+  moves(state: S, player: Player): M[];
+
+  /**
+   * 수를 둡니다. m은 moves()가 돌려준 수 가운데 하나이고, state를 그대로 고쳐도 됩니다 (복사본을 받습니다).
+   * 'again'을 돌려주면 차례가 넘어가지 않고 같은 플레이어가 이어서 둡니다 (더 둘 수가 없으면 넘어갑니다).
+   */
+  move(state: S, m: M, player: Player): void | 'again';
+
+  /**
+   * 끝났으면 이긴 쪽(0, 1)이나 'draw', 진행 중이면 아무것도 돌려주지 않습니다.
+   * 이유를 보여 주려면 `{ winner, reason }`으로 돌려줍니다.
+   */
+  winner?(state: S): Player | 'draw' | null | undefined | false | { winner: Player | 'draw'; reason?: Text };
+
+  /**
+   * 이 플레이어 화면에 보일 것. 고른 기물(ring), 갈 수 있는 곳(dot), 마지막 수(last-move), 움직임(from), 안내 글자(message)는
+   * 보드마당이 붙입니다. message를 돌려주면 그 글자를 씁니다.
+   */
+  view(state: S, player: Player, lang: Lang): Partial<View>;
+
+  /** (선택) 판에 안 보이는 상태를 AI에게 알려줄 추가 정보. [채널][row][col] 형태의 숫자 배열입니다. */
   observe?(state: S, player: Player): number[][][];
 }

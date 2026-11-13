@@ -9,7 +9,7 @@ import {
   EFFECT_TYPES, FRAME_WIDTH, GAME_ID, LINE_WIDTH, LOOK_NAMES, MARK_TYPES, PIECE_SETS, PLACES, SHAPE_LIMITS,
   cleanPieces, fieldOf, isCell, isColor, isInt, isSpecialKind, knowsPiece, listsOf, pieceName, starsOf, validWidth,
 } from './playground/board.js';
-import { hashOf, makeRng } from './playground/platform.js';
+import { hashOf, makeRng, usesMoves } from './playground/platform.js';
 
 /**
  * 업로드할 때 검사하는 상한. 판과 기물의 크기(SHAPE_LIMITS: boardSize, pieceKinds, maxActions 등)는
@@ -72,6 +72,10 @@ const piecesOk = (pc) => cleanPieces(pc) !== null;
 
 /** 필수 멤버와 제한값 검사. 업로드 검사의 첫 단계와 같습니다. */
 export function checkMembers(g) {
+  // moves()와 move()로 쓴 게임은 게임 API로 바꾼 뒤에 검사합니다 (playground/moves.js의 toGame). 여기까지 그대로 왔으면 바꾸지 않은 것입니다
+  if (usesMoves(g)) {
+    return ['This game is written with moves() and move(), which have to be turned into the game API first. Use "npx boardmadang check", and upload the zip that "npx boardmadang pack" makes.'];
+  }
   const p = [];
   const fn = (k) => typeof g[k] === 'function';
   if (typeof g.id !== 'string' || !GAME_ID.test(g.id)) p.push(`id: must use only lowercase letters, numbers, and - (up to ${GAME_LIMITS.idChars} characters)`);

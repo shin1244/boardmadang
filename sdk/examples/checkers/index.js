@@ -1,55 +1,56 @@
-// 체커를 "둘 수 있는 수" 형태로 쓴 것 (시제품, sdk/experimental/simple.js).
-// 이어서 두기의 예입니다: 잡고 나서 같은 기물로 더 잡을 수 있으면 move()가 'again'을 돌려줍니다.
+// Checkers. An example of moving again: after a capture, if the same piece can capture more, move() returns 'again'.
+// Try it: npx boardmadang dev sdk/examples/checkers
 //
-// 어두운 칸에서만 둡니다. 졸(m)은 앞으로 대각선 한 칸, 왕(k)은 네 대각선으로 한 칸. 상대를 뛰어넘어 잡고, 잡을 수 있으면 반드시 잡습니다.
-// 기물은 글자 두 개입니다: 종류(m 졸, k 왕) + 주인(0 검은 돌, 아래쪽 · 1 흰 돌, 위쪽)
+// Pieces stay on the dark squares. A man (m) moves one square diagonally forward, a king (k) one square along any diagonal.
+// You capture by jumping over an opponent's piece, and if you can capture you must.
+// A piece is two characters: its kind (m man, k king) + its owner (0 black, at the bottom · 1 white, at the top)
 
 const SIZE = 8;
 const DIAGONALS = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
 const cellsOf = (grid) => grid.flatMap((line, row) => line.map((piece, col) => ({ row, col, piece })));
 const ownerOf = (piece) => Number(piece[1]);
-/** 이 기물이 갈 수 있는 방향. 졸은 앞(아래쪽 플레이어는 줄 번호가 줄어드는 쪽)으로만 */
+/** The directions this piece can go. A man only goes forward (for the bottom player, toward smaller row numbers) */
 const dirsOf = (piece) => DIAGONALS.filter(([dr]) => piece[0] === 'k' || dr === (ownerOf(piece) === 0 ? -1 : 1));
 
-/** (row, col)의 기물이 한 칸 가는 수들 */
+/** The one-square moves of the piece at (row, col) */
 const stepsFrom = (grid, row, col) => dirsOf(grid[row][col])
   .map(([dr, dc]) => ({ from: { row, col }, to: { row: row + dr, col: col + dc } }))
   .filter((m) => grid[m.to.row]?.[m.to.col] === null);
 
-/** (row, col)의 기물이 상대를 뛰어넘어 잡는 수들. over가 잡히는 칸입니다 */
+/** The captures of the piece at (row, col): it jumps over the square `over` */
 const jumpsFrom = (grid, row, col) => dirsOf(grid[row][col])
   .map(([dr, dc]) => ({ from: { row, col }, to: { row: row + 2 * dr, col: col + 2 * dc }, over: { row: row + dr, col: col + dc } }))
   .filter((m) => grid[m.to.row]?.[m.to.col] === null && grid[m.over.row][m.over.col] && ownerOf(grid[m.over.row][m.over.col]) !== ownerOf(grid[row][col]));
 
 export default {
-  id: 'checkers-simple',
+  id: 'checkers',
   board: { places: 'cells', rows: SIZE, cols: SIZE, look: 'checker', flipForPlayer: 1 },
   pieces: 'go-stones',
   playerPieces: ['black', 'white'],
   maxActions: 200,
-  noMoves: 'lose', // 기물이 없거나 움직일 수 없으면 집니다
+  noMoves: 'lose', // with no pieces left, or none that can move, you lose
 
   setup: () => ({
-    // 어두운 칸(줄 + 칸이 홀수)의 위 세 줄에 흰 졸, 아래 세 줄에 검은 졸
+    // On the dark squares (row + col is odd): white men on the top three rows, black men on the bottom three
     grid: Array.from({ length: SIZE }, (_, row) => Array.from({ length: SIZE }, (_, col) => (
       (row + col) % 2 === 0 ? null : row < 3 ? 'm1' : row > 4 ? 'm0' : null))),
-    jumping: null, // 연속으로 뛰는 중인 기물의 칸
+    jumping: null, // the square of a piece that is in the middle of several jumps
   }),
 
   moves(state, player) {
     const mine = state.jumping ? [state.jumping] : cellsOf(state.grid).filter((c) => c.piece && ownerOf(c.piece) === player);
     const jumps = mine.flatMap((c) => jumpsFrom(state.grid, c.row, c.col));
-    return jumps.length ? jumps : mine.flatMap((c) => stepsFrom(state.grid, c.row, c.col)); // 잡을 수 있으면 반드시 잡습니다
+    return jumps.length ? jumps : mine.flatMap((c) => stepsFrom(state.grid, c.row, c.col)); // if you can capture, you must
   },
 
   move(state, m, player) {
     const { grid } = state;
     const piece = grid[m.from.row][m.from.col];
-    const crowned = piece[0] === 'm' && m.to.row === (player === 0 ? 0 : SIZE - 1); // 끝줄에 닿은 졸은 왕이 됩니다
+    const crowned = piece[0] === 'm' && m.to.row === (player === 0 ? 0 : SIZE - 1); // a man that reaches the far row becomes a king
     grid[m.from.row][m.from.col] = null;
     grid[m.to.row][m.to.col] = crowned ? `k${player}` : piece;
     if (m.over) grid[m.over.row][m.over.col] = null;
-    // 잡고 나서 같은 기물로 더 잡을 수 있으면 이어서 둡니다 (왕이 된 수는 거기서 끝납니다)
+    // After a capture, if the same piece can capture again, the turn goes on (but becoming a king ends it)
     state.jumping = m.over && !crowned && jumpsFrom(grid, m.to.row, m.to.col).length ? m.to : null;
     return state.jumping ? 'again' : undefined;
   },

@@ -1,11 +1,12 @@
-// 십이장기를 "둘 수 있는 수" 형태로 쓴 것 (시제품, sdk/experimental/simple.js).
+// Twelve Janggi: a 3×4 board, four pieces each. An example of picking a piece and moving it, pieces in hand, and promotion.
+// Try it: npx boardmadang dev sdk/examples/twelve
 //
-// 3×4 판에서 넷씩 가지고 둡니다. 잡은 기물은 내 것이 되어 손에 들어오고, 수를 두는 대신 빈칸에 내려놓을 수 있습니다.
-// 화면은 6줄입니다: 0번 줄은 위쪽 플레이어(1)의 손, 1~4번 줄이 판, 5번 줄은 아래쪽 플레이어(0)의 손.
-// 기물은 글자 두 개로 적습니다: 종류(k 왕, g 장, e 상, s 자, l 후) + 주인(0, 1). 예: 'k0'
+// A captured piece joins your side and goes to your hand; instead of moving, you may drop it on an empty square.
+// The grid has 6 rows: row 0 is the top player's (1) hand, rows 1-4 are the board, row 5 is the bottom player's (0) hand.
+// A piece is two characters: its kind (k king, g general, e elephant, s soldier, l lord) + its owner (0, 1). For example 'k0'
 
 const KINDS = { k: '王', g: '將', e: '相', s: '子', l: '侯' };
-/** 기물마다 갈 수 있는 방향 (패에 삼각형으로 보이고, 규칙도 이걸로 정합니다). n이 앞입니다 */
+/** The directions each kind can move (drawn as triangles on the tile, and used by the rules). 'n' is forward */
 const ARROWS = {
   k: ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'],
   g: ['n', 'e', 's', 'w'],
@@ -13,20 +14,20 @@ const ARROWS = {
   s: ['n'],
   l: ['n', 'ne', 'e', 's', 'w', 'nw'],
 };
-/** 방향 → [줄, 칸]의 변화. 아래쪽 플레이어(0) 기준이라 앞(n)이 줄 번호가 줄어드는 쪽입니다 */
+/** Direction → the change in [row, col], for the bottom player (0): forward ('n') is toward smaller row numbers */
 const STEP = { n: [-1, 0], ne: [-1, 1], e: [0, 1], se: [1, 1], s: [1, 0], sw: [1, -1], w: [0, -1], nw: [-1, -1] };
 
-const HAND_ROW = [5, 0]; // 플레이어마다 손이 있는 줄
-const CAMP_ROW = [4, 1]; // 플레이어마다 자기 진영(맨 뒷줄)
-const HAND_KINDS = ['e', 'g', 's']; // 손에 놓이는 순서 (자기 쪽에서 볼 때 왼쪽부터)
-/** 손에서 그 종류가 놓이는 칸 */
+const HAND_ROW = [5, 0]; // each player's hand row
+const CAMP_ROW = [4, 1]; // each player's camp (their back row)
+const HAND_KINDS = ['e', 'g', 's']; // the order in the hand (from the left, as that player sees it)
+/** The hand square where that kind sits */
 const handCell = (player, kind) => ({ row: HAND_ROW[player], col: player === 0 ? HAND_KINDS.indexOf(kind) : 2 - HAND_KINDS.indexOf(kind) });
 
 const onBoard = (row, col) => row >= 1 && row <= 4 && col >= 0 && col <= 2;
 const ownerOf = (piece) => Number(piece[1]);
 
 export default {
-  id: 'twelve-simple',
+  id: 'twelve',
   board: {
     places: 'cells', rows: 6, cols: 3, flipForPlayer: 1,
     areas: [{ side: 'top', row: 0, col: 0, rows: 1, cols: 3 }, { side: 'bottom', row: 5, col: 0, rows: 1, cols: 3 }],
@@ -34,11 +35,11 @@ export default {
   pieces: Object.keys(KINDS).flatMap((kind) => [0, 1].map((player) => ({ name: kind + player, text: KINDS[kind], player, arrows: ARROWS[kind] }))),
   playerPieces: ['k0', 'k1'],
   maxActions: 300,
-  noMoves: 'lose', // 둘 수 있는 수가 없으면 집니다
-  repeat: 3, // 같은 판이 세 번 나오면 무승부
+  noMoves: 'lose', // with no move to make, you lose
+  repeat: 3, // the same position three times is a draw
 
   setup: () => ({
-    // grid[줄][칸] = 기물 | null. 판은 1~4번 줄만 씁니다
+    // grid[row][col] = piece | null. The board uses rows 1-4 only
     grid: [
       [null, null, null],
       ['g1', 'k1', 'e1'],
@@ -48,16 +49,16 @@ export default {
       [null, null, null],
     ],
     hands: [{ e: 0, g: 0, s: 0 }, { e: 0, g: 0, s: 0 }],
-    entered: null, // 왕이 방금 상대 진영에 들어간 플레이어. 상대가 다음 수에 못 잡으면 이깁니다
+    entered: null, // the player whose king has just entered the opponent's camp: they win unless it is captured next turn
     won: null,
   }),
 
   moves(state, player) {
     const list = [];
-    const forward = player === 0 ? 1 : -1; // 위쪽 플레이어는 방향이 반대입니다
+    const forward = player === 0 ? 1 : -1; // the top player's directions are reversed
     state.grid.forEach((line, row) => line.forEach((piece, col) => {
       if (!onBoard(row, col)) return;
-      // 내 기물: 방향마다 한 칸. 내 기물이 있는 칸으로는 못 갑니다
+      // My pieces: one square in each direction, but not onto my own piece
       if (piece && ownerOf(piece) === player) {
         for (const dir of ARROWS[piece[0]]) {
           const to = { row: row + STEP[dir][0] * forward, col: col + STEP[dir][1] * forward };
@@ -65,7 +66,7 @@ export default {
           if (there === null || (there && ownerOf(there) !== player)) list.push({ from: { row, col }, to });
         }
       }
-      // 손의 기물: 상대 진영이 아닌 빈칸에 내려놓습니다
+      // Pieces in hand: drop on any empty square outside the opponent's camp
       if (!piece && row !== CAMP_ROW[1 - player]) {
         for (const kind of HAND_KINDS) if (state.hands[player][kind] > 0) list.push({ from: handCell(player, kind), to: { row, col }, drop: kind });
       }
@@ -75,7 +76,7 @@ export default {
 
   move(state, m, player) {
     const { grid, hands } = state;
-    const waiting = state.entered; // 지난 수에 왕을 내 진영에 넣은 상대
+    const waiting = state.entered; // the opponent, if their king entered my camp on their last move
     state.entered = null;
     if (m.drop) {
       hands[player][m.drop] -= 1;
@@ -83,14 +84,14 @@ export default {
     } else {
       const piece = grid[m.from.row][m.from.col];
       const taken = grid[m.to.row][m.to.col];
-      if (taken?.[0] === 'k') state.won = player; // 왕을 잡으면 이깁니다
-      else if (taken) hands[player][taken[0] === 'l' ? 's' : taken[0]] += 1; // 잡은 후는 자로 돌아옵니다
+      if (taken?.[0] === 'k') state.won = player; // capturing the king wins
+      else if (taken) hands[player][taken[0] === 'l' ? 's' : taken[0]] += 1; // a captured lord comes back as a soldier
       grid[m.from.row][m.from.col] = null;
       const inCamp = m.to.row === CAMP_ROW[1 - player];
-      grid[m.to.row][m.to.col] = piece[0] === 's' && inCamp ? `l${player}` : piece; // 자가 상대 진영에 닿으면 후
+      grid[m.to.row][m.to.col] = piece[0] === 's' && inCamp ? `l${player}` : piece; // a soldier that reaches the opponent's camp becomes a lord
       if (piece[0] === 'k' && inCamp) state.entered = player;
     }
-    // 상대의 왕이 내 진영에 들어왔는데 이번 수에 못 잡았으면 상대가 이깁니다
+    // The opponent's king entered my camp and this move did not capture it: the opponent wins
     if (waiting !== null && state.won === null) state.won = waiting;
   },
 
@@ -109,7 +110,7 @@ export default {
         if (n > 1) text.push({ ...handCell(player, kind), text: String(n) });
       }
     }
-    // 진영: 맨 뒷줄을 그 플레이어 색으로
+    // Camps: each back row in its player's color
     const tint = [0, 1].flatMap((player) => [0, 1, 2].map((col) => ({ row: CAMP_ROW[player], col, color: player })));
     return { pieces, text, tint };
   },

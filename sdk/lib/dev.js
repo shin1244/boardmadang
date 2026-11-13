@@ -20,7 +20,7 @@ const SDK = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SDK_FILES = new Set([
   'check.js',
   'playground/index.html', 'playground/playground.js', 'playground/playground.css',
-  'playground/board.js', 'playground/listing.js', 'playground/platform.js',
+  'playground/board.js', 'playground/listing.js', 'playground/moves.js', 'playground/platform.js',
 ]);
 
 /** 폴더 이름으로 게임 id를 만듭니다. 사이트 주소에 쓰이므로 영문 소문자, 숫자, -만 (board.js의 GAME_ID에 맞게 40자까지) */

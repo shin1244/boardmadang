@@ -15,6 +15,7 @@ import {
 } from '../check.js';
 import { BoardView, GAME_ID, SHAPE_LIMITS, attachInput, buttonsOf, paintPlayerDot } from './board.js';
 import { LANGS, LANG_NAMES, fullLangs, localize } from './listing.js';
+import { toGame } from './moves.js';
 import { hashOf, makeRng } from './platform.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -395,7 +396,8 @@ async function main() {
   const entry = (await (await fetch('/api/games')).json()).find((g) => g.id === gameId);
   if (!entry) throw new Error("the dev server couldn't find this game");
   listing = entry.listing;
-  game = (await import(entry.module)).default;
+  // moves()와 move()로 쓴 게임이면 게임 API로 바꿉니다 (올릴 때는 npx boardmadang pack이 같은 코드를 zip에 넣습니다)
+  game = toGame((await import(entry.module)).default);
   const problems = checkMembers(game ?? {});
   if (problems.length) {
     $('#fatal').hidden = false;
