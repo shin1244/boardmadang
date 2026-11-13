@@ -108,7 +108,6 @@ AI 모델을 올리면(`PUT /api/admin/ai/{game}`) 그 게임의 열린 요청�
 - 서버는 게임 코드를 돌리지 않습니다. 자동 검사는 올린 사람의 브라우저에서 돌므로 서버는 그 결과를 믿지 않습니다 ([architecture.md](architecture.md#보안)).
   내 컴퓨터에서 온 요청과 계정만 받고(게스트면 `403 {"error":"member only"}`), 검사에 걸리면 `422 {"problems":[...]}`를 돌려줍니다.
   검사 규칙은 [sdk/playground/listing.js](../sdk/playground/listing.js)에 있고, 운영 서버도 같은 규칙으로 검사합니다.
-  타이머를 켰는데 게임 코드에 `turn()`이 없으면 `422 {"problems":[{"code":"timer.needsTurn"}]}`입니다.
 - `/api/matches`: 끝난 대국은 Go 서버가 기보로 저장합니다 (`server/internal/record`). 무효가 된 대국도 남깁니다.
   - 기보 id(10글자)를 아는 사람은 누구나 볼 수 있습니다. 링크로 공유하는 용도입니다.
   - 플레이어의 내부 id는 보내지 않고, 보는 사람이 앉았던 자리를 `you`로 붙입니다 (안 둔 사람이면 `[]`, 혼자 두 자리면 `[0,1]`).

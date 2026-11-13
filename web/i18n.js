@@ -399,7 +399,6 @@ const STRINGS = {
     'register.timer.custom.hint': '켜면 방 만들기에서 분 단위로 고르거나 타이머 없이 둘 수 있습니다. 끄면 방도 위 시간으로 합니다.',
     'register.timer.noTurn': '이 게임 코드에는 turn()이 없어 타이머를 쓸 수 없습니다. 누구 차례인지 돌려주는 turn(state)을 넣으면 쓸 수 있습니다.',
     'problem.timer.invalid': '타이머는 {min}~{max}분 사이의 정수이거나 타이머 없음이어야 합니다.',
-    'problem.timer.needsTurn': '타이머를 쓰려면 게임 코드에 turn()이 있어야 합니다.',
 
     'card.createRoom': '방 만들기',
     'tag.timer.custom': '방을 만들 때 시간을 바꿀 수 있습니다',
@@ -1178,7 +1177,6 @@ const STRINGS = {
     'register.timer.custom.hint': 'When on, hosts can pick the minutes or no timer when they create a room. When off, rooms use the time above.',
     'register.timer.noTurn': "This game's code has no turn(), so it can't use a timer. Add turn(state) that returns whose turn it is.",
     'problem.timer.invalid': 'The timer must be a whole number of minutes from {min} to {max}, or no timer.',
-    'problem.timer.needsTurn': 'To use a timer, the game code needs turn().',
 
     'card.createRoom': 'Create room',
     'tag.timer.custom': 'Hosts can change the time when they create a room',

@@ -1,10 +1,11 @@
-// 게임 폴더를 읽는 Node 도구. 레포의 개발 서버(playground/serve.js), 명령줄(bin/boardmadang.js)이 같이 씁니다.
+// 게임 폴더를 읽고 쓰는 Node 도구. 레포의 개발 서버(playground/serve.js), 명령줄(bin/boardmadang.js)이 같이 씁니다.
 // 게임 폴더에는 index.js(필수), 다른 .js/.mjs, listing.json(등록 정보), thumbnail.json(썸네일)이 있습니다.
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { normalizeThumbnail, validateThumbnail } from '../check.js';
+import { isLocal, json, readBody } from './http.js';
 
 /** 게임 코드 파일인지. 테스트는 빼고, 판에 영향을 주는 .js, .mjs만 */
 export const isCodeFile = (name) => /\.m?js$/.test(name) && !/\.test\.m?js$/.test(name);
@@ -65,35 +66,13 @@ export function gameEntry(folder, { id, module, private: isPrivate = false }) {
   return entry;
 }
 
-export const json = (res, status, body) => {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(body));
-};
-
-/** 내 컴퓨터에서 온 요청인지 (같은 와이파이의 다른 기기가 파일을 못 쓰게) */
-export const isLocal = (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
-
 /**
  * PUT /api/games/<id>/thumbnail: 플레이그라운드의 "Use as thumbnail"이 찍은 판을 게임 폴더의 thumbnail.json에 씁니다.
- * 개발용이라 내 컴퓨터에서 온 JSON만 받습니다. 다른 사이트가 보내는 요청은 JSON 본문 때문에
- * 브라우저가 미리 확인(preflight)하는데, 개발 서버가 CORS 허가를 주지 않으므로 막힙니다.
+ * 개발용이라 내 컴퓨터에서 온 JSON만 받습니다 (lib/http.js의 readBody).
  */
 export function saveThumbnail(req, res, folder) {
   if (!isLocal(req)) return json(res, 403, { error: 'local only' });
-  if (!/^application\/json\b/.test(req.headers['content-type'] ?? '')) return json(res, 415, { error: 'JSON only' });
-  let body = '';
-  req.setEncoding('utf8');
-  req.on('data', (chunk) => {
-    body += chunk;
-    if (body.length > 200_000) req.destroy();
-  });
-  req.on('end', () => {
-    let thumb;
-    try {
-      thumb = JSON.parse(body);
-    } catch {
-      return json(res, 400, { error: 'bad JSON' });
-    }
+  readBody(req, res, (thumb) => {
     const problems = validateThumbnail(thumb);
     if (problems.length) return json(res, 422, { problems });
     const saved = normalizeThumbnail(thumb);

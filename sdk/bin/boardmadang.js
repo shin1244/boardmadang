@@ -17,6 +17,7 @@ import { GAME_LIMITS, checkGame, checkThumbnail } from '../check.js';
 import { startDev } from '../lib/dev.js';
 import { codeFiles, codeVersion, readJson } from '../lib/games.js';
 import { zip } from '../lib/zip.js';
+import { GAME_ID, SHAPE_LIMITS } from '../playground/board.js';
 import { LANGS, fullLangs, validateListing } from '../playground/listing.js';
 import { makeRng } from '../playground/platform.js';
 
@@ -28,7 +29,7 @@ const HELP = `boardmadang ${VERSION}: make 1-vs-1 board games for boardmadang.co
   npx boardmadang new <folder>     make a new game (starts as tic-tac-toe)
   npx boardmadang dev [folder]     open the playground (--port 5173)
   npx boardmadang check [folder]   run the same checks as the upload (--games 200)
-  npx boardmadang pack [folder]    if the checks pass, make the zip to upload
+  npx boardmadang pack [folder]    if the checks pass, make the zip to upload (--out game.zip)
 
 [folder] defaults to the current folder. Guide: https://github.com/shin1244/boardmadang/blob/main/sdk/README.md`;
 
@@ -39,7 +40,6 @@ const LISTING_TEXT = {
   'languages.invalid': () => "unknown language or level (use 'full' or 'rulebook').",
   'difficulty.invalid': () => "difficulty must be 'easy', 'normal', or 'hard'.",
   'timer.invalid': (p) => `timer.minutes must be a whole number from ${p.min} to ${p.max} or null, and timer.custom must be true or false.`,
-  'timer.needsTurn': () => 'a timer needs turn() in your game code.',
   'text.missing': (p) => `${p.field}.${p.lang} is empty.`,
   'text.tooLong': (p) => `${p.field}.${p.lang} can be at most ${p.max} characters.`,
 };
@@ -70,7 +70,9 @@ function newGame(dir) {
   if (!dir) throw new Error('Name the folder to create: npx boardmadang new my-game');
   const folder = path.resolve(dir);
   const id = path.basename(folder);
-  if (!/^[a-z0-9-]+$/.test(id)) throw new Error(`The folder name becomes the game id, so use only lowercase letters, numbers, and - (got: ${id})`);
+  if (!GAME_ID.test(id)) {
+    throw new Error(`The folder name becomes the game id, so use only lowercase letters, numbers, and -, up to ${SHAPE_LIMITS.idChars} characters (got: ${id})`);
+  }
   if (fs.existsSync(folder) && fs.readdirSync(folder).length) throw new Error(`${dir} is not empty`);
   fs.mkdirSync(folder, { recursive: true });
   const template = path.join(SDK, 'template');
@@ -148,8 +150,6 @@ async function runCheck(folder, { games = 200 } = {}) {
   else if (!listing.value) note("no listing.json. That's OK: you can fill in the name, rules, and languages on the site.");
   else {
     const lp = validateListing(listing.value);
-    const timer = listing.value.timer;
-    if (timer && (timer.minutes !== null || timer.custom) && typeof game?.turn !== 'function') lp.push({ code: 'timer.needsTurn' });
     for (const p of lp) fail(`listing.json: ${LISTING_TEXT[p.code]?.(p) ?? p.code}`);
     if (!lp.length) good('listing.json');
   }
