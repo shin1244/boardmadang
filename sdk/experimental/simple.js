@@ -1,0 +1,130 @@
+// 시제품: 게임을 "둘 수 있는 수"와 "그 수를 두면"만으로 쓰는 형태. 아직 정식 API가 아니고 npm 패키지에도 들어가지 않습니다.
+//
+// 지금의 게임 API(setup, play, result, view, turn, legal)는 같은 규칙을 세 군데에 나눠 씁니다.
+// play()는 반칙을 걸러 내고, legal()은 둘 수 있는 수를 늘어놓고, turn()은 누구 차례인지 말하고, 셋이 어긋나면 검사에 걸립니다.
+// 이 형태에서는 규칙을 한 번만 씁니다.
+//
+//   export default {
+//     id, board, pieces,               지금과 같습니다 (maxActions는 안 적으면 300)
+//     setup(rng)                       시작 상태
+//     moves(state, player)             player가 지금 둘 수 있는 수의 목록
+//     move(state, m, player)           그 수를 둡니다. 받은 state를 그대로 고쳐도 됩니다. m은 moves()가 돌려준 바로 그 수입니다
+//     winner(state)                    0 | 1 (이긴 쪽) | 'draw' | 그 밖(아직 안 끝남)
+//     view(state, player, lang)        그릴 것 (지금의 view()와 같은 모양)
+//     noMoves: 'draw' | 'lose'         둘 수 있는 수가 없으면 무승부(기본)인지, 그 플레이어가 지는지
+//     repeat: 3                        같은 판(판과 차례)이 이만큼 나오면 무승부 (안 적으면 보지 않음)
+//   }
+//
+// 수(move)의 모양은 둘입니다.
+//   { row, col }                칸 하나를 누르는 수 (틱택토, 오목)
+//   { from, to }                기물을 골라서(from) 옮기는 수 (체스, 장기). 판 밖 영역의 칸에서 오면 "손에서 내려놓기"입니다
+// 수에는 다른 칸을 얼마든지 붙여도 되고(잡는 기물, 승급 여부 등), move()가 그대로 돌려받습니다.
+//
+// 플랫폼이 대신 하는 일
+//   차례          한 수마다 번갈아 둡니다. 차례가 아닌 쪽의 수와 moves()에 없는 수는 무시합니다
+//   기물 고르기    from이 있는 수는 "기물 누르기 → 갈 곳 누르기"로 받고, 다른 기물을 누르면 바꾸고, 다시 누르면 취소합니다
+//   표시          고른 기물(ring), 갈 수 있는 곳(dot), 마지막 수(last-move), 방금 움직인 기물의 움직임(from)을 화면에 붙입니다
+//   끝           winner(), 둘 수 없음(noMoves), 같은 판 반복(repeat)을 한 수마다 봅니다
+//   안내 글자      "내 차례 / 상대 차례 / 이겼습니다 / 졌습니다 / 무승부" (view()가 message를 주면 그걸 씁니다)
+//   legal()       moves()에서 만들어서, 호버 표시와 AI가 바로 씁니다
+//
+// toGame()은 이 형태를 지금의 게임 API로 바꿉니다. 그래서 검사(check.js), 플레이그라운드, 사이트, AI 학습은 고칠 것이 없습니다.
+
+import { hashOf } from '../playground/platform.js';
+
+const same = (a, b) => !!a && !!b && a.row === b.row && a.col === b.col;
+const cell = ({ row, col }) => ({ row, col });
+const clone = (v) => JSON.parse(JSON.stringify(v));
+/** 수가 닿는 칸: 옮기는 수는 to, 칸 하나를 누르는 수는 그 칸 */
+const target = (m) => m.to ?? m;
+
+// 사이트는 화면 글자를 한국어와 영어로 갖고 있습니다. 다른 언어는 영어로 보입니다
+const TEXT = {
+  en: { mine: 'Your turn', theirs: "Opponent's turn", won: 'You won!', lost: 'You lost', draw: 'Draw', noMoves: 'No moves left', repeat: 'The same position came up again' },
+  ko: { mine: '내 차례', theirs: '상대 차례', won: '이겼습니다!', lost: '졌습니다', draw: '무승부', noMoves: '둘 수 있는 수가 없음', repeat: '같은 판이 다시 나옴' },
+};
+
+/** 이 형태로 쓴 게임인지 (moves와 move가 있고 play는 없음) */
+export const isSimple = (def) => typeof def?.moves === 'function' && typeof def?.move === 'function' && typeof def?.play !== 'function';
+
+/**
+ * 이 형태로 쓴 게임을 지금의 게임 API로 바꿉니다. 이미 지금의 API면 그대로 돌려줍니다.
+ * 플랫폼이 보는 상태는 { game: 게임이 쓰는 상태, turn, pick: 고른 기물의 칸, last: 마지막 수, end: 끝났으면 결과, seen: 나온 판 }입니다.
+ */
+export function toGame(def) {
+  if (!isSimple(def)) return def;
+  const { setup, moves, move, winner, view, noMoves = 'draw', repeat = 0, observe, ...rest } = def;
+  const movesOf = (st) => (st.end ? [] : moves(st.game, st.turn) ?? []);
+
+  /** 시작할 때와 한 수를 둔 뒤: 끝났으면 st.end에 적습니다 */
+  function settle(st) {
+    const w = winner?.(st.game);
+    if (w === 0 || w === 1) st.end = { winner: w };
+    else if (w === 'draw') st.end = { winner: null };
+    if (!st.end && repeat) {
+      // 판마다 해시 두 개를 이어 붙여 셉니다 (상태에 판을 통째로 쌓으면 64KB를 넘습니다)
+      const key = hashOf([0, st.game, st.turn]) + hashOf([1, st.game, st.turn]);
+      st.seen[key] = (st.seen[key] ?? 0) + 1;
+      if (st.seen[key] >= repeat) st.end = { winner: null, why: 'repeat' };
+    }
+    if (!st.end && !movesOf(st).length) st.end = { winner: noMoves === 'lose' ? 1 - st.turn : null, why: 'noMoves' };
+    return st;
+  }
+
+  return {
+    maxActions: 300,
+    ...rest,
+
+    setup: (rng) => settle({ game: setup(rng), turn: 0, pick: null, last: null, end: null, ...(repeat ? { seen: {} } : {}) }),
+
+    turn: (st) => (st.end ? null : st.turn),
+
+    play(st, player, action) {
+      if (st.end || player !== st.turn || action?.kind !== 'click') return st;
+      const at = { row: action.row, col: action.col };
+      const all = movesOf(st);
+      // 고른 기물의 갈 곳이거나, 칸 하나를 누르는 수
+      const m = all.find((x) => (x.from ? same(x.from, st.pick) && same(x.to, at) : same(x, at)));
+      if (m) {
+        const next = { ...clone(st), pick: null, last: m.from ? { from: cell(m.from), to: cell(m.to) } : { to: cell(m) }, turn: 1 - player };
+        move(next.game, clone(m), player);
+        return settle(next);
+      }
+      // 기물 고르기: 다시 누르면 취소, 다른 기물을 누르면 바꿉니다. 차례는 그대로입니다
+      if (same(st.pick, at)) return { ...st, pick: null };
+      if (all.some((x) => same(x.from, at))) return { ...st, pick: at };
+      return st;
+    },
+
+    legal(st, player) {
+      if (player !== st.turn) return [];
+      const cells = movesOf(st).map((m) => (!m.from || !same(m.from, st.pick) ? m.from ?? m : m.to));
+      return cells.filter((c, i) => cells.findIndex((x) => same(x, c)) === i).map((c) => ({ kind: 'click', row: c.row, col: c.col }));
+    },
+
+    result(st, lang) {
+      if (!st.end) return null;
+      const reason = (TEXT[lang] ?? TEXT.en)[st.end.why];
+      return reason ? { winner: st.end.winner, reason } : { winner: st.end.winner };
+    },
+
+    view(st, player, lang) {
+      const v = view(st.game, player, lang) ?? {};
+      const text = TEXT[lang] ?? TEXT.en;
+      const marks = [...(v.marks ?? [])];
+      // 방금 움직인 기물은 온 칸에서 미끄러져 옵니다
+      const pieces = (v.pieces ?? []).map((p) => (st.last?.from && same(p, st.last.to) ? { ...p, from: st.last.from } : p));
+      if (st.last) marks.push({ ...st.last.to, type: 'last-move' });
+      if (st.pick && player === st.turn) {
+        marks.push({ ...st.pick, type: 'ring' });
+        for (const m of movesOf(st)) if (same(m.from, st.pick)) marks.push({ ...cell(m.to), type: 'dot' });
+      }
+      const message = st.end
+        ? (st.end.winner === null ? text.draw : st.end.winner === player ? text.won : text.lost)
+        : (player === st.turn ? text.mine : text.theirs);
+      return { ...v, pieces, marks, message: v.message ?? message };
+    },
+
+    ...(observe ? { observe: (st, player) => observe(st.game, player) } : {}),
+  };
+}
