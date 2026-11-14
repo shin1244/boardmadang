@@ -8,10 +8,10 @@
 // Rules
 //   - Pieces move like chess pieces, but nothing is ever captured: pieces only block.
 //   - A piece that moves onto the ball must kick it. The kick follows the piece's own pattern:
-//       rook    slides the ball in a straight line      bishop  slides it diagonally
+//       rook    sends the ball in a straight line       bishop  sends it diagonally
 //       knight  chips it over everything, in an L       king    one square, any direction
 //       pawn    one square diagonally forward
-//   - A sliding ball stops at a wall or in front of an opponent's piece.
+//   - A rook's or bishop's kick goes as far as the kicker likes, up to a wall or the square in front of an opponent's piece.
 //   - If the ball reaches one of your own pieces, that piece kicks it on, in the same turn (each piece kicks once a turn).
 //   - The ball in a goal ends the game. Kicking it into your own goal counts for the opponent.
 //
@@ -19,6 +19,7 @@
 //   keeper     (off) a sliding ball stops as soon as it is next to the opponent's king
 //   chipGoals  (on)  a knight may chip the ball straight into the goal
 //   goalWidth  (3)   how many squares wide a goal is
+//   anyDistance (on) a rook's or bishop's kick may stop on any square on its way. Off: the ball rolls until something stops it
 //   cols       (7)   how many squares wide the pitch is (it is always 9 long). 9 was the first try: half of those games had no goal
 
 const OWN_GOAL_ROW = [10, 0]; // the goal each player defends
@@ -83,11 +84,12 @@ function kickTargets(grid, at, used, rules) {
       if (there === null) {
         ({ row, col } = next);
         const caught = guard && Math.abs(guard.row - row) <= 1 && Math.abs(guard.col - col) <= 1;
-        if (slide && !caught) continue; // keeps rolling
-        targets.push({ row, col });
+        const rolls = slide && !caught;
+        if (!rolls || rules.anyDistance) targets.push({ row, col }); // the ball may stop here
+        if (rolls) continue; // and it may keep rolling
       } else if (there && ownerOf(there) === player && !used.some((u) => same(u, next)) && kickTargets(grid, next, [...used, at], rules).length) {
         targets.push({ ...next, pass: true }); // a teammate who can kick it on
-      } else if (row !== at.row || col !== at.col) {
+      } else if (!rules.anyDistance && (row !== at.row || col !== at.col)) {
         targets.push({ row, col }); // a wall or a piece: the ball stops in front of it
       }
       break;
@@ -97,8 +99,8 @@ function kickTargets(grid, at, used, rules) {
 }
 
 /** The game, with the rules that are still being tried out as options */
-export function makeGame({ keeper = false, chipGoals = true, goalWidth = 3, cols = 7 } = {}) {
-  const rules = { keeper, chipGoals, cols, goal: goalCols(goalWidth, cols) };
+export function makeGame({ keeper = false, chipGoals = true, goalWidth = 3, cols = 7, anyDistance = true } = {}) {
+  const rules = { keeper, chipGoals, anyDistance, cols, goal: goalCols(goalWidth, cols) };
   const mid = (cols - 1) / 2; // the middle column
   return {
     id: 'chess-soccer',

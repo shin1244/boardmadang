@@ -115,13 +115,12 @@ function playGame(def, kind) {
 }
 
 const VARIANTS = [
-  ['9 wide, goal 3, chip goals', { cols: 9, goalWidth: 3, chipGoals: true }],
-  ['9 wide, goal 3, no chips  ', { cols: 9, goalWidth: 3, chipGoals: false }],
-  ['9 wide, goal 5, chip goals', { cols: 9, goalWidth: 5, chipGoals: true }],
-  ['9 wide, goal 5, no chips  ', { cols: 9, goalWidth: 5, chipGoals: false }],
-  ['7 wide, goal 3, chip goals', { cols: 7, goalWidth: 3, chipGoals: true }],
-  ['7 wide, goal 3, no chips  ', { cols: 7, goalWidth: 3, chipGoals: false }],
-  ['7 wide, goal 3, no chips, keeper', { cols: 7, goalWidth: 3, chipGoals: false, keeper: true }],
+  ['7 wide, any distance             ', {}],
+  ['7 wide, any distance, no chips   ', { chipGoals: false }],
+  ['7 wide, roll to the end          ', { anyDistance: false }],
+  ['7 wide, roll to the end, no chips', { anyDistance: false, chipGoals: false }],
+  ['9 wide, any distance             ', { cols: 9 }],
+  ['9 wide, roll to the end          ', { cols: 9, anyDistance: false }],
 ];
 for (const [name, rules] of VARIANTS) {
   const def = makeGame(rules);
