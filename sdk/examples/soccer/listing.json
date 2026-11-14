@@ -1,0 +1,23 @@
+{
+  "languages": {
+    "ko": "full",
+    "en": "full"
+  },
+  "difficulty": "normal",
+  "timer": {
+    "minutes": 10,
+    "custom": true
+  },
+  "name": {
+    "ko": "체스 축구",
+    "en": "Chess Soccer"
+  },
+  "description": {
+    "ko": "체스 기물로 하는 축구. 공이 있는 칸에 들어가서 차고, 상대 골대에 넣으면 이깁니다.",
+    "en": "Football played with chess pieces. Step onto the ball, kick it, and put it in the opponent's goal to win."
+  },
+  "rulebook": {
+    "ko": "두 사람이 폭 7칸, 길이 9칸의 경기장에서 둡니다. 빨강이 먼저 두고, 그다음 파랑이 둡니다.\n\n골대\n경기장 위와 아래의 가운데 세 칸이 골대입니다. 내 색으로 칠해진 골대가 내가 지키는 골대이고, 상대 색 골대에 공을 넣으면 이깁니다.\n\n기물\n각자 여섯 개로 시작합니다. 패의 가장자리에 있는 작은 삼각형은 그 기물이 걷는 방향입니다.\n- 킹 (K): 아무 방향으로 한 칸\n- 룩 (R): 앞뒤좌우로 원하는 만큼\n- 비숍 (B): 대각선으로 원하는 만큼\n- 나이트 (N): 체스의 나이트처럼 L자로 뜁니다. 다른 기물을 넘어갑니다\n- 폰 (P): 앞이나 옆으로 한 칸. 뒤로는 못 갑니다\n기물은 서로 잡지 않습니다. 길을 막기만 합니다. 나이트 말고는 다른 기물과 공을 지나갈 수 없고, 골대 칸에는 기물이 들어갈 수 없습니다.\n\n움직이기\n기물을 누르고, 갈 칸을 누릅니다.\n\n공 차기\n공이 있는 칸으로 움직인 기물은 반드시 공을 찹니다. 점으로 표시된 칸 가운데 공을 보낼 곳을 누르세요. 차는 방향은 기물마다 다릅니다.\n- 룩: 앞뒤좌우로 원하는 만큼\n- 비숍: 대각선으로 원하는 만큼\n- 나이트: L자로 넘겨 찹니다. 사이에 있는 기물을 넘어갑니다\n- 킹: 아무 방향으로 한 칸\n- 폰: 앞쪽 대각선으로 한 칸\n공은 벽과 상대 기물을 지나갈 수 없습니다. 공을 찰 곳이 하나도 없는 기물은 공이 있는 칸에 들어갈 수 없습니다.\n\n패스\n찬 공이 내 기물에 닿으면 그 기물이 같은 차례에 이어서 찹니다. 한 차례에 기물 하나는 한 번만 찰 수 있고, 이어서 찰 곳이 없는 기물에게는 패스할 수 없습니다.\n\n이기는 법\n공을 상대 골대에 넣으면 이깁니다. 내 골대에 넣으면 자책골이라 집니다.\n\n무승부\n- 같은 판(기물과 공의 자리, 둘 차례)이 세 번 나오면 무승부입니다.\n- 200수 안에 골이 나지 않아도 무승부입니다.",
+    "en": "Two players play on a pitch 7 squares wide and 9 long. Red moves first, then Blue.\n\nGoals\nThe middle three squares above and below the pitch are the goals. The goal in your color is the one you defend. Put the ball in the goal of your opponent's color to win.\n\nPieces\nEach side starts with six. The small triangles on the edge of a tile show the directions it walks.\n- King (K): one square in any direction\n- Rook (R): any distance forward, back, left, or right\n- Bishop (B): any distance diagonally\n- Knight (N): jumps in an L, like a chess knight. It jumps over other pieces\n- Pawn (P): one square forward or sideways. It cannot go back\nPieces never capture each other. They only block. Except for the knight, nothing passes through another piece or the ball, and no piece may enter a goal square.\n\nMoving\nClick a piece, then the square to move it to.\n\nKicking the ball\nA piece that moves onto the ball must kick it. Click one of the dotted squares to send the ball there. Each piece kicks in its own way.\n- Rook: any distance forward, back, left, or right\n- Bishop: any distance diagonally\n- Knight: chips the ball in an L, over anything in between\n- King: one square in any direction\n- Pawn: one square diagonally forward\nThe ball cannot pass a wall or an opponent's piece. A piece that would have nowhere to kick the ball cannot move onto it.\n\nPassing\nIf the ball reaches one of your own pieces, that piece kicks it on in the same turn. Each piece may kick only once a turn, and you cannot pass to a piece that would have nowhere to kick.\n\nHow to win\nPut the ball in your opponent's goal. If you put it in your own goal, it is an own goal and you lose.\n\nDraw\n- The game is a draw when the same position (the pieces, the ball, and whose turn it is) appears for the third time.\n- It is also a draw if nobody scores within 200 moves."
+  }
+}
