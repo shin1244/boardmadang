@@ -279,6 +279,7 @@ pieces: [
 - `text`: the characters on the tile, 1 or 2.
 - `player` (optional): the tile's owner. The tile is drawn in that player's color and faces its owner: the bottom player's tiles stand upright and the top player's are upside down (also on a board flipped with `flipForPlayer`).
 - `arrows` (optional): the direction marks. `'n'` is forward from the owner's side, then clockwise `'ne'`, `'e'`, `'se'`, `'s'`, `'sw'`, `'w'`, `'nw'`.
+- `chess` (optional): one of `'K'`, `'Q'`, `'R'`, `'B'`, `'N'`, `'P'`. Instead of a tile, that chess piece is drawn. As in chess, the first player's pieces are white and the second player's are black. Use it for a game played with chess pieces that also has pieces chess doesn't have, like a ball or a wall (`{ name: 'K0', text: 'K', player: 0, chess: 'K' }`). The figure always stands upright and `arrows` are not drawn.
 
 You can mix names and tiles in one list. `text` on a cell with a tile is drawn small in the cell's corner so it doesn't cover the tile (a count of pieces in hand, for example).
 

@@ -81,7 +81,7 @@ export function checkMembers(g) {
   if (typeof g.id !== 'string' || !GAME_ID.test(g.id)) p.push(`id: must use only lowercase letters, numbers, and - (up to ${GAME_LIMITS.idChars} characters)`);
   p.push(...boardProblems(g.board, 'board'));
   if (!piecesOk(g.pieces)) {
-    p.push(`pieces: must be ${quoted(PIECE_SETS).join(', ')}, or a list of up to ${GAME_LIMITS.pieceKinds} names (1 to ${GAME_LIMITS.nameChars} characters) or tiles ({ name, text, player, arrows })`);
+    p.push(`pieces: must be ${quoted(PIECE_SETS).join(', ')}, or a list of up to ${GAME_LIMITS.pieceKinds} names (1 to ${GAME_LIMITS.nameChars} characters) or tiles ({ name, text, player, arrows, chess })`);
   }
   if (!isInt(g.maxActions, 1, GAME_LIMITS.maxActions)) {
     p.push(`maxActions: must be a whole number from 1 to ${GAME_LIMITS.maxActions.toLocaleString('en')}`);

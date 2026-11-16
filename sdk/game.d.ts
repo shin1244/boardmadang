@@ -286,6 +286,11 @@ export interface TilePiece {
   player?: 0 | 1;
   /** 갈 수 있는 방향 표시 (겹치지 않게) */
   arrows?: TileArrow[];
+  /**
+   * 패 대신 체스 기물 그림으로 그립니다: 킹, 퀸, 룩, 비숍, 나이트, 폰. 체스처럼 선공(player 0)은 흰 기물, 후공(player 1)은 검은 기물이고, 주인이 없으면 흰 기물입니다.
+   * 그림은 늘 바로 서고 arrows는 그리지 않습니다. text는 이 칸을 모르는 옛 화면이 대신 쓰므로 그대로 적습니다.
+   */
+  chess?: 'K' | 'Q' | 'R' | 'B' | 'N' | 'P';
 }
 
 export interface Game<S> {
