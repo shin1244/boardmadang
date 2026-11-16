@@ -427,6 +427,9 @@ test('기물 목록(cleanPieces): 기본 묶음의 이름이거나, 이름(1~32�
   assert.equal(cleanPieces('checkers'), null);
   assert.deepEqual(cleanPieces(['a', { name: 'k', text: '王', player: 1, arrows: ['n', 'sw'], extra: 1 }]), ['a', { name: 'k', text: '王', player: 1, arrows: ['n', 'sw'] }]);
   assert.equal(cleanPieces(Array.from({ length: 33 }, (_, i) => `p${i}`)), null);
+  // 체스 기물 그림으로 그리는 글자 패 (chess)
+  assert.deepEqual(cleanPiece({ name: 'K0', text: 'K', player: 0, chess: 'K' }), { name: 'K0', text: 'K', player: 0, chess: 'K' });
+  for (const bad of ['k', 'X', 'KQ', '', 1, null, ['K']]) assert.equal(cleanPiece({ name: 'K0', text: 'K', chess: bad }), null, JSON.stringify(bad));
   assert.equal(cleanPiece('p'.repeat(32)), 'p'.repeat(32));
   for (const bad of ['', 'p'.repeat(33), 5, null, [], { name: 'k' }, { name: '', text: 'a' }, { name: 'k', text: 'abc' }, { name: 'k', text: 'a', player: 2 },
     { name: 'k', text: 'a', arrows: ['n', 'n'] }, { name: 'k', text: 'a', arrows: ['up'] }]) {

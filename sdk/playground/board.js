@@ -100,7 +100,10 @@ export const PIECE_SETS = Object.keys(BUILT_IN_PIECES);
  */
 export const TILE_ARROWS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 
-/** 기물 목록의 한 항목 → 이름. 이름 문자열이거나 글자 패 { name, text, player, arrows } 입니다 */
+/** 글자 패를 체스 기물 그림으로 그릴 때 고르는 모양 (chess): 킹, 퀸, 룩, 비숍, 나이트, 폰 */
+export const CHESS_KINDS = ['K', 'Q', 'R', 'B', 'N', 'P'];
+
+/** 기물 목록의 한 항목 → 이름. 이름 문자열이거나 글자 패 { name, text, player, arrows, chess } 입니다 */
 export const pieceName = (p) => (typeof p === 'string' ? p : p?.name);
 
 /** 이 기물 묶음(pieces)에 그 이름의 기물이 있는지. 기본 묶음은 그릴 줄 아는 이름, 직접 정의한 묶음은 목록의 이름 */
@@ -111,7 +114,8 @@ export function knowsPiece(pieceSet, name) {
 }
 
 /**
- * 기물 목록의 한 항목: 이름(1~32자), 또는 글자 패 { name, text(1~2자), player?, arrows? }.
+ * 기물 목록의 한 항목: 이름(1~32자), 또는 글자 패 { name, text(1~2자), player?, arrows?, chess? }.
+ * chess가 있으면 패 대신 그 체스 기물 그림을 그립니다 (선공은 흰 기물, 후공은 검은 기물) (text는 이 칸을 모르는 옛 화면이 쓰는 글자).
  * 알려진 칸만 남긴 것을 돌려주고, 맞지 않으면 null입니다.
  */
 export function cleanPiece(p) {
@@ -127,6 +131,10 @@ export function cleanPiece(p) {
   if (p.arrows !== undefined) {
     if (!Array.isArray(p.arrows) || !p.arrows.every((a) => TILE_ARROWS.includes(a)) || new Set(p.arrows).size !== p.arrows.length) return null;
     out.arrows = [...p.arrows];
+  }
+  if (p.chess !== undefined) {
+    if (!CHESS_KINDS.includes(p.chess)) return null;
+    out.chess = p.chess;
   }
   return out;
 }
@@ -384,12 +392,15 @@ export class BoardView {
     this.canvas = canvas;
     this.board = board;
     this.pieceSet = pieceSet;
-    // 직접 정의한 기물: 이름 → 목록 순서(원의 색)와 글자 패 정의
+    // 직접 정의한 기물: 이름 → 목록 순서(원의 색)와 글자 패 정의. 체스 기물 그림으로 그리는 것(chess)은 패가 아니라 figure입니다
     this.custom = new Map();
     if (Array.isArray(pieceSet)) {
       pieceSet.forEach((p, index) => {
         const name = pieceName(p);
-        if (!this.custom.has(name)) this.custom.set(name, { index, tile: typeof p === 'object' ? p : null });
+        if (this.custom.has(name)) return;
+        const def = p && typeof p === 'object' ? p : null;
+        const figure = def && CHESS_KINDS.includes(def.chess) ? def : null;
+        this.custom.set(name, { index, tile: figure ? null : def, figure });
       });
     }
     // 글자 패를 쓰는 게임. 패는 칸을 거의 채우고 가장자리에 방향 삼각형이 있어서, 마지막 수와 고른 기물 표시를 패 바깥에 그립니다
@@ -814,11 +825,12 @@ export class BoardView {
       this.circle(x, y, S * 0.12);
       ctx.fill();
     }
-    // 글자 패 위의 글자는 패 글자를 가리지 않게 칸의 오른쪽 아래 귀퉁이에 작게 씁니다 (손에 든 개수 같은 것)
+    // 글자 패와 체스 기물 그림 위의 글자는 그것을 가리지 않게 칸의 오른쪽 아래 귀퉁이에 작게 씁니다 (손에 든 개수 같은 것)
+    const figured = new Set((view.pieces ?? []).filter((p) => this.custom.get(p.piece)?.figure).map((p) => p.row * cols + p.col));
     for (const t of view.text ?? []) {
       if (!shown(t)) continue;
       let [x, y] = at(t.row, t.col);
-      const corner = tiled.has(t.row * cols + t.col);
+      const corner = tiled.has(t.row * cols + t.col) || figured.has(t.row * cols + t.col);
       if (corner) {
         x += S * 0.34;
         y += S * 0.32;
@@ -1174,18 +1186,11 @@ export class BoardView {
       ctx.lineWidth = Math.max(1, S * 0.035);
       ctx.stroke();
     } else if (set === 'chess') {
-      // 그림(100×100, 기물은 세로 4~90)을 칸의 88% 크기로 칸 가운데에
-      const k = (S * 0.88) / 100;
-      const ink = PIECE_INK[piece[0]];
-      const path = chessPath(piece[1]);
-      ctx.translate(x - 50 * k, y - 47 * k);
-      ctx.scale(k, k);
-      ctx.fillStyle = ink.fill;
-      ctx.fill(path, 'evenodd');
-      ctx.strokeStyle = ink.stroke;
-      ctx.lineWidth = 3.5;
-      ctx.lineJoin = 'round';
-      ctx.stroke(path);
+      this.drawChess(piece[1], PIECE_INK[piece[0]], x, y);
+    } else if (this.custom.get(piece)?.figure) {
+      // 체스 기물 그림으로 그리는 직접 정의한 기물: 체스처럼 선공은 흰 기물, 후공은 검은 기물 (주인이 없으면 흰 기물)
+      const { chess, player } = this.custom.get(piece).figure;
+      this.drawChess(chess, PIECE_INK[player === 1 ? 'b' : 'w'], x, y);
     } else if (this.custom.get(piece)?.tile) {
       this.drawTile(this.custom.get(piece).tile, x, y);
     } else {
@@ -1204,6 +1209,22 @@ export class BoardView {
       ctx.fillText(idx >= 0 ? String(piece).slice(0, 2) : '?', x, y);
     }
     ctx.restore();
+  }
+
+  /** 체스 기물 그림 하나 (kind는 CHESS_KINDS, ink는 { fill, stroke }). ctx.save()와 restore() 사이에서 부릅니다 */
+  drawChess(kind, ink, x, y) {
+    const { ctx, S } = this;
+    // 그림(100×100, 기물은 세로 4~90)을 칸의 88% 크기로 칸 가운데에
+    const k = (S * 0.88) / 100;
+    const path = chessPath(kind);
+    ctx.translate(x - 50 * k, y - 47 * k);
+    ctx.scale(k, k);
+    ctx.fillStyle = ink.fill;
+    ctx.fill(path, 'evenodd');
+    ctx.strokeStyle = ink.stroke;
+    ctx.lineWidth = 3.5;
+    ctx.lineJoin = 'round';
+    ctx.stroke(path);
   }
 
   /**

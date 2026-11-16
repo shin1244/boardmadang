@@ -658,16 +658,19 @@ func TestCheckThumbnail(t *testing.T) {
 	// 글자 패: { name, text(1~2자), player?, arrows? } (sdk/test/check.test.js와 같은 경우)
 	tiles := map[string]bool{
 		`[{"name":"wK","text":"王","player":0,"arrows":["n","ne","e","se","s","sw","w","nw"]},"plain"]`: true,
-		`[{"name":"x","text":"侯爵"}]`:                   true,
-		`[{"name":"x","text":"三글자"}]`:                  false,
-		`[{"name":"x","text":""}]`:                     false,
-		`[{"name":"","text":"王"}]`:                     false,
-		`[{"name":"x","text":"王","player":2}]`:         false,
-		`[{"name":"x","text":"王","player":null}]`:      false,
-		`[{"name":"x","text":"王","arrows":["up"]}]`:    false,
-		`[{"name":"x","text":"王","arrows":["n","n"]}]`: false,
-		`[{"name":"x","text":"王","arrows":"n"}]`:       false,
-		`[7]`: false,
+		`[{"name":"x","text":"侯爵"}]`:                               true,
+		`[{"name":"x","text":"三글자"}]`:                              false,
+		`[{"name":"x","text":""}]`:                                 false,
+		`[{"name":"","text":"王"}]`:                                 false,
+		`[{"name":"x","text":"王","player":2}]`:                     false,
+		`[{"name":"x","text":"王","player":null}]`:                  false,
+		`[{"name":"x","text":"王","arrows":["up"]}]`:                false,
+		`[{"name":"x","text":"王","arrows":["n","n"]}]`:             false,
+		`[{"name":"x","text":"王","arrows":"n"}]`:                   false,
+		`[{"name":"K0","text":"K","player":0,"chess":"K"},"ball"]`: true,
+		`[{"name":"K0","text":"K","chess":"k"}]`:                   false,
+		`[{"name":"K0","text":"K","chess":1}]`:                     false,
+		`[7]`:                                                      false,
 	}
 	for list, ok := range tiles {
 		in := `{"board":{"places":"cells","rows":3,"cols":3},"pieces":` + list + `,"player":0,"view":{"pieces":[]}}`
