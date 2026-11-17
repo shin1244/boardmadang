@@ -15,7 +15,7 @@
   <meta property="og:title" content="{{.Title}}">
   <meta property="og:description" content="{{.Description}}">
   <meta property="og:url" content="{{.Canonical}}">
-  <meta property="og:image" content="{{.Origin}}/web/og.png">
+  <meta property="og:image" content="{{.Origin}}/web/{{if eq .Lang "ko"}}og.png{{else}}og-en.png{{end}}">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">

@@ -75,6 +75,7 @@ func TestGamePage(t *testing.T) {
 		`<link rel="alternate" hreflang="en" href="https://boardmadang.com/en/games/chess">`,
 		`<link rel="alternate" hreflang="ko" href="https://boardmadang.com/ko/games/chess">`,
 		`<link rel="alternate" hreflang="x-default" href="https://boardmadang.com/en/games/chess">`,
+		`<meta property="og:image" content="https://boardmadang.com/web/og.png">`,
 		`<h1 lang="ko">체스 &lt;b&gt;</h1>`,
 		`<p>첫 문단</p>`,
 		`<p>둘째 &lt;script&gt;alert(1)&lt;/script&gt; 문단</p>`, // 룰북은 글자로만
@@ -98,9 +99,9 @@ func TestGamePage(t *testing.T) {
 		t.Error("ko chess: listing text not escaped")
 	}
 
-	// 영어 페이지는 영어 글. 룰북은 영어가 없으니 한국어 글을 lang="ko"로
+	// 영어 페이지는 영어 글과 영어판 링크 미리보기 그림. 룰북은 영어가 없으니 한국어 글을 lang="ko"로
 	body = get(t, mux, "/en/games/chess").Body.String()
-	for _, want := range []string{`<html lang="en">`, `<title>Chess: rules and online play · Boardmadang</title>`, `<h1 lang="en">Chess</h1>`, `<div class="rulebook-text" lang="ko">`, `<b>10 min</b>`} {
+	for _, want := range []string{`<html lang="en">`, `<meta property="og:image" content="https://boardmadang.com/web/og-en.png">`, `<title>Chess: rules and online play · Boardmadang</title>`, `<h1 lang="en">Chess</h1>`, `<div class="rulebook-text" lang="ko">`, `<b>10 min</b>`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("en chess: missing %s", want)
 		}
