@@ -464,3 +464,46 @@ test('화점(starsOf): 판 안의 칸만 남기고, 버린 것이 있으면 알�
     view.draw({ pieces: [] }); // 던지지 않아야 합니다
   }
 });
+
+test('놓는 소리: 판에 새 기물이 생긴 화면에서 한 번. 처음 화면, 같은 화면, 사라지기만 한 화면, animate가 false인 화면은 조용합니다', () => {
+  // 소리를 낸 횟수만 세는 가짜 AudioContext
+  let played = 0;
+  const node = () => new Proxy({}, { get: (o, k) => (k === 'connect' ? () => node() : k in o ? o[k] : (o[k] = typeof k === 'string' && /^(gain|frequency|Q)$/.test(k) ? node() : () => node())), set: () => true });
+  const saved = globalThis.AudioContext;
+  globalThis.AudioContext = class {
+    state = 'running';
+    currentTime = 0;
+    sampleRate = 100;
+    destination = {};
+    createGain() { return node(); }
+    createBiquadFilter() { return node(); }
+    createBufferSource() { return node(); }
+    createBuffer(_, len) { return { getChannelData: () => new Float32Array(len) }; }
+    createOscillator() { played++; return node(); }
+  };
+  try {
+    const ctxs = [];
+    const AC = globalThis.AudioContext;
+    globalThis.AudioContext = class extends AC { constructor() { super(); ctxs.push(this); } };
+    const b = new BoardView(fakeCanvas(), { places: 'cells', rows: 3, cols: 3 }, 'xo');
+    b.resize(300);
+    const x = { row: 0, col: 0, piece: 'x' };
+    const o = { row: 1, col: 1, piece: 'o' };
+    const tick = () => { for (const c of ctxs) c.currentTime += 1; }; // 소리 사이에 시간이 흐릅니다
+    b.draw({ pieces: [x] });
+    assert.equal(played, 0, '처음 화면');
+    b.draw({ pieces: [x, o] });
+    assert.equal(played, 1, '새 기물');
+    tick();
+    b.draw({ pieces: [x, o], marks: [{ row: 0, col: 0, type: 'ring' }] });
+    assert.equal(played, 1, '기물이 그대로');
+    b.draw({ pieces: [o] });
+    assert.equal(played, 1, '사라지기만 함');
+    b.draw({ pieces: [o, { row: 2, col: 2, piece: 'x' }] }, { animate: false });
+    assert.equal(played, 1, 'animate: false');
+    b.draw({ pieces: [o, { row: 2, col: 1, piece: 'x', from: { row: 2, col: 2 } }] });
+    assert.equal(played, 2, '움직여 온 기물');
+  } finally {
+    globalThis.AudioContext = saved;
+  }
+});

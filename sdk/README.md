@@ -353,6 +353,8 @@ Without `buttons`, every `specialActions` entry is shown with its name, as befor
 Use it in games where "the column you press is the piece's left edge", so pressing an edge square where the piece would stick out still drops it where it fits.
 `legal()` only needs the `to` square, so the AI doesn't see duplicate moves.
 
+**Sound:** when a piece newly appears on the board, boardmadang plays the sound of a piece being put down. Your game doesn't need to do anything. A piece that moves in with `from` sounds when it arrives. Just picking a piece, or a piece only being captured, is silent. Turn it on and off with **Sound** in the playground.
+
 **Motion (`pieces[].from`):** `from` on a piece means "it just came from that square". The first time boardmadang draws that view, it moves the piece from `from` to its place.
 Pieces that go straight down the screen fall and speed up; others slide. Motion is tracked per piece. Each motion is shown only once, so you can keep returning the same `from` until the next move, and if you give another piece (one in hand, say) a new `from` in the meantime, only that piece moves.
 Pieces jump straight to their place when the viewer has asked their system for reduced motion, or when a replay skips several moves.

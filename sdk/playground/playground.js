@@ -13,7 +13,7 @@ import {
   callGame, checkGame, checkMembers, checkThumbnail, langProblems, makeThumbnail, mutationProblems, observeProblems, replayProblems,
   sameAction, stateProblems, turnProblems,
 } from '../check.js';
-import { BoardView, GAME_ID, SHAPE_LIMITS, attachInput, buttonsOf, paintPlayerDot } from './board.js';
+import { BoardView, GAME_ID, SHAPE_LIMITS, attachInput, buttonsOf, paintPlayerDot, setSound, soundOn } from './board.js';
 import { LANGS, LANG_NAMES, fullLangs, localize } from './listing.js';
 import { toGame } from './moves.js';
 import { hashOf, makeRng } from './platform.js';
@@ -417,6 +417,8 @@ async function main() {
   $('#newseed').addEventListener('click', () => newGame((Math.random() * 2 ** 32) >>> 0));
   $('#undo').addEventListener('click', undo);
   $('#random').addEventListener('click', () => randomGames(200));
+  $('#sound').checked = soundOn();
+  $('#sound').addEventListener('change', (e) => setSound(e.target.checked));
   window.addEventListener('resize', fit);
 
   fit();

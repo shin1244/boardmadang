@@ -334,6 +334,87 @@ function motionOf(dx, dy) {
 }
 
 /** 움직임을 줄이도록 설정한 사람(운영체제의 동작 줄이기)에게는 움직이지 않습니다 */
+/**
+ * 소리: 기물을 판에 내려놓는 "딱" 하나입니다 (바둑돌을 놓는 소리). 소리 파일 없이 그때그때 만들어 냅니다 (높고 짧은 울림 + 부딪히는 잡음).
+ * 켜고 끄는 것은 브라우저마다 기억하고(기본은 켬), 플레이그라운드와 사이트의 모든 판이 같은 설정을 씁니다.
+ */
+const SOUND_KEY = 'boardmadang.sound';
+
+/** 소리가 켜져 있는지 (저장소를 못 쓰는 곳에서는 켬) */
+export function soundOn() {
+  try {
+    return localStorage.getItem(SOUND_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+/** 소리를 켜거나 끕니다 */
+export function setSound(on) {
+  try {
+    localStorage.setItem(SOUND_KEY, on ? '1' : '0');
+  } catch {
+    // 저장소를 못 쓰면 이번 화면에서만 기본값(켬)으로 둡니다
+  }
+}
+
+let audio = null; // AudioContext는 처음 소리를 낼 때 만듭니다
+let lastPlace = -1; // 마지막으로 잡아 둔 소리의 시각. 한 화면의 여러 판(플레이그라운드의 양쪽 화면)이 같은 수를 그려도 한 번만 냅니다
+
+/**
+ * 기물 놓는 소리를 delayMs 뒤에 냅니다. 소리를 못 내는 곳(Node, 옛 브라우저, 소리를 끈 사람)에서는 아무 일도 하지 않습니다.
+ * 브라우저는 사람이 페이지를 누르기 전에는 소리를 막으므로, 그때는 다음 소리부터 나게 풀어 달라고만 하고 이번 소리는 버립니다.
+ */
+function playPlace(delayMs = 0) {
+  const AC = globalThis.AudioContext ?? globalThis.webkitAudioContext;
+  if (!AC || !soundOn()) return;
+  try {
+    audio ??= new AC();
+    if (audio.state !== 'running') {
+      audio.resume?.()?.catch?.(() => {});
+      return;
+    }
+    const t = audio.currentTime + Math.max(0, delayMs) / 1000;
+    if (Math.abs(t - lastPlace) < 0.06) return;
+    lastPlace = t;
+    const pitch = 0.94 + Math.random() * 0.12; // 같은 소리가 되풀이되지 않게 조금씩 다르게
+    const out = audio.createGain();
+    out.gain.value = 0.5;
+    out.connect(audio.destination);
+
+    // 울림: 높은 음이 아주 짧게 내려가며 사라집니다 (바둑돌을 판에 놓는 "딱")
+    const osc = audio.createOscillator();
+    const body = audio.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(900 * pitch, t);
+    osc.frequency.exponentialRampToValueAtTime(500 * pitch, t + 0.02);
+    body.gain.setValueAtTime(0.25, t);
+    body.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+    osc.connect(body).connect(out);
+    osc.start(t);
+    osc.stop(t + 0.04);
+
+    // 부딪힘: 아주 짧은 잡음을 높고 좁은 대역으로 걸러 단단한 앞머리를 만듭니다
+    const len = Math.floor(audio.sampleRate * 0.015);
+    const buffer = audio.createBuffer(1, len, audio.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const noise = audio.createBufferSource();
+    const band = audio.createBiquadFilter();
+    const click = audio.createGain();
+    noise.buffer = buffer;
+    band.type = 'bandpass';
+    band.frequency.value = 3800 * pitch;
+    band.Q.value = 3;
+    click.gain.setValueAtTime(0.7, t);
+    click.gain.exponentialRampToValueAtTime(0.001, t + 0.02);
+    noise.connect(band).connect(click).connect(out);
+    noise.start(t);
+  } catch {
+    // 소리는 없어도 되는 것이라, 실패해도 판은 그대로 그립니다
+  }
+}
+
 const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // ---- 효과 (view의 effects) ----
@@ -429,6 +510,7 @@ export class BoardView {
     this.placed = [null, null]; // 칸 자리 (resize에서 다시 구함)
     this.motions = []; // 움직이는 중인 것들 [{ t0, until, keys: 움직이는 기물들 }]
     this.seen = new Set(); // 마지막으로 그린 화면의 움직임들 (같은 움직임을 두 번 보여 주지 않게)
+    this.onBoard = null; // 마지막으로 그린 화면의 판 위 기물들 (새로 놓인 기물이 있을 때 소리를 냄). 처음 그리기 전에는 null
     this.effects = []; // 보이는 중인 효과들 [{ t0, until, key, e }]
     this.seenEffects = new Set(); // 마지막으로 그린 화면의 효과들 (같은 효과를 두 번 보여 주지 않게)
     this.raf = 0;
@@ -658,6 +740,7 @@ export class BoardView {
     const now = performance.now();
     this.updateMotion(view, animate, now);
     this.updateEffects(view, animate, now);
+    this.updateSound(view, animate, now);
 
     ctx.clearRect(0, 0, this.width, this.height);
     this.drawBackground(look, flip);
@@ -977,6 +1060,28 @@ export class BoardView {
       // 함께 시작한 기물 가운데 가장 오래 걸리는 기물이 도착할 때 끝납니다
       const ms = Math.max(...fresh.map(([, p]) => motionOf(...this.screenStep(p, this.flip)).ms));
       this.motions.push({ t0: now, until: now + ms, keys: new Set(fresh.map(([k]) => k)) });
+    }
+  }
+
+  /**
+   * 판에 새로 놓인 기물이 있으면 놓는 소리를 냅니다: 직전에 그린 화면에 없던 (칸, 기물)이 생겼을 때 한 번.
+   * 기물을 고르거나 마우스를 올려 다시 그릴 때는 기물이 그대로라 소리가 없고, 잡혀서 사라지기만 한 것도 소리가 없습니다.
+   * 움직여 오는 기물(from)은 도착할 때 냅니다. 처음 그리는 화면과 animate가 false인 화면(목록의 판, 다시보기에서 뒤로 가기)은 조용합니다.
+   */
+  updateSound(view, animate, now) {
+    const placed = new Set();
+    for (const p of view.pieces ?? []) {
+      if (isCell(p, this.board) && typeof p.piece === 'string' && this.isShown(p.row, p.col)) placed.add(`${p.row},${p.col},${p.piece}`);
+    }
+    const before = this.onBoard;
+    this.onBoard = placed;
+    if (!animate || !before) return;
+    for (const k of placed) {
+      if (before.has(k)) continue;
+      // 이번 화면에서 시작한 움직임이 있으면 그 기물이 도착할 즈음에
+      const m = this.motions[this.motions.length - 1];
+      playPlace(m && m.t0 === now ? (m.until - now) * 0.85 : 0);
+      return;
     }
   }
 
