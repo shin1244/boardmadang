@@ -65,6 +65,7 @@ small { color: var(--muted); font-weight: normal; font-size: 13px; }
   color: var(--text);
   font: inherit;
 }
+.controls input[type='checkbox'] { width: auto; margin: 0 4px 0 0; vertical-align: middle; }
 
 button {
   padding: 6px 12px;
