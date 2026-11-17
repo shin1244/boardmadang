@@ -29,14 +29,6 @@ const dimsOf = (board) => {
   return `${rows}×${cols}`;
 };
 
-function sizeClass(board) {
-  const { rows, cols } = fieldSize(board);
-  const n = Math.max(rows, cols);
-  if (n <= 5) return 'small';
-  if (n <= 10) return 'medium';
-  return 'large';
-}
-
 const nameOf = (e) => localize(e.listing?.name, lang).text || e.id;
 
 /** 이 게임이 실제로 쓰는 타이머. turn()이 없으면 시계를 돌릴 수 없어 없음입니다 (match.js와 같음). */
@@ -973,22 +965,17 @@ function checked(name) {
 function apply() {
   if (!entries) return;
   const q = $('#q').value.trim().toLowerCase();
-  const places = checked('places');
-  const sizes = checked('size');
   const diffs = checked('difficulty');
   const langs = checked('support-lang');
   const onlyStarred = $('#only-starred').checked;
-  const anyFilter = q || places.length || sizes.length || diffs.length || langs.length || onlyStarred;
+  const anyFilter = q || diffs.length || langs.length || onlyStarred;
   const sort = $('#sort').value;
 
   const shown = entries.filter((e) => {
     if (e.error) return !anyFilter;
     if (onlyStarred && !starred.has(e.id)) return false;
-    const g = e.game;
     const l = e.listing;
-    if (q && !searchText(e).includes(q)) return false;
-    if (places.length && !places.includes(g.board.places === 'points' ? 'points' : 'cells')) return false;
-    if (sizes.length && !sizes.includes(sizeClass(g.board))) return false;
+    if (q&& !searchText(e).includes(q)) return false;
     if (diffs.length && !diffs.includes(l?.difficulty)) return false;
     if (langs.length && !langs.some((x) => l?.languages?.[x])) return false;
     return true;

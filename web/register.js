@@ -289,7 +289,10 @@ function fileReady() {
 
 // ---- 1단계 (사이트): 내 게임의 등록 정보만 고치기 (?edit=<id>) ----
 
-/** 내 게임의 등록 정보만 고칩니다. 코드는 그대로라 직접 깨기 없이 3단계로 갑니다 */
+/**
+ * 내 게임을 고칩니다. 1단계에서 고칠 게임과 zip 올리는 칸을 같이 보여 줘서, 코드도 여기서 바꿀 수 있다는 것을 알립니다.
+ * 다음을 누르면 등록 정보만 고칩니다 (코드는 그대로라 직접 깨기 없이 3단계로).
+ */
 function startEdit(id) {
   const g = myGame(id);
   if (!g) {
@@ -299,7 +302,7 @@ function startEdit(id) {
   current = { ...g, edit: true };
   fill(g.listing);
   checkTurn(current);
-  goStep(STEP.langs);
+  goStep(STEP.file);
 }
 
 /** 고치는 게임 (1단계로 돌아왔을 때). 코드를 바꾸려면 그 아래에서 zip을 새로 올립니다 */
