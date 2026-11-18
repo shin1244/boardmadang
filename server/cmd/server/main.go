@@ -85,7 +85,7 @@ func main() {
 	}
 	// 모델은 있는 게임에만 올립니다. AI 만들기 요청과 코드 받기는 올린 게임만입니다
 	// AI 대국 수는 방문과 같은 통계(stats)에 셉니다
-	bots := &ai.Handler{Store: models, IDs: ids, Games: uploads, Known: known, Plays: visits}
+	bots := &ai.Handler{Store: models, IDs: ids, Games: uploads, Known: known, Plays: visits, Live: ai.NewLive()}
 	favs := &star.Handler{Store: stars, IDs: ids, Known: known}
 	h := hub.New(cfg, ids, records)
 	ops.Records, ops.Visits, ops.Live = records, visits, h.Live
@@ -231,6 +231,9 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 		mux.HandleFunc("DELETE /api/ai/{game}/request", bots.ServeCancel)
 		mux.HandleFunc("GET /api/ai/{game}/training", bots.ServeTraining)
 		mux.HandleFunc("POST /api/ai/{game}/plays", bots.ServePlays)
+		mux.HandleFunc("GET /api/ai/live", bots.ServeLive)
+		mux.HandleFunc("POST /api/ai/{game}/live", bots.ServeLiveBeat)
+		mux.HandleFunc("DELETE /api/ai/{game}/live", bots.ServeLiveEnd)
 		mux.HandleFunc("GET /api/admin/ai/requests", bots.ServeRequests)
 		mux.HandleFunc("POST /api/admin/ai/{game}/code", bots.ServeCode)
 		mux.HandleFunc("POST /api/admin/ai/{game}/decline", bots.ServeDecline)

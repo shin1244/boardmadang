@@ -1,5 +1,6 @@
 // AI와 두기: 학습한 AI와 혼자 둡니다 (?game=<id>). 서버와 웹소켓 없이 이 브라우저 안에서만 돌고, 기보와 랭킹에는 남기지 않습니다.
 // 운영 통계에 판 수만 알립니다 (report: 사람이 첫 수를 두면 play, 끝나면 end와 결과).
+// 두는 동안에는 방 목록의 진행 중인 대국에 보입니다 (listLive). 수는 서버에 보내지 않아 관전은 안 됩니다.
 //
 // 게임 코드와 AI의 탐색(trainer/mcts.js)은 게임 실행기(engine.js)의 샌드박스 Worker에서, 신경망은 사이트 쪽 Worker(ai-net.js)에서 돕니다.
 // AI 차례가 되면 실행기에 think를 부르고, 실행기가 신경망 계산을 부탁할 때마다(need) 관측을 ai-net.js에 넣어 결과를 answer로 돌려줍니다.
@@ -227,6 +228,54 @@ function reportEnd(my) {
   report({ event: 'end', result: winner === null ? 'draw' : winner === seat ? 'win' : 'lose' });
 }
 
+// ---- 방 목록 ----
+// 두는 동안 방 목록의 진행 중인 대국에 보입니다 (POST·DELETE /api/ai/{game}/live, server/internal/ai/live.go).
+// 사람이 첫 수를 둔 판부터 올리고 LIVE_MS마다 다시 알립니다. 판이 끝나거나 화면을 닫으면 내립니다
+// (못 내려도 서버가 소식이 끊긴 판을 뺍니다). 게임 이름, 내 이름, 난이도, 둔 수만 가고 수는 보내지 않습니다.
+// ?sims=로 시험하는 판은 올리지 않습니다.
+
+const LIVE_MS = 20_000; // 서버의 ai.LiveBeat와 같게
+let listed = -1; // 방 목록에 올린 판(round). 없으면 -1
+let beat = null; // 다시 알리는 타이머
+
+function sendLive(method) {
+  fetch(`/api/ai/${encodeURIComponent(gameId)}/live`, {
+    method,
+    headers: method === 'POST' ? { 'Content-Type': 'application/json' } : {},
+    body: method === 'POST' ? JSON.stringify({ moves, level }) : undefined,
+    keepalive: true, // 화면을 닫으면서 내릴 때도 갑니다
+  }).catch(() => {});
+}
+
+/** 지금 판을 방 목록에 올리거나(on) 내립니다 */
+function setLive(on) {
+  clearInterval(beat);
+  beat = on ? setInterval(() => sendLive('POST'), LIVE_MS) : null;
+  sendLive(on ? 'POST' : 'DELETE');
+}
+
+/** 사람이 판 my의 첫 수를 뒀으면 방 목록에 올립니다 */
+function listLive(my) {
+  if (testSims !== null || listed === my || phase !== 'playing') return;
+  listed = my;
+  setLive(true);
+}
+
+/** 올린 판이 끝났거나 다른 판으로 넘어갔으면 내립니다. 화면을 그릴 때마다 봅니다 */
+function syncLive() {
+  if (listed < 0 || (listed === round && phase === 'playing')) return;
+  listed = -1;
+  setLive(false);
+}
+
+// 화면을 떠나면 내리고, 뒤로 가기로 그대로 돌아오면(bfcache) 다시 올립니다
+addEventListener('pagehide', () => {
+  if (listed >= 0) setLive(false);
+});
+addEventListener('pageshow', (e) => {
+  if (e.persisted && listed >= 0) setLive(true);
+});
+
 /** AI 차례가 끝날 때까지 둡니다 (선택 → 이동처럼 한 차례에 여러 행동일 수 있음) */
 async function aiTurns(my) {
   while (my === round && phase === 'playing' && turn === aiSeat()) {
@@ -264,6 +313,7 @@ function humanAct(action) {
     if (await act(seat, action)) {
       reportPlay(my);
       reportEnd(my); // 첫 수로 바로 끝난 판 (act 안의 checkEnd는 play를 알리기 전이라 못 알림)
+      listLive(my);
     }
     render();
     await aiTurns(my);
@@ -374,6 +424,7 @@ function render() {
   applyStatic('ai.title');
   document.title = `${nameOfGame()} · ${t('ai.title')} · ${t('site.name')}`;
   renderMe(me);
+  syncLive();
   $('#title').textContent = entry ? `${nameOfGame()} · ${t('ai.title')}` : t('ai.title');
   renderLevel();
   renderStatus();

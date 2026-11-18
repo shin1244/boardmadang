@@ -40,6 +40,9 @@
 | `DELETE /api/ai/{game}/request` | 기다리는 중인 내 요청 거두기 → `{"ok":true}`. 운영자가 받아 갔거나 끝난 요청이면 `409 {"error":"no request"}` |
 | `GET /api/ai/{game}/training` | 학습 기록 (`snapshots.json` 그대로, 아래). 게임을 올린 사람과 운영자만, 다른 사람에게는 `404`. 로그인 전이면 `401` |
 | `POST /api/ai/{game}/plays` | AI 대국을 운영 통계에 셉니다 (JSON만). 사람이 그 판의 첫 수를 두면 `{"event":"play"}`, 끝나면(기권 포함) `{"event":"end","result":"win"\|"lose"\|"draw"}` (사람 쪽 결과) → `204`. 센 것과 상관없이 `204`입니다 (로봇, 하루 상한, 시작하지 않은 판의 끝은 세지 않음). 쿠키가 없으면 `401`, 모델이 없는 게임이면 `404`, 본문이 틀리면 `400` ([moderation.md](moderation.md#통계)) |
+| `GET /api/ai/live` | 진행 중인 AI 대국 목록. 최근에 시작한 판이 먼저 `[{"game":"tictactoe","player":{"kind":"guest","tag":"4821"},"level":"normal","moves":7,"age":95}]` |
+| `POST /api/ai/{game}/live` | 두고 있는 AI 대국을 방 목록에 올립니다 (JSON만). 사람이 첫 수를 둔 뒤부터 20초마다 `{"moves":7,"level":"easy"\|"normal"\|"hard"}` → `204`. 쿠키가 없으면 `401`, 모델이 없는 게임이면 `404`, 본문이 틀리면 `400` |
+| `DELETE /api/ai/{game}/live` | 판이 끝났거나 화면을 닫을 때 목록에서 뺍니다 → `204` |
 | `GET /api/admin/ai/requests` | AI 요청 목록 `{"requests":[…],"trainings":{"<id>":{"version":"…","minutes":60,"snapshots":7,"updated":"…"}}}`. 안 끝난 요청을 오래된 것부터, 그다음 끝난 요청 30개를 최근 것부터. 운영자만 |
 | `POST /api/admin/ai/{game}/code` | 게임 코드 받기 (본문 `{}`, JSON만) → `application/zip` 첨부 `<게임>-<버전>.zip` (`<게임>/` 안에 코드와 `listing.json`). 열린 요청이 있으면 그 버전이고 요청이 학습 중(`training`)이 됩니다. 없으면 지금 버전. 레포 게임이면 `404`. 운영자만 |
 | `POST /api/admin/ai/{game}/decline` | 요청 반려 `{"note":"…"}` (500자까지, 제작자에게 보임) → `{"request":{…,"status":"declined"}}`. 열린 요청이 없으면 `409`. 운영자만 |
@@ -116,6 +119,9 @@ AI 모델을 올리면(`PUT /api/admin/ai/{game}`) 그 게임의 열린 요청�
 - `/api/rooms`: 방 목록은 Go 서버의 메모리에만 있습니다. 개발 서버는 Go 서버에 물어 그대로 넘깁니다.
   `age`는 마지막으로 만들거나 올린 뒤 지난 초, `minutes`가 `null`이면 타이머 없음입니다. 최대 200개입니다.
 - `/api/live`: 관전할 수 있는 대국입니다. `age`는 시작한 뒤 지난 초, `moves`는 지금까지의 행동 수, `watchers`는 관전자 수입니다. 최대 200개입니다.
+- `/api/ai/live`: AI 대국은 브라우저 안에서만 돌아서 AI 화면이 알려 준 것입니다 (`server/internal/ai`의 live.go). 수는 서버에 오지 않아 관전은 못 하고 방 목록에 보이기만 합니다.
+  Go 서버의 메모리에만 있고, 한 사람(세션)에 한 판입니다. 90초 동안 알림이 없거나 10분 동안 수가 늘지 않으면 빠집니다. 최대 200개입니다.
+  서버를 다시 켜도 대국은 끊기지 않고, 다음 알림에 목록에 다시 나타납니다.
 - 의견과 신고 (`server/internal/comment`):
   - 남기기, 지우기, 신고는 세션 쿠키가 있어야 합니다 (게스트도 됩니다). 없으면 `401 {"error":"no session"}`.
     POST는 `Content-Type: application/json`만 받습니다 (`415`). 다른 사이트에서 보내지 못하게 하려는 것입니다.

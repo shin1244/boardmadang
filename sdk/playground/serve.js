@@ -234,7 +234,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/me') return proxyMe(req, res);
   if (url.pathname === '/api/auth/providers' || url.pathname.startsWith('/auth/') || url.pathname === '/api/account') return proxyRaw(req, res, url);
   if (['/api/admin', '/api/admin/actions', '/api/admin/stats'].includes(url.pathname) || /^\/api\/admin\/ai\/(requests|[a-z0-9-]+(\/(code|decline|training))?)$/.test(url.pathname)) return proxyRaw(req, res, url);
-  if (/^\/api\/ai\/(mine|[a-z0-9-]+\/(request|training|plays))$/.test(url.pathname)) return proxyRaw(req, res, url);
+  if (/^\/api\/ai\/(mine|live|[a-z0-9-]+\/(request|training|plays|live))$/.test(url.pathname)) return proxyRaw(req, res, url);
   const model = url.pathname.match(/^\/ai\/([a-z0-9-]+)\/[0-9a-f]{16}\.onnx$/);
   if (model) {
     if (aiModel(model[1])?.model !== url.pathname) {
