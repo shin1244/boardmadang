@@ -4,6 +4,8 @@
 // 방장과 게임 코드 버전이 다르면 들어갈 수 없으므로 버튼을 막아 둡니다.
 //
 // 아래에는 진행 중인 대국(GET /api/live)을 보여주고, 관전을 누르면 관전 화면(watch.html?room=CODE)으로 갑니다.
+// 그 뒤에 AI와 두고 있는 판(GET /api/ai/live)도 보여줍니다. 브라우저 안에서만 도는 판이라 관전은 안 되고,
+// 버튼은 같은 게임의 AI 화면(ai.html?game=x)으로 갑니다.
 
 import { localize } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
@@ -16,6 +18,7 @@ let me = null;
 let games = new Map(); // 게임 id → /api/games 항목
 let rooms = null; // 마지막으로 받은 목록
 let live = null; // 진행 중인 대국
+let aiLive = []; // AI와 두고 있는 판
 let fetchedAt = 0;
 let loadError = null;
 
@@ -37,10 +40,15 @@ function ageText(room) {
 
 async function load() {
   try {
-    const [res, liveRes] = await Promise.all([fetch('/api/rooms', { cache: 'no-store' }), fetch('/api/live', { cache: 'no-store' })]);
+    const [res, liveRes, aiRes] = await Promise.all([
+      fetch('/api/rooms', { cache: 'no-store' }),
+      fetch('/api/live', { cache: 'no-store' }),
+      fetch('/api/ai/live', { cache: 'no-store' }).catch(() => null), // AI를 켜지 않은 서버에는 없습니다
+    ]);
     if (!res.ok) throw new Error(res.status);
     rooms = await res.json();
     live = liveRes.ok ? await liveRes.json() : [];
+    aiLive = aiRes?.ok ? await aiRes.json() : [];
     fetchedAt = Date.now();
     loadError = null;
   } catch (e) {
@@ -53,7 +61,7 @@ function renderFilter() {
   const select = $('#game-filter');
   const chosen = select.value;
   // 열린 방이 있는 게임만 고를 수 있게 합니다. 고른 게임은 방이 없어져도 남겨 둡니다.
-  const ids = [...new Set([...(rooms ?? []), ...(live ?? [])].map((r) => r.game).concat(chosen ? [chosen] : []))];
+  const ids = [...new Set([...(rooms ?? []), ...(live ?? []), ...aiLive].map((r) => r.game).concat(chosen ? [chosen] : []))];
   ids.sort((a, b) => gameName(a).localeCompare(gameName(b), lang));
   select.replaceChildren(select.options[0], ...ids.map((id) => new Option(gameName(id), id)));
   select.value = chosen;
@@ -104,6 +112,23 @@ function renderLive(room) {
   return li;
 }
 
+/** AI와 두고 있는 판. 관전 대신 같은 AI와 두러 가는 버튼을 둡니다 */
+function renderAILive(room) {
+  const li = document.createElement('li');
+  li.className = 'room';
+  li.innerHTML = `
+    <div class="room-info"><b class="room-game"></b><span class="room-sub"></span></div>
+    <a class="btn ghost"></a>`;
+  li.querySelector('.room-game').textContent = gameName(room.game);
+  const ai = t('rooms.ai.level', { level: t(`ai.level.${room.level}`) });
+  li.querySelector('.room-sub').textContent = `${displayName(room.player)} vs ${ai} · ${t('history.moves', { n: room.moves })} · ${ageText(room)}`;
+  const link = li.querySelector('.btn');
+  link.href = `/web/ai.html?game=${encodeURIComponent(room.game)}`;
+  link.textContent = t('ai.title');
+  link.title = t('rooms.ai.title');
+  return li;
+}
+
 function render() {
   applyStatic('rooms.title');
   renderMe(me);
@@ -117,9 +142,10 @@ function render() {
   empty.textContent = loadError ? t('rooms.failed', { msg: loadError }) : t('rooms.empty');
 
   const watching = (live ?? []).filter((r) => !filter || r.game === filter);
-  $('#live').replaceChildren(...watching.map(renderLive));
-  $('#live-count').textContent = live ? `${watching.length}` : '';
-  $('#live-empty').hidden = watching.length > 0 || !live;
+  const withAI = aiLive.filter((r) => !filter || r.game === filter);
+  $('#live').replaceChildren(...watching.map(renderLive), ...withAI.map(renderAILive));
+  $('#live-count').textContent = live ? `${watching.length + withAI.length}` : '';
+  $('#live-empty').hidden = watching.length + withAI.length > 0 || !live;
 }
 
 async function main() {
