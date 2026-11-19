@@ -1033,3 +1033,66 @@ func TestForget(t *testing.T) {
 	again, _ := open(t, dir)
 	check(again)
 }
+
+// 빠른 규칙은 비워도 되고 쓴 언어만 저장합니다. 안 쓴 게임의 등록 정보에는 칸이 없습니다.
+func TestCheckListingQuickRules(t *testing.T) {
+	l := validListing()
+	out, p := CheckListing(l)
+	if len(p) > 0 || out.QuickRules != nil {
+		t.Fatalf("빠른 규칙 없이: %v %v", p, out.QuickRules)
+	}
+	if b, _ := json.Marshal(out); strings.Contains(string(b), "quickRules") {
+		t.Fatalf("안 쓴 칸이 저장됩니다: %s", b)
+	}
+	l["quickRules"] = map[string]any{"ko": " 한 줄\n두 줄 ", "en": "  ", "ja": "버려질 글"}
+	out, p = CheckListing(l)
+	if len(p) > 0 || len(out.QuickRules) != 1 || out.QuickRules["ko"] != "한 줄\n두 줄" {
+		t.Fatalf("%v %v", p, out.QuickRules)
+	}
+	l["quickRules"] = map[string]any{"ko": strings.Repeat("가", 501)}
+	if _, p = CheckListing(l); len(p) != 1 || p[0].Code != "text.tooLong" || p[0].Field != "quickRules" || p[0].Max != 500 {
+		t.Fatalf("%v", p)
+	}
+}
+
+// 시연은 모양만 봅니다. 뒤쪽의 빈 자리는 떼고, 하나도 없으면 칸을 두지 않습니다.
+func TestCheckListingDemos(t *testing.T) {
+	move := func(player float64, row float64) map[string]any {
+		return map[string]any{"player": player, "action": map[string]any{"kind": "click", "row": row, "col": 1.0}}
+	}
+	demo := func(from float64, moves ...any) map[string]any {
+		return map[string]any{"seed": 7.0, "moves": moves, "from": from, "view": 1.0}
+	}
+	l := validListing()
+	l["demos"] = []any{nil, demo(1, move(0, 0), move(1, 2), map[string]any{"player": 0.0, "action": map[string]any{"kind": "pass"}}), nil}
+	out, p := CheckListing(l)
+	if len(p) > 0 || len(out.Demos) != 2 || out.Demos[0] != nil || out.Demos[1].From != 1 || out.Demos[1].View != 1 || len(out.Demos[1].Moves) != 3 {
+		t.Fatalf("%v %+v", p, out.Demos)
+	}
+	l["demos"] = []any{nil, nil}
+	if out, p = CheckListing(l); len(p) > 0 || out.Demos != nil {
+		t.Fatalf("빈 시연: %v %v", p, out.Demos)
+	}
+	many := make([]any, maxDemoShown+1)
+	for i := range many {
+		many[i] = move(0, 0)
+	}
+	bad := map[string]any{
+		"목록이 아님":     map[string]any{},
+		"너무 많음":      []any{nil, nil, nil, nil, nil, nil, demo(0, move(0, 0))},
+		"수 없음":       []any{demo(0)},
+		"from이 끝":    []any{demo(1, move(0, 0))},
+		"보여줄 수가 많음":  []any{demo(0, many...)},
+		"판 밖":        []any{demo(0, move(0, 32))},
+		"플레이어":       []any{demo(0, move(2, 0))},
+		"소수 시드":      []any{map[string]any{"seed": 1.5, "moves": []any{move(0, 0)}, "from": 0.0, "view": 0.0}},
+		"view 없음":    []any{map[string]any{"seed": 1.0, "moves": []any{move(0, 0)}, "from": 0.0}},
+		"시연이 글자":     []any{"gif"},
+	}
+	for name, v := range bad {
+		l["demos"] = v
+		if _, p := CheckListing(l); len(p) != 1 || p[0].Code != "demos.invalid" {
+			t.Errorf("%s: %v", name, p)
+		}
+	}
+}

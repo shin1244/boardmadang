@@ -216,3 +216,35 @@ fieldset[aria-invalid="true"], #langs[aria-invalid="true"] { border-color: var(-
   .register { padding: 20px 16px 48px; }
   .block { padding: 16px; }
 }
+
+/* 4단계: 규칙 시연. 빠른 규칙의 줄마다 판에서 둔 수순을 붙입니다 (register.js의 renderDemos, demo-rec.js) */
+.demo-rows { display: grid; gap: 12px; margin: 14px 0 0; padding: 0; list-style: none; }
+.demo-row { display: flex; gap: 16px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.demo-stage { flex: none; display: grid; place-items: center; width: 150px; min-height: 60px; }
+.demo-stage:empty { min-height: 0; width: 0; }
+.demo-stage canvas { display: block; max-width: 100%; border-radius: 6px; }
+.demo-side { flex: 1; min-width: 0; }
+.demo-line { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.5; }
+.demo-side .play-buttons { margin: 10px 0 0; }
+@media (max-width: 560px) {
+  .demo-row { flex-direction: column; align-items: flex-start; }
+}
+
+.demo-rec {
+  width: min(780px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text);
+  overflow-y: auto;
+}
+.demo-rec::backdrop { background: rgb(0 11 20 / 0.75); }
+.demo-rec h2 { margin: 0; color: var(--strong); font-size: 18px; }
+.demo-rec-line { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+.demo-rec .play-board { flex: 0 1 380px; }
+.demo-rec .seats[hidden] { display: none; }
+.demo-rec footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.demo-rec footer .btn { flex: none; padding: 8px 20px; }
+.demo-side .play-buttons .btn, .demo-rec .play-buttons .btn { flex: none; }

@@ -399,3 +399,68 @@
   .match-room .emote-btn { height: 44px; padding: 2px; }
   .match-room .emote-btn svg { width: 28px; height: 28px; }
 }
+
+/* 규칙 카드 (web/rules.js): 대국 화면의 규칙 버튼, 빠른 규칙이 있는 게임은 처음 들어올 때 한 번 */
+.rules-card {
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(640px, calc(100dvh - 48px));
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text);
+  overflow: hidden;
+}
+.rules-card[open] { display: flex; flex-direction: column; }
+.rules-card::backdrop { background: rgb(0 11 20 / 0.75); }
+.rules-card header { display: flex; align-items: center; gap: 12px; padding: 16px 12px 8px 22px; }
+.rules-card h2 { flex: 1; margin: 0; color: var(--strong); font-size: 18px; }
+.rules-card .close {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 22px;
+  cursor: pointer;
+}
+.rules-card .close:hover { background: var(--bg); color: var(--text); }
+.rules-body { flex: 1; min-height: 0; padding: 6px 22px 10px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.quick-rules { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; counter-reset: rule; }
+.quick-rules li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; align-items: start; line-height: 1.55; counter-increment: rule; }
+.quick-rules li::before {
+  content: counter(rule);
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.rules-more { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+.rules-more summary { color: var(--muted); font-size: 14px; cursor: pointer; }
+.rules-more summary:hover { color: var(--text); }
+.rules-card .rulebook-text p { margin: 12px 0 0; white-space: pre-line; line-height: 1.7; }
+.rules-card .rulebook-notes { margin: 0; color: var(--muted); font-size: 13px; }
+/* 시연이 있는 게임: 한 장에 규칙 하나, 판이 그 수순을 되풀이합니다 (web/demo.js) */
+.rules-demo { display: grid; place-items: center; margin: 4px 0 14px; }
+.rules-demo canvas { display: block; max-width: 100%; border-radius: 8px; }
+.rules-demo.loading { min-height: 120px; color: var(--muted); font-size: 14px; }
+.rules-line { display: grid; grid-template-columns: 26px 1fr; gap: 10px; align-items: start; margin: 0; line-height: 1.55; }
+.rules-line b {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+}
+.rules-dots { margin-right: auto; color: var(--muted); font-size: 13px; }
+.rules-card footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 22px 18px; }
+.rules-card footer .btn { flex: none; padding: 8px 24px; }

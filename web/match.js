@@ -29,6 +29,7 @@ import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i
 import { EMOTES, EMOTE_EVERY, emoteLabel, emoteSvg, emotesMuted, popEmote, setEmotesMuted } from './emotes.js';
 import { loadGame } from './engine.js';
 import { displayName, loadMe, renderMe } from './me.js';
+import { setupRules } from './rules.js';
 
 const $ = (sel) => document.querySelector(sel);
 const params = new URLSearchParams(location.search);
@@ -802,6 +803,7 @@ async function main() {
     render();
     return;
   }
+  setupRules(entry, $('#rules'));
   runner = await loadGame(entry);
   setupBoard();
   $('#emote-mute').addEventListener('click', () => {

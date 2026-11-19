@@ -232,6 +232,14 @@
           <div id="texts"></div>
         </section>
 
+        <!-- 빠른 규칙의 줄마다 판에서 둔 수순을 붙입니다 (web/demo-rec.js로 녹화, 규칙 카드가 되풀이해 보여줌) -->
+        <section class="block" id="demos-block">
+          <h2 class="block-title" data-i18n="demos.title">규칙 시연 (선택)</h2>
+          <p class="hint" data-i18n="demos.lead"></p>
+          <ol id="demos" class="demo-rows"></ol>
+          <p id="demos-note" class="hint"></p>
+        </section>
+
         <div class="form-actions">
           <button id="back-4" class="btn ghost" type="button" data-i18n="register.back">이전</button>
           <!-- 글자는 register.js가 고릅니다: 사이트면 등록, 개발 서버면 저장 -->
@@ -263,6 +271,10 @@
         <label><span data-i18n="field.rulebook"></span> <small class="counter"></small>
           <textarea data-field="rulebook" rows="10"></textarea>
           <small class="hint" data-i18n="field.rulebook.hint"></small>
+        </label>
+        <label><span data-i18n="field.quickRules"></span> <small class="counter"></small>
+          <textarea data-field="quickRules" rows="4"></textarea>
+          <small class="hint" data-i18n="field.quickRules.hint"></small>
         </label>
       </div>
     </fieldset>

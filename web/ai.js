@@ -17,6 +17,7 @@ import { gameLang, localize } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { loadGame, modelFits } from './engine.js';
 import { displayName, loadMe, renderMe } from './me.js';
+import { setupRules } from './rules.js';
 
 const $ = (sel) => document.querySelector(sel);
 const params = new URLSearchParams(location.search);
@@ -511,6 +512,7 @@ async function main() {
   entry = (await games)?.find?.((g) => g.id === gameId) ?? null;
   if (!entry) return fail(t('match.noGame', { id: gameId }));
   if (!entry.ai) return fail(t('ai.none'));
+  setupRules(entry, $('#rules'));
   loadNet(); // 모델 파일도 게임 코드와 같이 받습니다
   netReady.then(
     () => {

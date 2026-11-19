@@ -1,6 +1,7 @@
 package upload
 
 import (
+	"encoding/json"
 	"math"
 	"slices"
 	"strings"
@@ -17,10 +18,24 @@ var (
 	supports     = []string{"full", "rulebook"}
 	difficulties = []string{"easy", "normal", "hard"}
 	textFields   = []string{"name", "description", "rulebook"}
-	textLimits   = map[string]int{"name": 40, "description": 200, "rulebook": 20000}
+	textLimits   = map[string]int{"name": 40, "description": 200, "rulebook": 20000, "quickRules": 500}
+	// 비워도 되는 글. 쓴 언어만 저장합니다 (listing.js의 OPTIONAL_FIELDS)
+	optionalFields = []string{"quickRules"}
 )
 
 const timerMin, timerMax = 1, 180
+
+// 빠른 규칙의 시연 (listing.js의 DEMO_LIMITS): 시연 수, 시연 하나의 행동 수, 그 가운데 보여주는 행동 수
+const maxDemos, maxDemoMoves, maxDemoShown = 6, 200, 30
+
+// Demo는 빠른 규칙 한 줄 옆에서 판으로 되풀이해 보여주는 수순입니다. 그림 파일이 아니라 시드와 행동이라
+// 서버는 클리어 기보처럼 모양만 봅니다. 게임 코드와 맞지 않게 되면 화면이 그 시연을 뺍니다.
+type Demo struct {
+	Seed  uint32      `json:"seed"`
+	Moves []ClearMove `json:"moves"`
+	From  int         `json:"from"` // 앞의 From개는 보여주지 않고 바로 둔 판에서 시작
+	View  int         `json:"view"` // 누구의 화면으로 보여줄지
+}
 
 // Problem은 고쳐야 올릴 수 있는 문제 하나입니다. 글자는 화면이 code로 고릅니다 (web/i18n.js의 problem.*, upload.*).
 type Problem struct {
@@ -45,6 +60,10 @@ type Listing struct {
 	Name        map[string]string `json:"name"`
 	Description map[string]string `json:"description"`
 	Rulebook    map[string]string `json:"rulebook"`
+	// 빠른 규칙: 대국 화면에 처음 들어오면 뜨는 규칙 카드. 한 줄이 한 항목입니다. 안 쓴 게임에는 없습니다
+	QuickRules map[string]string `json:"quickRules,omitempty"`
+	// 빠른 규칙 줄마다의 시연. 시연이 없는 줄은 null이고, 하나도 없으면 칸이 없습니다
+	Demos []*Demo `json:"demos,omitempty"`
 }
 
 type Timer struct {
@@ -113,16 +132,84 @@ func CheckListing(v any) (Listing, Problems) {
 			}
 		}
 	}
+	for _, field := range optionalFields {
+		byLang, _ := l[field].(map[string]any)
+		for _, lang := range supported {
+			s, _ := byLang[lang].(string)
+			switch {
+			case jsLen(s) > textLimits[field]:
+				problems = append(problems, Problem{Code: "text.tooLong", Field: field, Lang: lang, Max: textLimits[field]})
+			case jsTrim(s) != "":
+				if texts[field] == nil {
+					texts[field] = map[string]string{}
+				}
+				texts[field][lang] = jsTrim(s)
+			}
+		}
+	}
+	demos, ok := readDemos(l["demos"])
+	if !ok {
+		problems = append(problems, Problem{Code: "demos.invalid", Max: maxDemos})
+	}
 	if len(problems) > 0 {
 		return Listing{}, problems
 	}
 
 	out := Listing{Languages: map[string]string{}, Difficulty: difficulty, Timer: timer,
-		Name: texts["name"], Description: texts["description"], Rulebook: texts["rulebook"]}
+		Name: texts["name"], Description: texts["description"], Rulebook: texts["rulebook"], QuickRules: texts["quickRules"], Demos: demos}
 	for _, lang := range supported {
 		out.Languages[lang] = str(langs[lang])
 	}
 	return out, nil
+}
+
+// readDemos는 시연 목록을 읽습니다 (listing.js의 validDemo, normalizeListing). 뒤쪽의 빈 자리는 뗍니다.
+func readDemos(v any) ([]*Demo, bool) {
+	if v == nil {
+		return nil, true
+	}
+	list, ok := v.([]any)
+	if !ok || len(list) > maxDemos {
+		return nil, false
+	}
+	out := make([]*Demo, 0, len(list))
+	for _, item := range list {
+		if item == nil {
+			out = append(out, nil)
+			continue
+		}
+		// 숫자 칸의 모양(정수, 범위)을 구조체로 풀면서 같이 봅니다
+		raw, err := json.Marshal(item)
+		if err != nil {
+			return nil, false
+		}
+		var in struct {
+			Seed  *uint32     `json:"seed"`
+			Moves []ClearMove `json:"moves"`
+			From  *int        `json:"from"`
+			View  *int        `json:"view"`
+		}
+		if json.Unmarshal(raw, &in) != nil || in.Seed == nil || in.From == nil || in.View == nil {
+			return nil, false
+		}
+		n := len(in.Moves)
+		if (*in.View != 0 && *in.View != 1) || n == 0 || n > maxDemoMoves || *in.From < 0 || *in.From >= n || n-*in.From > maxDemoShown {
+			return nil, false
+		}
+		for _, m := range in.Moves {
+			if (m.Player != 0 && m.Player != 1) || !validAction(m.Action) {
+				return nil, false
+			}
+		}
+		out = append(out, &Demo{Seed: *in.Seed, Moves: in.Moves, From: *in.From, View: *in.View})
+	}
+	for len(out) > 0 && out[len(out)-1] == nil {
+		out = out[:len(out)-1]
+	}
+	if len(out) == 0 {
+		return nil, true
+	}
+	return out, true
 }
 
 // readTimer: minutes는 1~180의 정수 또는 null, custom은 true/false (listing.js의 validMinutes).
