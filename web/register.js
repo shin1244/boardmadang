@@ -17,14 +17,18 @@
 // 검사는 올리는 사람이 문제를 미리 알게 하려는 것이고, 클리어는 적어도 한 번은 끝까지 둘 수 있는 게임이라는 표시입니다.
 
 import { BoardView, SHAPE_LIMITS, attachInput, buttonsOf, paintPlayerDot } from '/sdk/playground/board.js';
-import { LANGS, LANG_NAMES, LIMITS, NO_TIMER, TIMER_MINUTES, fullLangs, gameLang, isRtl, localize, validateListing } from '/sdk/playground/listing.js';
+import {
+  DEMO_LIMITS, LANGS, LANG_NAMES, LIMITS, NO_TIMER, TIMER_MINUTES, fullLangs, gameLang, isRtl, localize, quickRuleLines, validDemo, validateListing,
+} from '/sdk/playground/listing.js';
 import { makeThumbnail, sameAction, validateThumbnail } from '/sdk/check.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
+import { DemoLoop, demoFrames } from './demo.js';
+import { recordDemo } from './demo-rec.js';
 import { loadGame } from './engine.js';
 import { isMember, loadMe, renderMe, suspendedText } from './me.js';
 
 const $ = (sel) => document.querySelector(sel);
-const TEXT_FIELDS = ['name', 'description', 'rulebook'];
+const TEXT_FIELDS = ['name', 'description', 'rulebook', 'quickRules'];
 /** 타이머를 정한 적 없는 게임에 처음 보여주는 값 */
 const DEFAULT_TIMER = { minutes: 10, custom: true };
 /** 자동 검사에서 두는 랜덤 대국 수 (npx boardmadang check는 200판) */
@@ -60,7 +64,13 @@ let step = 1;
 /** 언어 → 'full' | 'rulebook'. 없으면 지원 안 함 */
 let support = new Map();
 /** 언어별로 쓴 글. 언어를 뺐다가 다시 넣어도 쓴 글이 돌아오도록 지우지 않습니다. */
-let texts = { name: {}, description: {}, rulebook: {} };
+let texts = { name: {}, description: {}, rulebook: {}, quickRules: {} };
+/** 빠른 규칙의 줄마다 붙인 시연 (등록 정보의 demos). 시연이 없는 줄은 null */
+let demos = [];
+/** 시연 → 미리보기 화면 { info, frames } (frames가 null이면 지금 코드에서 재생 안 됨), 받는 중이면 'pending' */
+let demoShots = new Map();
+let demoJob = Promise.resolve(); // 미리보기는 하나씩 받습니다
+let demoLoops = []; // 돌고 있는 미리보기
 let problems = [];
 /** @type {{ kind: 'saving' | 'saved' | 'failed', msg?: string } | null} */
 let saveState = null;
@@ -701,9 +711,117 @@ function renderTexts() {
         texts[field][l] = el.value;
         updateCounter(el);
         changed();
+        if (field === 'quickRules') renderDemos(); // 줄 수가 바뀌면 시연을 붙일 줄도 바뀝니다
       });
     }
     return block;
+  }));
+}
+
+// ---- 4단계: 규칙 시연 ----
+
+/** 게임 코드를 불러올 곳: 올린 초안, 또는 등록된 게임 */
+const demoSource = () => (current?.draft ? { module: current.draft.module } : current);
+
+/** 시연을 붙일 줄들. 화면 언어로 쓴 빠른 규칙이 있으면 그 줄, 없으면 쓴 언어 가운데 첫 번째의 줄을 보여줍니다 */
+function demoLines() {
+  const chosen = LANGS.filter((l) => support.has(l));
+  const byLang = chosen.map((l) => quickRuleLines(texts.quickRules[l]));
+  const mine = chosen.includes(lang) ? byLang[chosen.indexOf(lang)] : [];
+  const shown = (mine.length ? mine : byLang.find((x) => x.length)) ?? [];
+  const n = Math.max(0, ...byLang.map((x) => x.length));
+  return { n, lines: Array.from({ length: Math.min(n, DEMO_LIMITS.count) }, (_, i) => shown[i] ?? '') };
+}
+
+/** 미리보기 화면을 받아 둡니다. 다 받으면 다시 그립니다 */
+function wantShots(d) {
+  if (demoShots.has(d)) return;
+  demoShots.set(d, 'pending');
+  const cur = current;
+  const shots = demoShots;
+  demoJob = demoJob.then(async () => {
+    if (current !== cur || demoShots !== shots) return;
+    let runner = null;
+    let got = { info: null, frames: null };
+    try {
+      runner = await loadGame(demoSource());
+      got = { info: runner.info, frames: await demoFrames(runner, d, playLang()) };
+    } catch {
+      // 재생 안 됨으로 보여줍니다
+    } finally {
+      runner?.close();
+    }
+    shots.set(d, got);
+    if (current === cur && demoShots === shots && step === STEP.texts) renderDemos();
+  });
+}
+
+function renderDemos() {
+  for (const loop of demoLoops) loop.stop();
+  demoLoops = [];
+  const { n, lines } = demoLines();
+  $('#demos-note').textContent = !lines.length ? t('demos.none') : n > DEMO_LIMITS.count ? t('demos.more', { max: DEMO_LIMITS.count }) : '';
+  $('#demos').replaceChildren(...lines.map((line, i) => {
+    const d = demos[i] ?? null;
+    const li = document.createElement('li');
+    li.className = 'demo-row';
+    const stage = document.createElement('div');
+    stage.className = 'demo-stage';
+    const status = document.createElement('p');
+    status.className = 'status-line';
+    if (d) {
+      wantShots(d);
+      const shot = demoShots.get(d);
+      if (shot === 'pending') status.textContent = t('rules.demo.loading');
+      else if (!shot.frames) {
+        status.textContent = t('demos.broken');
+        status.classList.add('bad');
+      } else {
+        const canvas = document.createElement('canvas');
+        stage.append(canvas);
+        const loop = new DemoLoop(canvas, shot.info, shot.frames, d, 150);
+        loop.start();
+        demoLoops.push(loop);
+        status.textContent = t('demos.has', { n: d.moves.length - d.from });
+        status.classList.add('good');
+      }
+    } else {
+      status.textContent = t('demos.empty');
+    }
+    const text = document.createElement('p');
+    text.className = 'demo-line';
+    text.textContent = `${i + 1}. ${line}`;
+    const buttons = document.createElement('div');
+    buttons.className = 'play-buttons';
+    const mk = (key, onClick) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn ghost';
+      b.textContent = t(key);
+      b.addEventListener('click', onClick);
+      buttons.append(b);
+    };
+    mk(d ? 'demos.rerecord' : 'demos.record', async () => {
+      const cur = current;
+      const made = await recordDemo(demoSource(), playLang(), `${i + 1}. ${line}`);
+      if (!made || current !== cur) return;
+      while (demos.length < i) demos.push(null);
+      demos[i] = made;
+      changed();
+      renderDemos();
+    });
+    if (d) {
+      mk('demos.remove', () => {
+        demos[i] = null;
+        changed();
+        renderDemos();
+      });
+    }
+    const side = document.createElement('div');
+    side.className = 'demo-side';
+    side.append(text, status, buttons);
+    li.append(stage, side);
+    return li;
   }));
 }
 
@@ -757,7 +875,9 @@ function fill(listing) {
   for (const r of document.querySelectorAll('input[name=difficulty]')) r.checked = r.value === listing?.difficulty;
   fillTimer(listing?.timer ?? DEFAULT_TIMER);
   support = new Map(Object.entries(listing?.languages ?? {}).filter(([l]) => LANGS.includes(l)));
-  texts = { name: {}, description: {}, rulebook: {} };
+  demos = (Array.isArray(listing?.demos) ? listing.demos : []).map((d) => (validDemo(d) ? d : null));
+  demoShots = new Map();
+  texts = { name: {}, description: {}, rulebook: {}, quickRules: {} };
   for (const field of TEXT_FIELDS) {
     for (const [l, v] of Object.entries(listing?.[field] ?? {})) if (typeof v === 'string') texts[field][l] = v;
   }
@@ -776,12 +896,15 @@ function readForm() {
     name: {},
     description: {},
     rulebook: {},
+    quickRules: {}, // 비워도 됩니다. 빈 언어는 저장할 때 빠집니다
   };
   for (const l of LANGS) {
     if (!support.has(l)) continue;
     listing.languages[l] = support.get(l);
     for (const field of TEXT_FIELDS) listing[field][l] = texts[field][l] ?? '';
   }
+  // 시연은 빠른 규칙의 줄에 붙습니다. 줄을 지웠으면 그 줄의 시연도 뺍니다
+  listing.demos = demos.slice(0, demoLines().lines.length).map((d) => d ?? null);
   return listing;
 }
 
@@ -888,7 +1011,10 @@ function render() {
   if (mode === 'site' && step === STEP.clear) renderPlay();
   renderTimer();
   renderChips();
-  if (step === STEP.texts) renderTexts();
+  if (step === STEP.texts) {
+    renderTexts();
+    renderDemos();
+  }
   renderStep();
   renderProblems();
   renderStatus();

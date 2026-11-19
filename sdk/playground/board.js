@@ -510,6 +510,7 @@ export class BoardView {
     this.placed = [null, null]; // 칸 자리 (resize에서 다시 구함)
     this.motions = []; // 움직이는 중인 것들 [{ t0, until, keys: 움직이는 기물들 }]
     this.seen = new Set(); // 마지막으로 그린 화면의 움직임들 (같은 움직임을 두 번 보여 주지 않게)
+    this.quiet = false; // true면 놓는 소리를 내지 않습니다 (규칙 카드의 시연처럼 저절로 되풀이되는 판)
     this.onBoard = null; // 마지막으로 그린 화면의 판 위 기물들 (새로 놓인 기물이 있을 때 소리를 냄). 처음 그리기 전에는 null
     this.effects = []; // 보이는 중인 효과들 [{ t0, until, key, e }]
     this.seenEffects = new Set(); // 마지막으로 그린 화면의 효과들 (같은 효과를 두 번 보여 주지 않게)
@@ -1075,7 +1076,7 @@ export class BoardView {
     }
     const before = this.onBoard;
     this.onBoard = placed;
-    if (!animate || !before) return;
+    if (!animate || !before || this.quiet) return;
     for (const k of placed) {
       if (before.has(k)) continue;
       // 이번 화면에서 시작한 움직임이 있으면 그 기물이 도착할 즈음에

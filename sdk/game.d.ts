@@ -256,6 +256,28 @@ export interface Listing {
   description: Localized;
   /** 규칙 설명. 빈 줄로 문단을 나눕니다. */
   rulebook: Localized;
+  /**
+   * 빠른 규칙 (없어도 됩니다). 대국 화면에 처음 들어온 사람에게 뜨는 규칙 카드입니다.
+   * 한 줄이 한 항목이고 서너 줄이 알맞습니다 (언어마다 500자까지). 쓴 언어만 넣습니다.
+   */
+  quickRules?: Localized;
+  /**
+   * 빠른 규칙의 시연 (없어도 됩니다). i번째 시연은 빠른 규칙의 i번째 줄 옆에서 실제 판이 그 수순을 되풀이해 보여줍니다.
+   * 그림 파일이 아니라 수순이고, 사이트의 등록 화면에서 판을 직접 둬서 녹화합니다. 시연이 없는 줄은 null입니다 (6개까지).
+   */
+  demos?: (Demo | null)[];
+}
+
+/** 빠른 규칙의 시연 하나 */
+export interface Demo {
+  /** 시작 판의 시드 */
+  seed: number;
+  /** 시작 판에서 여기까지 둔 행동 (상태를 바꾼 것만, 200개까지) */
+  moves: { player: Player; action: Action }[];
+  /** 앞의 from개는 보여주지 않고 바로 둔 판에서 시작합니다. 보여주는 행동은 30개까지 */
+  from: number;
+  /** 누구의 화면으로 보여줄지 */
+  view: Player;
 }
 
 /**

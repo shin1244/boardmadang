@@ -398,6 +398,10 @@ languages, and the timer. You can also fill it in on the site when you register.
   so keep your in-game text in a small table per language.
 - **Timer:** each player gets this many minutes in total, like a chess clock (1 to 180, or `null` for none).
   `custom: true` lets a room host pick their own time.
+- **Quick rules (`quickRules`, optional):** a rules card shown to players the first time they open the game screen.
+  Write three or four lines, one rule per line, like `"quickRules": { "en": "One line\nAnother line" }` (up to 500 characters per language).
+  Without it no card appears, and the Rules button on the game screen shows the rulebook.
+  On the site's register screen you can also record a demo (`demos`) for each line by playing a few moves; the card replays them on a real board.
 
 ## Limits
 
