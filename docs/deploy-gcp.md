@@ -45,9 +45,13 @@ GCP 프로젝트 `boardmadang`에 이렇게 놓았습니다. gcloud의 기본 �
 컨테이너 이미지에 같이 들어가므로 개발 서버(`sdk/playground/serve.js`)는 띄우지 않습니다.
 
 - **처음 한 번**: `deploy/setup-gcp.sh`. 위의 것을 만듭니다. 이미 있는 것은 건너뜁니다.
-- **배포 (버튼)**: GitHub의 Actions 탭 → **Deploy** → Run workflow. main의 마지막 커밋을 올립니다 ([.github/workflows/deploy.yml](../.github/workflows/deploy.yml)).
-  `/api/live`나 `/api/ai/live`에 진행 중인 대국이 있으면 멈추고, "진행 중인 대국이 있어도 배포"를 체크하면 그대로 올립니다.
-  휴대폰의 GitHub 앱에서도 누를 수 있습니다. 실행 기록에 어느 커밋을 올렸는지 남습니다.
+- **배포 (자동)**: main에 머지하면 GitHub Actions가 올립니다 ([.github/workflows/deploy.yml](../.github/workflows/deploy.yml)).
+  이미지에 들어가는 파일(`server/`, `web/`, `games/`, `sdk/playground/`, `sdk/check.js`, 브라우저 AI가 쓰는 `trainer/` 두 파일, `Dockerfile`, `deploy/startup.sh`)이
+  바뀐 머지만 배포합니다. README, `docs/`, 테스트만 바뀐 머지는 서버를 다시 켜지 않습니다. Dockerfile에 복사할 것을 더하면 워크플로의 `paths`에도 더합니다.
+  이미지를 먼저 만든 뒤, `/api/live`나 `/api/ai/live`에 진행 중인 대국이 있으면 1분마다 보며 최대 30분 기다렸다가 올립니다.
+  30분이 지나도 대국이 있으면 실패로 멈춥니다. 기다리는 동안 새 머지가 들어오면 앞의 실행은 취소되고 최신 커밋 하나만 올립니다.
+- **배포 (버튼)**: GitHub의 Actions 탭 → **Deploy** → Run workflow. 바뀐 파일과 상관없이 main의 마지막 커밋을 올립니다.
+  대국은 똑같이 기다리고, "진행 중인 대국이 있어도 배포"를 체크하면 기다리지 않습니다. 휴대폰의 GitHub 앱에서도 누를 수 있습니다.
 - **배포 (내 컴퓨터)**: 커밋한 뒤 `deploy/deploy.sh`. Cloud Build로 이미지를 만들고, VM 메타데이터 `bm-image`를 바꾼 뒤 SSH로 시작 스크립트를 다시 돌립니다.
   main에 머지하기 전의 브랜치를 올려 볼 때 씁니다. 버튼과 달리 대국이 있는지는 보지 않습니다.
   어느 쪽이든 서버가 다시 켜지므로 진행 중인 대국은 사라집니다.
