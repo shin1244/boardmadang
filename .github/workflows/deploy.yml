@@ -85,7 +85,8 @@ jobs:
           ip=$(gcloud compute instances describe "$VM" --project "$PROJECT" --zone "$ZONE" \
             --format 'value(networkInterfaces[0].accessConfigs[0].natIP)')
           install -d -m 700 ~/.ssh
-          (umask 077 && gcloud secrets versions access latest --secret "$DEPLOY_KEY_SECRET" --project "$PROJECT" >~/.ssh/deploy)
+          gcloud secrets versions access latest --secret "$DEPLOY_KEY_SECRET" --project "$PROJECT" --out-file ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
           echo "$ip $HOST_KEY" >~/.ssh/known_hosts
           ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=yes -o BatchMode=yes "$DEPLOY_USER@$ip" \
             'sudo google_metadata_script_runner startup && curl -sf http://127.0.0.1:8080/healthz && echo " ← 서버 응답"'
