@@ -21,6 +21,7 @@
 
 - **Rules, not an engine.** A game is one JavaScript module with `setup`, `play` and `view`. boardmadang draws the board (squares or intersections), the pieces, side panels, falling and sliding pieces, and capture effects.
 - **Online play.** Quick matching, rooms with invite links, a game clock, spectating, replays and rematches. Guests can play, or log in with Google or GitHub.
+- **A rules card.** Players see your quick rules the first time they open a game. Record a few moves on the board for a rule, and the card replays them next to it.
 - **An AI opponent.** Games are trained with AlphaZero-style self-play, and the network runs in the player's browser, so playing the AI costs no server time.
 - **Safe uploads.** Uploaded code runs in a sandboxed Web Worker. A game goes live only after it passes the automatic checks and its maker wins one game playing both sides (the clear check).
 
