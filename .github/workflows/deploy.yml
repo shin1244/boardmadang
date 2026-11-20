@@ -1,0 +1,105 @@
+# 배포 버튼. GitHub의 Actions 탭 → Deploy → Run workflow로 main의 마지막 커밋을 운영 서버에 올립니다 (docs/deploy-gcp.md).
+# 하는 일은 deploy/deploy.sh와 같습니다. 이미지를 만들어 올리고, VM 메타데이터 bm-image를 바꾸고, VM의 시작 스크립트를 다시 돌립니다.
+# 이미지는 Cloud Build 대신 이 러너에서 같은 Dockerfile로 만듭니다.
+#
+# 서버가 다시 켜지면 진행 중인 대국이 사라지므로, 대국이 있으면 배포하지 않고 멈춥니다.
+# "진행 중인 대국이 있어도 배포"를 체크하면 그대로 올립니다.
+#
+# GCP에는 키 파일 없이 Workload Identity로 들어갑니다. 처음 한 번 deploy/setup-github.sh가 필요하고,
+# 그 설정은 main 브랜치에서 돈 워크플로만 받아 줍니다.
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 진행 중인 대국이 있어도 배포 (그 대국은 사라집니다)
+        type: boolean
+        default: false
+
+# 배포가 두 개 겹치지 않게 합니다. 나중 것은 앞의 것이 끝날 때까지 기다립니다
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # Workload Identity로 GCP에 들어갈 때 씁니다
+
+# deploy/config.sh와 같은 값입니다
+env:
+  PROJECT: boardmadang
+  REGION: asia-northeast3
+  ZONE: asia-northeast3-a
+  VM: boardmadang
+  REPO: boardmadang
+  DOMAIN: boardmadang.com
+  WIF_PROVIDER: projects/480625915168/locations/global/workloadIdentityPools/github/providers/github
+  DEPLOY_SA: boardmadang-deploy@boardmadang.iam.gserviceaccount.com
+  DEPLOY_USER: deploy
+  DEPLOY_KEY_SECRET: deploy-ssh-key
+  # VM의 SSH 호스트 키 (/etc/ssh/ssh_host_ed25519_key.pub). VM을 새로 만들면 바뀌므로, 그때 이 값도 바꿉니다
+  HOST_KEY: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGKbTpNW1jfynL3Bu5gNFlGY0tVGHNYgbIS+ZQyX26iU
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: 진행 중인 대국 확인
+        if: ${{ !inputs.force }}
+        run: |
+          busy=0
+          for path in /api/live /api/ai/live; do
+            n=$(curl -sf --max-time 10 "https://$DOMAIN$path" | jq length)
+            echo "$path: $n"
+            [ "$n" = 0 ] || busy=1
+          done
+          if [ "$busy" = 1 ]; then
+            echo "::error::진행 중인 대국이 있습니다. 끝난 뒤 다시 누르거나, '진행 중인 대국이 있어도 배포'를 체크하세요."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: 이미지 빌드와 올리기
+        run: |
+          IMAGE=$REGION-docker.pkg.dev/$PROJECT/$REPO/server:$(git rev-parse --short=12 HEAD)
+          echo "IMAGE=$IMAGE" >>"$GITHUB_ENV"
+          gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - name: VM에 배포
+        run: |
+          gcloud compute instances add-metadata "$VM" --project "$PROJECT" --zone "$ZONE" \
+            --metadata "bm-image=$IMAGE" --metadata-from-file startup-script=deploy/startup.sh
+          ip=$(gcloud compute instances describe "$VM" --project "$PROJECT" --zone "$ZONE" \
+            --format 'value(networkInterfaces[0].accessConfigs[0].natIP)')
+          install -d -m 700 ~/.ssh
+          (umask 077 && gcloud secrets versions access latest --secret "$DEPLOY_KEY_SECRET" --project "$PROJECT" >~/.ssh/deploy)
+          echo "$ip $HOST_KEY" >~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=yes -o BatchMode=yes "$DEPLOY_USER@$ip" \
+            'sudo google_metadata_script_runner startup && curl -sf http://127.0.0.1:8080/healthz && echo " ← 서버 응답"'
+          rm -f ~/.ssh/deploy
+
+      - name: 사이트 응답 확인
+        run: |
+          for try in 1 2 3 4 5 6; do
+            if curl -sf --max-time 10 "https://$DOMAIN/healthz" >/dev/null; then
+              echo "https://$DOMAIN 응답함"
+              echo "배포함: \`$IMAGE\`" >>"$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::https://$DOMAIN/healthz 가 응답하지 않습니다"
+          exit 1
