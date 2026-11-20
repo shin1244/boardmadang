@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 지금 커밋을 이미지로 만들어 VM에 올립니다 (docs/deploy-gcp.md). 레포 루트에서: deploy/deploy.sh
 # 서버가 다시 켜지므로 진행 중인 대국은 사라집니다. 대국이 적은 시간에 합니다.
+# main을 올릴 때는 GitHub Actions의 Deploy 버튼(.github/workflows/deploy.yml)으로도 됩니다. 그쪽은 대국이 있으면 멈춥니다.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . deploy/config.sh

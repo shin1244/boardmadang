@@ -45,8 +45,20 @@ GCP 프로젝트 `boardmadang`에 이렇게 놓았습니다. gcloud의 기본 �
 컨테이너 이미지에 같이 들어가므로 개발 서버(`sdk/playground/serve.js`)는 띄우지 않습니다.
 
 - **처음 한 번**: `deploy/setup-gcp.sh`. 위의 것을 만듭니다. 이미 있는 것은 건너뜁니다.
-- **배포**: 커밋한 뒤 `deploy/deploy.sh`. Cloud Build로 이미지를 만들고, VM 메타데이터 `bm-image`를 바꾼 뒤 SSH로 시작 스크립트를 다시 돌립니다.
-  서버가 다시 켜지므로 진행 중인 대국은 사라집니다.
+- **배포 (버튼)**: GitHub의 Actions 탭 → **Deploy** → Run workflow. main의 마지막 커밋을 올립니다 ([.github/workflows/deploy.yml](../.github/workflows/deploy.yml)).
+  `/api/live`나 `/api/ai/live`에 진행 중인 대국이 있으면 멈추고, "진행 중인 대국이 있어도 배포"를 체크하면 그대로 올립니다.
+  휴대폰의 GitHub 앱에서도 누를 수 있습니다. 실행 기록에 어느 커밋을 올렸는지 남습니다.
+- **배포 (내 컴퓨터)**: 커밋한 뒤 `deploy/deploy.sh`. Cloud Build로 이미지를 만들고, VM 메타데이터 `bm-image`를 바꾼 뒤 SSH로 시작 스크립트를 다시 돌립니다.
+  main에 머지하기 전의 브랜치를 올려 볼 때 씁니다. 버튼과 달리 대국이 있는지는 보지 않습니다.
+  어느 쪽이든 서버가 다시 켜지므로 진행 중인 대국은 사라집니다.
+- **버튼 설정 (처음 한 번)**: `deploy/setup-github.sh`. 아래를 만듭니다.
+  - 배포 서비스 계정 `boardmadang-deploy`: 이미지 올리기(이미지 저장소만), VM `boardmadang`의 메타데이터 바꾸기, 배포 SSH 키 읽기, Compute 읽기 전용.
+  - Workload Identity 풀 `github`: GitHub가 발급한 토큰으로 위 계정에 들어옵니다. `shin1244/boardmadang`(주인 계정 번호까지 확인)의 **main 브랜치**에서 돈 워크플로만 받아 줍니다.
+    키 파일이나 GitHub 비밀값은 없습니다.
+  - 배포 SSH 키: 공개 키는 VM 메타데이터 `ssh-keys`(사용자 `deploy`, 이 VM에만), 개인 키는 Secret Manager `deploy-ssh-key`.
+    워크플로는 VM의 호스트 키를 `deploy.yml`에 박아 두고 확인합니다. VM을 새로 만들면 `HOST_KEY`를 바꿉니다
+    (`gcloud compute ssh boardmadang --project boardmadang --zone asia-northeast3-a --command 'cat /etc/ssh/ssh_host_ed25519_key.pub'`).
+  - 버튼을 끄려면 `gcloud iam workload-identity-pools disable github --location global --project boardmadang`.
 - **VM 안**: [deploy/startup.sh](../deploy/startup.sh)가 켤 때마다 돌며 Docker를 깔고, Secret Manager에서 `/etc/boardmadang/env`를 만들고,
   `app`(서버)과 `caddy`(HTTPS) 컨테이너를 띄웁니다. 기보, 계정, 의견, 올린 게임은 `/var/lib/boardmadang`에 남습니다.
 - **로그**: `gcloud compute ssh boardmadang --project boardmadang --zone asia-northeast3-a` 뒤에
