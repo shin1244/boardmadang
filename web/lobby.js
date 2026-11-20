@@ -969,13 +969,14 @@ function apply() {
   const langs = checked('support-lang');
   const onlyStarred = $('#only-starred').checked;
   const anyFilter = q || diffs.length || langs.length || onlyStarred;
+  $('#reset').hidden = !anyFilter; // 걸어 둔 필터가 있을 때만 보입니다
   const sort = $('#sort').value;
 
   const shown = entries.filter((e) => {
     if (e.error) return !anyFilter;
     if (onlyStarred && !starred.has(e.id)) return false;
     const l = e.listing;
-    if (q&& !searchText(e).includes(q)) return false;
+    if (q && !searchText(e).includes(q)) return false;
     if (diffs.length && !diffs.includes(l?.difficulty)) return false;
     if (langs.length && !langs.some((x) => l?.languages?.[x])) return false;
     return true;
@@ -1022,6 +1023,7 @@ function setupFilters() {
     $('#q').value = '';
     for (const box of document.querySelectorAll('.filters input[type=checkbox]')) box.checked = false;
     apply();
+    $('#q').focus(); // 누른 버튼이 숨으므로 포커스를 검색창으로 옮깁니다
   });
   setupLangButtons(render);
 }
