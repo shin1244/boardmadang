@@ -35,7 +35,8 @@ echo "== 배포용 SSH 키: $DEPLOY_KEY_SECRET"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 if exists secrets describe "$DEPLOY_KEY_SECRET"; then
-  g secrets versions access latest --secret "$DEPLOY_KEY_SECRET" >"$tmp/key"
+  # --out-file: 윈도우에서 표준 출력으로 받으면 줄바꿈이 바뀌어 키를 못 읽습니다
+  g secrets versions access latest --secret "$DEPLOY_KEY_SECRET" --out-file "$tmp/key"
   chmod 600 "$tmp/key"
   ssh-keygen -y -f "$tmp/key" >"$tmp/key.pub"
 else
