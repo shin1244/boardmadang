@@ -21,8 +21,10 @@ I have read the CLA Document and I hereby sign the CLA
 
 ```bash
 cd server && go vet ./... && go test ./...
-node --test sdk/test/*.test.js sdk/playground/*.test.js games/*/*.test.js
+node --test sdk/test/*.test.js sdk/playground/*.test.js games/*/*.test.js trainer/*.test.js
 ```
+
+풀 리퀘스트를 열면 GitHub Actions(`.github/workflows/test.yml`)가 같은 테스트를 돌리고, 통과해야 머지할 수 있습니다.
 
 - 주변 코드와 같은 모양으로 씁니다. 주석과 문서는 한국어로, 쉬운 말로 씁니다.
 - 동작이 바뀌면 `docs/`의 설계 문서도 같이 고칩니다.

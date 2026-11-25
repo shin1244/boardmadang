@@ -1,0 +1,42 @@
+# 테스트 (docs/development.md#테스트). 풀 리퀘스트를 열거나 새로 푸시할 때마다 돕니다.
+#
+# main에 머지한 뒤에는 다시 돌리지 않습니다. 대신 저장소 설정(Settings → Branches)에서 main에
+#   - 이 검사(test)를 머지 필수 조건으로 두고
+#   - "Require branches to be up to date before merging"을 켜 둡니다.
+# 그러면 풀 리퀘스트가 최신 main과 합친 상태로 통과해야 머지되므로, main에 들어가 배포되는(deploy.yml) 코드는 이미 테스트한 것입니다.
+#
+# 바뀐 파일로 거르지 않습니다(paths). 필수 검사가 건너뛰어지면 그 풀 리퀘스트는 머지할 수 없게 되기 때문입니다. 전부 2분이 안 걸립니다.
+# 러너에 깔린 Go와 Node를 씁니다. Go가 go.mod보다 낮으면 go 명령이 맞는 버전을 내려받고, Node는 18 이상이면 됩니다.
+name: Test
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+# 같은 풀 리퀘스트에 새로 푸시하면 앞의 실행은 취소합니다
+concurrency:
+  group: test-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 버전
+        run: go version && node --version
+
+      - name: Go 서버
+        working-directory: server
+        run: go vet ./... && go test ./...
+
+      # Go가 실패해도 이쪽 결과까지 보이게 돌립니다
+      - name: SDK, 게임, 학습 도구 (Node)
+        if: ${{ !cancelled() }}
+        run: node --test sdk/test/*.test.js sdk/playground/*.test.js games/*/*.test.js trainer/*.test.js
