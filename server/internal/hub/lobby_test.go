@@ -188,3 +188,82 @@ func TestBump(t *testing.T) {
 		t.Fatalf("bump without room: error = %q", e.Message)
 	}
 }
+
+// listWaiting은 header의 쿠키로 GET /api/waiting을 부릅니다. header가 nil이면 쿠키 없이 부릅니다.
+func listWaiting(t *testing.T, srv *httptest.Server, header http.Header) []protocol.Seeker {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/waiting", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, v := range header {
+		req.Header[k] = v
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if cc := res.Header.Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("Cache-Control = %q", cc)
+	}
+	var out []protocol.Seeker
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// waitWaiting은 GET /api/waiting의 길이가 n이 될 때까지 잠깐 기다립니다 (끊김은 서버가 뒤에서 알아챕니다).
+func waitWaiting(t *testing.T, srv *httptest.Server, n int) []protocol.Seeker {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		got := listWaiting(t, srv, nil)
+		if len(got) == n {
+			return got
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("waiting = %+v, want %d", got, n)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestWaitingList(t *testing.T) {
+	srv := newServer(t)
+	a, b := connect(t, srv), connect(t, srv)
+	if got := listWaiting(t, srv, nil); got == nil || len(got) != 0 {
+		t.Fatalf("empty queue = %#v, want []", got)
+	}
+
+	// 빠른 매칭에 들어간 사람은 게임, 버전, 타이머로만 보입니다
+	a.send(protocol.Join{Type: protocol.TypeJoin, Game: "tictactoe", Minutes: minutes(10), Version: "abc"})
+	a.expect(protocol.TypeWaiting, nil)
+	got := listWaiting(t, srv, b.header)
+	if len(got) != 1 || got[0].Game != "tictactoe" || got[0].Version != "abc" || got[0].Minutes == nil || *got[0].Minutes != 10 {
+		t.Fatalf("waiting = %+v", got)
+	}
+	// 기다리는 본인에게는 (다른 탭에서 봐도) 자기가 보이지 않습니다
+	if got := listWaiting(t, srv, a.header); len(got) != 0 {
+		t.Fatalf("own waiting = %+v, want none", got)
+	}
+
+	// 같은 게임·버전·타이머로 join하면 바로 만나고 목록에서 빠집니다
+	b.send(protocol.Join{Type: protocol.TypeJoin, Game: "tictactoe", Minutes: minutes(10), Version: "abc"})
+	a.expect(protocol.TypeMatched, nil)
+	b.expect(protocol.TypeMatched, nil)
+	waitWaiting(t, srv, 0)
+
+	// 기다리다 나가면 빠집니다. 방 만들기로 연 방은 빠른 매칭 대기가 아니라 보이지 않습니다
+	c, host := connect(t, srv), connectMember(t, srv, "host")
+	host.create(nil)
+	c.send(protocol.Join{Type: protocol.TypeJoin, Game: "other-game"})
+	c.expect(protocol.TypeWaiting, nil)
+	got = waitWaiting(t, srv, 1)
+	if got[0].Game != "other-game" || got[0].Minutes != nil || got[0].Version != "" {
+		t.Fatalf("waiting = %+v", got)
+	}
+	c.conn.Close()
+	waitWaiting(t, srv, 0)
+}

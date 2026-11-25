@@ -137,3 +137,30 @@ func (h *Hub) ServeRooms(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(out)
 }
+
+// ServeWaiting은 GET /api/waiting 입니다. 빠른 매칭에서 상대를 기다리는 사람을 게임, 코드 버전, 타이머로만 알려 줍니다 (누구인지는 빼고).
+// 로비와 방 목록이 "지금 상대를 찾는 사람이 있다"고 보여 주면, 다음 사람이 대전 찾기를 눌러 바로 만납니다.
+// 묻는 사람이 다른 탭에서 기다리는 것은 뺍니다 (자기를 기다리는 사람으로 보지 않게).
+func (h *Hub) ServeWaiting(w http.ResponseWriter, r *http.Request) {
+	me, _ := h.ids.FromRequest(r)
+	h.mu.Lock()
+	out := make([]protocol.Seeker, 0, len(h.queue))
+	for _, q := range h.queue {
+		if me.ID != "" && q.c.user.ID == me.ID {
+			continue
+		}
+		out = append(out, q.info)
+	}
+	h.mu.Unlock()
+
+	// 대기열은 맵이라 순서가 없습니다. 같은 대기열이면 늘 같은 순서로 보냅니다
+	key := func(s protocol.Seeker) string { return queueKey(s.Game, s.Minutes, s.Version) }
+	sort.Slice(out, func(i, j int) bool { return key(out[i]) < key(out[j]) })
+	if len(out) > maxListed {
+		out = out[:maxListed]
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	json.NewEncoder(w).Encode(out)
+}

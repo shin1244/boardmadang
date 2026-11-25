@@ -67,6 +67,12 @@
         <a href="/web/rooms.html" data-i18n="match.seeRooms">방 목록 보기</a>
       </div>
 
+      <!-- 빠른 매칭으로 상대를 기다리는 동안. 학습한 AI가 있는 게임만 (web/ai.html) -->
+      <div id="seeking" class="hosting" hidden>
+        <p data-i18n="match.seeking.ai">기다리는 동안 AI와 먼저 둬 볼 수 있습니다. AI와 두러 가면 상대 찾기는 멈춥니다.</p>
+        <a id="seek-ai" class="btn ghost" data-i18n="card.ai">AI와 두기</a>
+      </div>
+
       <div id="board-wrap" class="board-wrap" hidden>
         <canvas id="board"></canvas>
       </div>

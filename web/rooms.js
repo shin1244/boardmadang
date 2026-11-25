@@ -2,6 +2,8 @@
 // 방장은 대전 화면에서 1분에 한 번 자기 방을 맨 위로 다시 올릴 수 있습니다.
 // 들어가기를 누르면 대전 화면(match.html?game=x&room=CODE)으로 가서 바로 시작합니다.
 // 방장과 게임 코드 버전이 다르면 들어갈 수 없으므로 버튼을 막아 둡니다.
+// 맨 위에는 빠른 매칭에서 상대를 찾는 사람(GET /api/waiting)을 보여줍니다. 대전 찾기를 누르면 그 사람과 바로 만납니다.
+// 누구인지는 서버가 알려 주지 않습니다. 게임 목록에 없는 게임과 코드 버전이 달라 만날 수 없는 사람은 빼고 보여줍니다.
 //
 // 아래에는 진행 중인 대국(GET /api/live)을 보여주고, 관전을 누르면 관전 화면(watch.html?room=CODE)으로 갑니다.
 // 그 뒤에 AI와 두고 있는 판(GET /api/ai/live)도 보여줍니다. 브라우저 안에서만 도는 판이라 관전은 안 되고,
@@ -18,6 +20,7 @@ let me = null;
 let games = new Map(); // 게임 id → /api/games 항목
 let rooms = null; // 마지막으로 받은 목록
 let live = null; // 진행 중인 대국
+let seekers = []; // 빠른 매칭에서 상대를 찾는 사람
 let aiLive = []; // AI와 두고 있는 판
 let fetchedAt = 0;
 let loadError = null;
@@ -40,15 +43,18 @@ function ageText(room) {
 
 async function load() {
   try {
-    const [res, liveRes, aiRes] = await Promise.all([
+    const [res, liveRes, aiRes, waitRes] = await Promise.all([
       fetch('/api/rooms', { cache: 'no-store' }),
       fetch('/api/live', { cache: 'no-store' }),
       fetch('/api/ai/live', { cache: 'no-store' }).catch(() => null), // AI를 켜지 않은 서버에는 없습니다
+      fetch('/api/waiting', { cache: 'no-store' }).catch(() => null),
     ]);
     if (!res.ok) throw new Error(res.status);
     rooms = await res.json();
     live = liveRes.ok ? await liveRes.json() : [];
     aiLive = aiRes?.ok ? await aiRes.json() : [];
+    // 대기열에는 아무 게임 id로나 들어갈 수 있으므로, 게임 목록에 있는 게임만 보여줍니다
+    seekers = waitRes?.ok ? (await waitRes.json()).filter((s) => games.has(s.game) && !otherVersion(s)) : [];
     fetchedAt = Date.now();
     loadError = null;
   } catch (e) {
@@ -61,7 +67,7 @@ function renderFilter() {
   const select = $('#game-filter');
   const chosen = select.value;
   // 열린 방이 있는 게임만 고를 수 있게 합니다. 고른 게임은 방이 없어져도 남겨 둡니다.
-  const ids = [...new Set([...(rooms ?? []), ...(live ?? []), ...aiLive].map((r) => r.game).concat(chosen ? [chosen] : []))];
+  const ids = [...new Set([...seekers, ...(rooms ?? []), ...(live ?? []), ...aiLive].map((r) => r.game).concat(chosen ? [chosen] : []))];
   ids.sort((a, b) => gameName(a).localeCompare(gameName(b), lang));
   select.replaceChildren(select.options[0], ...ids.map((id) => new Option(gameName(id), id)));
   select.value = chosen;
@@ -88,6 +94,26 @@ function renderRoom(room) {
     a.textContent = t('rooms.otherVersion');
     a.title = t('rooms.otherVersion.title');
   }
+  return li;
+}
+
+/** 빠른 매칭에서 상대를 찾는 사람. 같은 게임으로 대전 찾기를 하면 바로 만납니다 */
+function renderSeeker(s) {
+  const li = document.createElement('li');
+  li.className = 'room seeker';
+  li.innerHTML = `
+    <div class="room-info"><b class="room-game"></b><span class="room-sub"><i class="pulse" aria-hidden="true"></i><span></span></span></div>
+    <span class="room-timer"></span>
+    <a class="btn"></a>`;
+  li.querySelector('.room-game').textContent = gameName(s.game);
+  li.querySelector('.room-sub span').textContent = t('rooms.seeking');
+  const timer = li.querySelector('.room-timer');
+  timer.textContent = s.minutes === null ? t('timer.none') : t('timer.each', { m: s.minutes });
+  timer.classList.toggle('none', s.minutes === null);
+  const a = li.querySelector('.btn');
+  a.href = `/web/match.html?game=${encodeURIComponent(s.game)}`;
+  a.textContent = t('card.match');
+  a.title = t('card.waiting.title');
   return li;
 }
 
@@ -134,11 +160,12 @@ function render() {
   renderMe(me);
   renderFilter();
   const filter = $('#game-filter').value;
+  const seeking = seekers.filter((s) => !filter || s.game === filter);
   const shown = (rooms ?? []).filter((r) => !filter || r.game === filter);
-  $('#list').replaceChildren(...shown.map(renderRoom));
-  $('#count').textContent = rooms ? `${shown.length}` : '';
+  $('#list').replaceChildren(...seeking.map(renderSeeker), ...shown.map(renderRoom));
+  $('#count').textContent = rooms ? `${seeking.length + shown.length}` : '';
   const empty = $('#empty');
-  empty.hidden = shown.length > 0 || (!rooms && !loadError);
+  empty.hidden = seeking.length + shown.length > 0 || (!rooms && !loadError);
   empty.textContent = loadError ? t('rooms.failed', { msg: loadError }) : t('rooms.empty');
 
   const watching = (live ?? []).filter((r) => !filter || r.game === filter);

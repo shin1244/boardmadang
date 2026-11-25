@@ -76,7 +76,7 @@ type Hub struct {
 	upgrader websocket.Upgrader
 
 	mu    sync.Mutex
-	queue map[string]*Client   // 대기열 키(게임|타이머|버전)별로 상대를 기다리는 한 명
+	queue map[string]*waiter   // 대기열 키(게임|타이머|버전)별로 상대를 기다리는 한 명
 	rooms map[string]*Room     // 방 코드 → 진행 중인 대국
 	open  map[string]*openRoom // 방 코드 → 방 목록에서 상대를 기다리는 방 (lobby.go)
 	away  map[string]*Room     // 연결이 끊겨 돌아오기를 기다리는 user.ID → 그 방 (끝난 방일 수도 있습니다)
@@ -90,7 +90,7 @@ func New(cfg config.Config, ids *identity.Issuer, records *record.Store) *Hub {
 		cfg:     cfg,
 		ids:     ids,
 		records: records,
-		queue:   make(map[string]*Client),
+		queue:   make(map[string]*waiter),
 		rooms:   make(map[string]*Room),
 		open:    make(map[string]*openRoom),
 		away:    make(map[string]*Room),
@@ -222,14 +222,20 @@ func (h *Hub) join(c *Client, game string, minutes *int, version string) {
 	key := queueKey(game, minutes, version)
 	other := h.queue[key]
 	if other == nil {
-		h.queue[key] = c
+		h.queue[key] = &waiter{c: c, info: protocol.Seeker{Game: game, Version: version, Minutes: minutes}}
 		c.queued = key
 		c.Send(protocol.Waiting{Type: protocol.TypeWaiting, Game: game})
 		return
 	}
 	delete(h.queue, key)
-	other.queued = ""
-	h.start(h.newRoomID(), game, minutes, version, [2]*Client{other, c}, true)
+	other.c.queued = ""
+	h.start(h.newRoomID(), game, minutes, version, [2]*Client{other.c, c}, true)
+}
+
+// waiter는 빠른 매칭 대기열의 한 자리입니다. info는 GET /api/waiting에 그대로 보냅니다 (lobby.go의 ServeWaiting).
+type waiter struct {
+	c    *Client
+	info protocol.Seeker
 }
 
 // 대기열은 게임, 타이머, 코드 버전이 같아야 만납니다.
@@ -271,7 +277,7 @@ func (h *Hub) start(id, game string, minutes *int, version string, players [2]*C
 // 관전 중이었으면 관전자에서 빼고, 방금 끝낸 대국이 있으면 재대결을 할 수 없게 합니다.
 func (h *Hub) leave(c *Client) {
 	h.mu.Lock()
-	if c.queued != "" && h.queue[c.queued] == c {
+	if w := h.queue[c.queued]; w != nil && w.c == c {
 		delete(h.queue, c.queued)
 	}
 	c.queued = ""

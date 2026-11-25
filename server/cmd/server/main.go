@@ -203,6 +203,7 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 	mux.HandleFunc("GET /ws", h.ServeWS)
 	mux.HandleFunc("GET /api/rooms", h.ServeRooms)
 	mux.HandleFunc("GET /api/live", h.ServeLive)
+	mux.HandleFunc("GET /api/waiting", h.ServeWaiting)
 	matches := record.Handler{Store: records, IDs: ids, Names: ids.Members}
 	mux.HandleFunc("GET /api/matches", matches.ServeMine)
 	mux.HandleFunc("GET /api/matches/{id}", matches.ServeMatch)
