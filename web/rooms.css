@@ -33,6 +33,9 @@
   font-variant-numeric: tabular-nums;
 }
 .room-timer.none { color: var(--muted); border-style: dashed; }
+/* 빠른 매칭에서 상대를 찾는 사람 (맥박 점은 lobby.css의 .pulse) */
+.seeker { border-color: color-mix(in srgb, var(--good) 45%, var(--border)); }
+.seeker .room-sub { display: flex; align-items: center; gap: 8px; color: var(--good); }
 .room .btn { flex: none; padding: 8px 18px; text-decoration: none; }
 .room .btn[aria-disabled="true"] { opacity: 0.45; pointer-events: none; }
 .live-title { margin: 32px 0 10px; font-size: 20px; }

@@ -113,12 +113,12 @@ function proxyMe(req, res) {
 }
 
 /**
- * 방 목록(/api/rooms), 진행 중인 대국(/api/live), 기보(/api/matches...), 의견과 신고(/api/games/<id>/comments, /api/reports),
+ * 방 목록(/api/rooms), 진행 중인 대국(/api/live), 빠른 매칭 대기(/api/waiting), 기보(/api/matches...), 의견과 신고(/api/games/<id>/comments, /api/reports),
  * 즐겨찾기(/api/stars, /api/games/<id>/star)는 Go 서버에만 있습니다. 쿠키와 본문을 붙여 그대로 넘깁니다.
  * Go 서버가 꺼져 있으면 목록은 빈 목록, 나머지는 503입니다. 게임마다 별 수(/api/games의 stars)는 이 서버의 목록에 없습니다.
  */
 function proxyGo(req, res, url) {
-  const isList = req.method === 'GET' && ['/api/rooms', '/api/live', '/api/matches'].includes(url.pathname);
+  const isList = req.method === 'GET' && ['/api/rooms', '/api/live', '/api/waiting', '/api/matches'].includes(url.pathname);
   const fail = () => (isList ? json(res, 200, []) : json(res, 503, { error: 'no game server' }));
   const headers = { cookie: req.headers.cookie ?? '' };
   if (req.headers['content-type']) headers['content-type'] = req.headers['content-type'];
@@ -243,7 +243,7 @@ const server = http.createServer((req, res) => {
     }
     return sendFile(res, path.join(AI_DIR, model[1], path.basename(url.pathname)));
   }
-  if (url.pathname === '/api/rooms' || url.pathname === '/api/live' || /^\/api\/matches(\/[A-Z0-9]+)?$/.test(url.pathname)) return proxyGo(req, res, url);
+  if (['/api/rooms', '/api/live', '/api/waiting'].includes(url.pathname) || /^\/api\/matches(\/[A-Z0-9]+)?$/.test(url.pathname)) return proxyGo(req, res, url);
   if (/^\/api\/games\/[a-z0-9-]+\/comments(\/[A-Z0-9]+)?$/.test(url.pathname) || url.pathname === '/api/reports') return proxyGo(req, res, url);
   if (url.pathname === '/api/stars' || /^\/api\/games\/[a-z0-9-]+\/star$/.test(url.pathname)) return proxyGo(req, res, url);
   const m = url.pathname.match(/^\/api\/games\/([a-z0-9-]+)\/listing$/);

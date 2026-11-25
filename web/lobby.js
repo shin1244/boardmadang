@@ -215,7 +215,7 @@ function renderCard(entry) {
   const name = nameOf(entry);
   const id = encodeURIComponent(entry.id);
   card.innerHTML = `
-    <div class="thumb"><canvas></canvas><button type="button" class="star-btn" aria-pressed="false"></button>
+    <div class="thumb"><canvas></canvas><div class="card-badges"></div><button type="button" class="star-btn" aria-pressed="false"></button>
       <div class="card-actions"><a class="btn"></a><button type="button" class="btn ghost"></button></div>
     </div>
     <div class="card-body">
@@ -233,8 +233,9 @@ function renderCard(entry) {
     ai.className = 'card-badge ai';
     ai.innerHTML = `${ICONS.chip}AI`;
     ai.title = t('card.ai');
-    card.querySelector('.thumb').append(ai);
+    card.querySelector('.card-badges').append(ai);
   }
+  fillWaiting(entry, card);
   const [match, create] = card.querySelectorAll('.card-actions .btn');
   match.textContent = t('card.match');
   match.href = `/web/match.html?game=${id}`;
@@ -254,6 +255,56 @@ function renderAddCard() {
   a.innerHTML = `<span class="add-icon">${ICONS.plus}</span><b></b><code>index.js → .zip</code>`;
   a.querySelector('b').textContent = t('card.addGame');
   return a;
+}
+
+// ---- 상대를 찾는 사람 ----
+// 빠른 매칭에서 상대를 기다리는 사람(GET /api/waiting)이 있는 게임의 카드와 게임 창에 "상대 대기 중"을 보입니다.
+// 같은 코드 버전과 타이머로 대전 찾기를 누르면 그 사람과 바로 만납니다. 화면을 보고 있는 동안만 다시 받습니다.
+
+const WAITING_MS = 15_000;
+let waiting = new Set(); // 지금 대전 찾기를 누르면 기다리던 사람과 바로 만나는 게임 id
+
+/** 이 게임의 대전 찾기가 s와 만나는지. match.js가 join에 보내는 버전·타이머와 같은 값으로 봅니다 */
+const meets = (entry, s) => s.game === entry.id && s.version === (entry.version ?? '') && (s.minutes ?? null) === timerOfEntry(entry).minutes;
+
+async function loadWaiting() {
+  if (!entries) return;
+  let list = [];
+  try {
+    const res = await fetch('/api/waiting', { cache: 'no-store' });
+    if (res.ok) list = await res.json();
+  } catch {
+    // 못 받으면 아무도 기다리지 않는 것으로 봅니다
+  }
+  waiting = new Set(entries.filter((e) => !e.error && list.some((s) => meets(e, s))).map((e) => e.id));
+  for (const [entry, card] of cards) fillWaiting(entry, card);
+  if (current) $('#gd-waiting').hidden = !waiting.has(current.id);
+}
+
+/** 카드 그림 왼쪽 위의 "상대 대기 중" 배지를 붙이거나 뗍니다 */
+function fillWaiting(entry, card) {
+  const box = card.querySelector('.card-badges');
+  if (!box) return; // 불러오지 못한 게임
+  let b = box.querySelector('.waiting');
+  if (!waiting.has(entry.id)) return b?.remove();
+  if (!b) {
+    b = document.createElement('span');
+    b.className = 'card-badge waiting';
+    b.innerHTML = '<i class="pulse" aria-hidden="true"></i><span></span>';
+    box.prepend(b);
+  }
+  b.querySelector('span').textContent = t('card.waiting');
+  b.title = t('card.waiting.title');
+}
+
+function watchWaiting() {
+  loadWaiting();
+  setInterval(() => {
+    if (document.visibilityState === 'visible') loadWaiting();
+  }, WAITING_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') loadWaiting();
+  });
 }
 
 // ---- 즐겨찾기 (별) ----
@@ -423,6 +474,7 @@ function fillDialog() {
   $('#gd-meta').textContent = meta.join(' · ');
   fillStar($('#gd-star'), entry);
   $('#gd-match').href = `/web/match.html?game=${id}`;
+  $('#gd-waiting').hidden = !waiting.has(entry.id);
   $('#gd-ai').hidden = !entry.aiReady;
   $('#gd-ai').href = `/web/ai.html?game=${id}`;
   $('#gd-create').setAttribute('aria-pressed', String(tab === 'create'));
@@ -1065,3 +1117,4 @@ starred = await myStars;
 buildLangFilter();
 render();
 openFromUrl();
+watchWaiting();

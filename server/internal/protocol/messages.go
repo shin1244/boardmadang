@@ -184,6 +184,14 @@ type LiveRoom struct {
 	Age      int           `json:"age"`
 }
 
+// Seeker는 빠른 매칭에서 상대를 기다리는 사람(GET /api/waiting)의 한 줄입니다.
+// 누가 기다리는지는 보내지 않습니다. 같은 게임, 코드 버전, 타이머로 join하면 이 사람과 바로 만납니다.
+type Seeker struct {
+	Game    string `json:"game"`
+	Version string `json:"version"`
+	Minutes *int   `json:"minutes"`
+}
+
 // Seed는 32비트입니다. JS 숫자는 2^53을 넘으면 정밀도를 잃기 때문입니다.
 type Matched struct {
 	Type     string     `json:"type"`

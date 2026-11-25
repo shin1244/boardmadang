@@ -61,5 +61,9 @@ GO_SERVER=http://localhost:8081 node sdk/playground/serve.js
 
 ```bash
 cd server && go vet ./... && go test ./...
-node --test sdk/test/*.test.js sdk/playground/*.test.js games/*/*.test.js
+node --test sdk/test/*.test.js sdk/playground/*.test.js games/*/*.test.js trainer/*.test.js
 ```
+
+풀 리퀘스트를 열면 GitHub Actions(`.github/workflows/test.yml`)가 같은 테스트를 돌립니다. main에 머지한 뒤에는 다시 돌리지 않으므로,
+저장소 설정에서 이 검사(`test`)를 main의 머지 필수 조건으로 두고 "Require branches to be up to date before merging"을 켜 둡니다.
+`trainer/test_train.py`(파이썬 학습)는 PyTorch가 있어야 해서 CI에서 돌리지 않습니다 ([trainer/README.md](../trainer/README.md)).

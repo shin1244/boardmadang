@@ -15,6 +15,7 @@
 | `GET /api/matches` | 내가 둔 대국 목록, 최근 것부터 50개 (`moves` 없이). 쿠키가 없으면 `[]` |
 | `GET /api/rooms` | 상대를 기다리는 방 목록. 최근에 만들거나 올린 방이 먼저 `[{"room":"K3P9QX","game":"tictactoe","version":"3f1c9a0b2e7d4c56","minutes":10,"host":{"kind":"guest","tag":"4821"},"age":42}]` |
 | `GET /api/live` | 진행 중인 대국 목록. 최근에 시작한 대국이 먼저 `[{"room":"K3P9QX","game":"tictactoe","version":"3f1c…","minutes":10,"players":[{…},{…}],"moves":7,"watchers":2,"age":95}]` |
+| `GET /api/waiting` | 빠른 매칭에서 상대를 기다리는 사람. 누구인지는 없이 게임, 코드 버전, 타이머만 `[{"game":"tictactoe","version":"3f1c…","minutes":10}]` |
 | `GET /api/games/{id}/comments` | 게임의 의견, 최근 것부터 100개와 전체 수 `{"comments":[{"id":"RN92MFYW","author":{"kind":"guest","tag":"5875"},"text":"…","at":"…","mine":true,"reported":true,"hidden":true}],"count":2}` |
 | `POST /api/games/{id}/comments` | 의견 남기기 `{"text":"…"}` → `201`과 남긴 의견 |
 | `DELETE /api/games/{id}/comments/{comment}` | 내 의견 지우기 → `{"ok":true}` |
@@ -119,6 +120,9 @@ AI 모델을 올리면(`PUT /api/admin/ai/{game}`) 그 게임의 열린 요청�
 - `/api/rooms`: 방 목록은 Go 서버의 메모리에만 있습니다. 개발 서버는 Go 서버에 물어 그대로 넘깁니다.
   `age`는 마지막으로 만들거나 올린 뒤 지난 초, `minutes`가 `null`이면 타이머 없음입니다. 최대 200개입니다.
 - `/api/live`: 관전할 수 있는 대국입니다. `age`는 시작한 뒤 지난 초, `moves`는 지금까지의 행동 수, `watchers`는 관전자 수입니다. 최대 200개입니다.
+- `/api/waiting`: 같은 게임, 코드 버전, 타이머로 `join`하면 그 사람과 바로 만납니다. 로비는 그런 게임의 카드와 게임 창에 "상대 대기 중"을,
+  방 목록은 맨 위에 대전 찾기 버튼을 보입니다. 묻는 사람(쿠키의 신원)이 다른 탭에서 기다리는 것은 빼고, 방 만들기로 연 방은 `/api/rooms`에 있습니다.
+  대기열에는 아무 게임 id로나 들어갈 수 있으므로 화면은 `/api/games`에 있는 게임만 보여줍니다. 최대 200개이고, 개발 서버는 Go 서버에 물어 그대로 넘깁니다.
 - `/api/ai/live`: AI 대국은 브라우저 안에서만 돌아서 AI 화면이 알려 준 것입니다 (`server/internal/ai`의 live.go). 수는 서버에 오지 않아 관전은 못 하고 방 목록에 보이기만 합니다.
   Go 서버의 메모리에만 있고, 한 사람(세션)에 한 판입니다. 90초 동안 알림이 없거나 10분 동안 수가 늘지 않으면 빠집니다. 최대 200개입니다.
   서버를 다시 켜도 대국은 끊기지 않고, 다음 알림에 목록에 다시 나타납니다.

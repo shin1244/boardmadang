@@ -24,6 +24,7 @@
   --teal: #7fdbca;    /* AI */
   --teal-text: #011627;
   --good: #addb67;
+  --good-text: #011627; /* --good 바탕 위의 글자 */
   --bad: #ef5350;
   --warn: #ecc48d;
   --star: #ffcc4d;    /* 즐겨찾기 별을 채우는 노란색 */
@@ -62,6 +63,7 @@
   --teal: #0a7f84;
   --teal-text: #ffffff;
   --good: #08916a;
+  --good-text: #ffffff;
   --bad: #de3d3b;
   --warn: #a8690a;
   --star: #f6b80f;
@@ -643,6 +645,27 @@ fieldset .bars-chip, .bars-chip { width: 44px; padding: 0; justify-content: cent
 .gd-side .btn.ghost { border-color: var(--border); color: var(--text); }
 .gd-side .btn.ghost:hover { border-color: var(--muted); }
 #gd-ai { color: var(--teal); }
+/* 대전 찾기 위의 "지금 상대를 찾는 사람이 있습니다" */
+.gd-waiting { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--good); font-size: 13px; font-weight: 600; }
+.gd-waiting[hidden] { display: none; }
+
+/* 상대가 기다리는 중임을 알리는 맥박 점 (카드 배지, 게임 창 안내) */
+.pulse {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 1.6s ease-out infinite;
+}
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 60%, transparent); }
+  100% { box-shadow: 0 0 0 7px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse { animation: none; }
+}
 .gd-side button.btn { cursor: pointer; }
 .gd-side .btn[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 
@@ -994,11 +1017,20 @@ fieldset .bars-chip, .bars-chip { width: 44px; padding: 0; justify-content: cent
 @media (hover: none) {
   .card-actions { display: none; }
 }
-.card-badge {
+/* 그림 왼쪽 위의 배지들 (상대 대기 중, AI). 카드 전체를 덮는 이름 버튼(.card-open::after)보다 위에 둡니다 */
+.card-badges {
   position: absolute;
   top: 10px;
   left: 10px;
+  right: 56px; /* 오른쪽 위의 별 버튼 자리 */
   z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  pointer-events: none;
+}
+.card-badge {
+  pointer-events: auto; /* 마우스를 올리면 설명(title)이 보이게 */
   height: 24px;
   padding: 0 8px;
   display: inline-flex;
@@ -1009,6 +1041,7 @@ fieldset .bars-chip, .bars-chip { width: 44px; padding: 0; justify-content: cent
   font-weight: 700;
 }
 .card-badge.ai { background: var(--teal); color: var(--teal-text); }
+.card-badge.waiting { background: var(--good); color: var(--good-text); }
 .card-badge svg { width: 13px; height: 13px; stroke-width: 1.8; }
 
 .card-body { flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 16px; }

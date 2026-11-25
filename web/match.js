@@ -27,7 +27,7 @@ import { BoardView, attachInput, buttonsOf, paintPlayerDot } from '/sdk/playgrou
 import { NO_TIMER, gameLang, localize, timerOf } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { EMOTES, EMOTE_EVERY, emoteLabel, emoteSvg, emotesMuted, popEmote, setEmotesMuted } from './emotes.js';
-import { loadGame } from './engine.js';
+import { loadGame, modelFits } from './engine.js';
 import { displayName, loadMe, renderMe } from './me.js';
 import { setupRules } from './rules.js';
 
@@ -80,6 +80,8 @@ let muted = emotesMuted(); // 상대 이모티콘을 끔
 let history = []; // 수순: [{ player, labels: 칸 좌표들, done: 차례가 넘어갔는지 }]
 let logTab = 'talk'; // 오른쪽 칸: 대화(이모티콘) 또는 수순
 let queue = Promise.resolve(); // 서버 메시지를 받은 순서대로 하나씩 처리합니다
+let aiReady = false; // 학습한 AI와 둘 수 있는 게임인지 (로비와 같은 확인). 빠른 매칭으로 기다리는 동안 AI와 두기를 보입니다
+let found = false; // 다른 탭을 보는 동안 상대를 찾았습니다. 돌아올 때까지 탭 제목으로 알립니다
 
 const flip = () => runner.info.board.flipForPlayer === seat;
 const playLang = () => gameLang(entry?.listing, lang);
@@ -173,7 +175,12 @@ function retrySoon() {
 
 /** 휴대폰 화면을 다시 켰을 때 다음 시도를 기다리지 않고 바로 붙어 봅니다. */
 function onVisible() {
-  if (document.visibilityState === 'visible' && offlineUntil && !ws) openSocket();
+  if (document.visibilityState !== 'visible') return;
+  if (offlineUntil && !ws) openSocket();
+  if (found) {
+    found = false;
+    render();
+  }
 }
 
 /**
@@ -235,6 +242,8 @@ async function onMessage(m) {
       clock = { remaining: m.remaining, running: m.running, at: Date.now() };
       break;
     case 'matched':
+      // 기다리는 동안 다른 탭에 가 있었으면 탭 제목으로 알립니다 (방장이 방을 열어 두고 기다릴 때도)
+      if (document.visibilityState === 'hidden') found = true;
       await start(m);
       break;
     case 'resumed':
@@ -585,6 +594,25 @@ function renderHosting() {
   $('#bump-wait').textContent = wait > 0 ? t('match.bump.wait', { s: wait }) : '';
 }
 
+/** 빠른 매칭으로 기다리는 동안: 학습한 AI가 있는 게임이면 AI와 두러 갈 수 있습니다 */
+function renderSeeking() {
+  $('#seeking').hidden = phase !== 'waiting' || !aiReady;
+}
+
+/**
+ * 이 게임의 학습한 AI를 지금 코드로 쓸 수 있는지 봅니다 (로비의 loadGames, ai.js와 같은 확인).
+ * 판 상태와 따로 도는 AI 준비라 대국에는 영향이 없습니다. 기다리는 동안 버튼을 보이려고 빠른 매칭에서만 부릅니다.
+ */
+async function checkAi() {
+  if (!entry.ai || !runner.info.turn) return;
+  try {
+    aiReady = modelFits(entry.ai, await runner.ai(entry.ai.lang));
+  } catch {
+    aiReady = false;
+  }
+  render();
+}
+
 function renderPlayers() {
   const show = seat !== null && (phase === 'playing' || phase === 'ended');
   $('#players').hidden = !show;
@@ -709,12 +737,13 @@ function sendEmote(id) {
 
 function render() {
   applyStatic();
-  document.title = `${nameOfGame()} · ${t('match.title')} · ${t('site.name')}`;
+  document.title = `${found ? `${t('match.found')} · ` : ''}${nameOfGame()} · ${t('match.title')} · ${t('site.name')}`;
   renderMe(me);
   $('#title').textContent = runner ? nameOfGame() : '';
   renderTimerInfo();
   renderStatus();
   renderHosting();
+  renderSeeking();
   renderPlayers();
   if (board) renderBoard();
   renderActions();
@@ -806,6 +835,8 @@ async function main() {
   setupRules(entry, $('#rules'));
   runner = await loadGame(entry);
   setupBoard();
+  $('#seek-ai').href = `/web/ai.html?game=${encodeURIComponent(gameId)}`;
+  if (mode === 'quick') checkAi(); // 기다리지 않고 붙습니다
   $('#emote-mute').addEventListener('click', () => {
     muted = !muted;
     setEmotesMuted(muted);
