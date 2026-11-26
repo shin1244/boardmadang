@@ -33,6 +33,21 @@ export async function loadStats() {
   loading = false;
 }
 
+/** 통계를 다시 불러오는 간격. 그 사이에 온 방문, 나라, 지금 접속이 보입니다 (admin.js) */
+export const REFRESH_MS = 60_000;
+
+/**
+ * 통계 칸만 다시 불러와 그립니다. 신고 처리 칸은 건드리지 않아 쓰던 메모와 초점이 그대로입니다.
+ * 탭이 안 보이거나, 불러오는 중이거나, 통계 칸에 초점이 있거나 그래프 위에 마우스가 있으면 이번은 건너뜁니다.
+ */
+export async function refreshStats(gameName) {
+  const section = document.querySelector('#stats');
+  if (loading || document.hidden || section.closest('[hidden]') || section.contains(document.activeElement)) return;
+  if (section.querySelector('#stat-charts:hover')) return;
+  await loadStats();
+  renderStats(gameName);
+}
+
 /** 기간 버튼과 폭 바뀜을 겁니다. onRender는 다시 그릴 때 부릅니다 (admin.js의 render) */
 export function setupStats(onRender) {
   rerender = onRender;
