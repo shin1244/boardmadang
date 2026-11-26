@@ -18,5 +18,6 @@ gcloud builds submit --project "$PROJECT" --region "$REGION" --tag "$IMAGE" .
 echo "== VM에 배포: $VM"
 gcloud compute instances add-metadata "$VM" --project "$PROJECT" --zone "$ZONE" \
   --metadata "bm-image=$IMAGE" --metadata-from-file startup-script=deploy/startup.sh
+# 컨테이너가 뜬 뒤에도 서버는 저장된 기록과 나라 파일(GEO_FILE)을 읽는 몇 초 동안 응답하지 않으므로, 1분까지 다시 물어봅니다
 gcloud compute ssh "$VM" --project "$PROJECT" --zone "$ZONE" --quiet \
-  --command 'sudo google_metadata_script_runner startup && curl -sf http://127.0.0.1:8080/healthz && echo " ← 서버 응답"'
+  --command 'sudo google_metadata_script_runner startup && curl -sf --retry 30 --retry-delay 1 --retry-all-errors --retry-max-time 60 --max-time 5 http://127.0.0.1:8080/healthz && echo " ← 서버 응답"'
