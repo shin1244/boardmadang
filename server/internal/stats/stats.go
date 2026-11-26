@@ -8,7 +8,8 @@
 // 게스트로 왔다가 그날 로그인한 사람은 게스트와 계정으로 두 번 셉니다.
 //
 // 어느 나라에서 왔는지도 셉니다 (Locate, internal/geo). IP 주소로 나라 코드만 알아내 남기고 IP 주소는 남기지 않습니다.
-// 그날 처음 왔을 때의 나라로 셉니다. 나라를 모르면(나라 파일이 없거나 사설망 주소) 나라 없이 셉니다.
+// 그날 처음 나라를 안 때의 나라로 셉니다. 나라를 모르면(나라 파일이 없거나 사설망 주소) 나라 없이 세었다가,
+// 그날 다시 왔을 때 나라를 알면 채웁니다 (나라를 세기 시작한 날에 그 전에 와 있던 사람도 다시 오면 들어갑니다).
 //
 // DATA_DIR 아래에 이렇게 씁니다.
 //
@@ -333,10 +334,16 @@ func (t *Tracker) seen(id string, member bool, country string) {
 		set = make(map[string]visitor)
 		t.days[t.today] = set
 	}
-	if _, ok := set[h]; ok {
-		return
+	if old, ok := set[h]; ok {
+		if old.country != "" || country == "" {
+			return
+		}
+		// 나라 없이 센 사람의 나라를 채웁니다. 같은 줄을 나라와 함께 한 번 더 남기면 loadVisits가 합칩니다
+		old.country = country
+		set[h] = old
+	} else {
+		set[h] = visitor{member: member, country: country}
 	}
-	set[h] = visitor{member: member, country: country}
 	line := "g " + h
 	if member {
 		line = "m " + h

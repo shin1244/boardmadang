@@ -155,8 +155,9 @@ jobs:
           gcloud secrets versions access latest --secret "$DEPLOY_KEY_SECRET" --project "$PROJECT" --out-file ~/.ssh/deploy
           chmod 600 ~/.ssh/deploy
           echo "$ip $HOST_KEY" >~/.ssh/known_hosts
+          # 컨테이너가 뜬 뒤에도 서버는 저장된 기록과 나라 파일(GEO_FILE)을 읽는 몇 초 동안 응답하지 않으므로, 1분까지 다시 물어봅니다
           ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=yes -o BatchMode=yes "$DEPLOY_USER@$ip" \
-            'sudo google_metadata_script_runner startup && curl -sf http://127.0.0.1:8080/healthz && echo " ← 서버 응답"'
+            'sudo google_metadata_script_runner startup && curl -sf --retry 30 --retry-delay 1 --retry-all-errors --retry-max-time 60 --max-time 5 http://127.0.0.1:8080/healthz && echo " ← 서버 응답"'
           rm -f ~/.ssh/deploy
 
       - name: 사이트 응답 확인

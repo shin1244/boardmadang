@@ -188,8 +188,9 @@ func TestCountries(t *testing.T) {
 		r.RemoteAddr = ip
 		tr.Visit(r, identity.User{ID: id, Kind: identity.KindGuest})
 	}
-	visit("1.1.1.1", "g_1")
-	visit("2.2.2.2", "g_1") // 그날 두 번째는 세지 않으므로 KR 그대로
+	visit("4.4.4.4", "g_1") // 나라를 모름
+	visit("1.1.1.1", "g_1") // 다시 오면 나라를 채움
+	visit("2.2.2.2", "g_1") // 나라를 안 뒤로는 그대로 KR
 	visit("2.2.2.2", "g_2")
 	visit("3.3.3.3", "g_3") // 나라 코드 모양이 아니면 모름
 	visit("4.4.4.4", "g_4") // 모름
@@ -223,6 +224,29 @@ func TestCountries(t *testing.T) {
 	f.Close()
 	tr2, _ := open(dir, c.now)
 	if got := last(t, tr2, 1); got.Visitors != 3 || !reflect.DeepEqual(got.Countries, map[string]int{"US": 1}) {
+		t.Fatalf("after restart = %+v", got)
+	}
+}
+
+// 나라를 모른 채 센 사람이 그날 다시 오면 나라를 채우고, 다시 켜도 한 사람으로 그 나라에 셉니다
+func TestCountryFilledLater(t *testing.T) {
+	dir := t.TempDir()
+	c := &clock{kst("2026-11-01 10:00")}
+	tr, _ := open(dir, c.now)
+	tr.Seen("m_alice", true) // 나라를 세기 전 (배포 전)에 옴
+	tr.Locate = func(*http.Request) string { return "KR" }
+	tr.Visit(httptest.NewRequest("GET", "/api/me", nil), identity.User{ID: "m_alice", Kind: identity.KindMember})
+	tr.Visit(httptest.NewRequest("GET", "/api/me", nil), identity.User{ID: "m_alice", Kind: identity.KindMember})
+	want := map[string]int{"KR": 1}
+	if got := last(t, tr, 1); got.Visitors != 1 || got.Members != 1 || !reflect.DeepEqual(got.Countries, want) {
+		t.Fatalf("today = %+v", got)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "stats", "visits", "2026-11-01.log"))
+	if lines := strings.Count(string(data), "\n"); lines != 2 {
+		t.Errorf("visit file has %d lines: %q", lines, data)
+	}
+	tr2, _ := open(dir, c.now)
+	if got := last(t, tr2, 1); got.Visitors != 1 || got.Members != 1 || !reflect.DeepEqual(got.Countries, want) {
 		t.Fatalf("after restart = %+v", got)
 	}
 }

@@ -64,6 +64,7 @@ cd server && go vet ./... && go test ./...
 node --test sdk/test/*.test.js sdk/playground/*.test.js games/*/*.test.js trainer/*.test.js
 ```
 
-풀 리퀘스트를 열면 GitHub Actions(`.github/workflows/test.yml`)가 같은 테스트를 돌립니다. main에 머지한 뒤에는 다시 돌리지 않으므로,
+풀 리퀘스트를 열면 GitHub Actions(`.github/workflows/test.yml`)가 같은 테스트를 돌립니다. Go 테스트는 운영 이미지와 같은 Go(`Dockerfile`의 `golang:1.27`)로 돌립니다.
+서버는 Go 1.27 이상이 필요합니다(`server/go.mod`). 내 컴퓨터의 Go가 더 낮으면 go 명령이 1.27을 내려받아 씁니다. main에 머지한 뒤에는 다시 돌리지 않으므로,
 저장소 설정에서 이 검사(`test`)를 main의 머지 필수 조건으로 두고 "Require branches to be up to date before merging"을 켜 둡니다.
 `trainer/test_train.py`(파이썬 학습)는 PyTorch가 있어야 해서 CI에서 돌리지 않습니다 ([trainer/README.md](../trainer/README.md)).

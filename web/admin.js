@@ -11,7 +11,7 @@
 import { localize } from '/sdk/playground/listing.js';
 import { applyStatic, detectLang, lang, setLang, setupLangButtons, t } from './i18n.js';
 import { displayName, loadMe, renderMe } from './me.js';
-import { loadStats, renderStats, setupStats } from './admin-stats.js';
+import { REFRESH_MS, loadStats, refreshStats, renderStats, setupStats } from './admin-stats.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -665,6 +665,9 @@ async function main() {
   me = await loadMe();
   await load();
   render();
+  setInterval(() => {
+    if (!busy && !denied && state) refreshStats((id) => gameName(id));
+  }, REFRESH_MS);
 }
 
 main();

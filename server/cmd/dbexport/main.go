@@ -33,7 +33,7 @@ func main() {
 	}
 	fmt.Printf("%s를 만들었습니다.\n", *out)
 	for _, table := range slices.Sorted(maps.Keys(sum.Rows)) {
-		fmt.Printf("  %-14s %d줄\n", table, sum.Rows[table])
+		fmt.Printf("  %-16s %d줄\n", table, sum.Rows[table])
 	}
 	if len(sum.Skipped) > 0 {
 		fmt.Printf("읽지 못해 건너뛴 것 %d개:\n", len(sum.Skipped))
