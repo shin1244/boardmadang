@@ -796,9 +796,15 @@ func TestHTTP(t *testing.T) {
 	if rec.Code != http.StatusOK || rec.Header().Get("Access-Control-Allow-Origin") != "*" || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/javascript") {
 		t.Fatalf("초안 파일: %d %v", rec.Code, rec.Header())
 	}
+	// ..는 ServeMux가 정리한 주소로 보냅니다 (Go 1.26부터 301이 아니라 307). 어느 쪽이든 draft.json을 내주지 않으면 됩니다
 	for _, p := range []string{"/drafts/" + d.ID + "/draft.json", "/drafts/" + d.ID + "/../draft.json", "/drafts/nope/index.js"} {
-		if rec := do("GET", p, "", nil, nil); rec.Code != http.StatusNotFound && rec.Code != http.StatusMovedPermanently {
+		rec := do("GET", p, "", nil, nil)
+		redirect := rec.Code == http.StatusMovedPermanently || rec.Code == http.StatusTemporaryRedirect
+		if rec.Code != http.StatusNotFound && !redirect {
 			t.Errorf("%s: %d", p, rec.Code)
+		}
+		if redirect && strings.HasPrefix(rec.Header().Get("Location"), "/drafts/"+d.ID+"/") {
+			t.Errorf("%s: 초안 폴더 안으로 보냄 %q", p, rec.Header().Get("Location"))
 		}
 	}
 

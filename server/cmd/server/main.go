@@ -194,6 +194,8 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 	mux.HandleFunc("GET /api/locale", site.ServeLocale)
 	if pages != nil {
 		mux.HandleFunc("GET /{$}", site.ServeHome)
+		// /web은 ServeFile이 폴더 주소(/web/)로 영구 이동(301)시킵니다. 맡기지 않으면 ServeMux가 보내는데, Go 1.26부터 307입니다
+		mux.HandleFunc("GET /web", pages.ServeFile)
 		mux.HandleFunc("GET /web/", pages.ServeFile)
 		mux.HandleFunc("GET /sdk/playground/", pages.ServeFile)
 		mux.HandleFunc("GET /sdk/check.js", pages.ServeFile)

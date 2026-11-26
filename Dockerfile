@@ -1,7 +1,7 @@
 # 레포 루트에서 빌드합니다. 서버와 함께 화면(web/), SDK 모듈(sdk/playground/, sdk/check.js), 게임(games/),
 # 브라우저 AI가 쓰는 학습 도구 두 파일(trainer/env.js, mcts.js)과 onnxruntime-web, 방문 통계의 나라 파일(DB-IP)을 넣습니다.
 #   docker build -t boardmadang .
-FROM golang:1.24 AS build
+FROM golang:1.27 AS build
 WORKDIR /src
 COPY server/go.mod server/go.sum ./
 RUN go mod download
@@ -19,7 +19,7 @@ RUN npm ci --ignore-scripts --no-audit --no-fund
 # 방문 통계의 나라별 수에 쓰는 DB-IP의 IP to Country Lite (CC BY 4.0, https://db-ip.com, server/internal/geo).
 # 빌드할 때마다 그달 파일을 받습니다. 매달 초에 새 파일이 나오므로 이번 달 것이 아직 없으면 지난달 것을 받습니다.
 # 받지 못해도 빌드는 계속합니다. 그러면 서버가 나라 없이 세고 운영자 화면에 그렇게 나옵니다.
-FROM golang:1.24 AS geo
+FROM golang:1.27 AS geo
 WORKDIR /geo
 RUN for m in "$(date -u +%Y-%m)" "$(date -u -d "$(date -u +%Y-%m-01) -1 month" +%Y-%m)"; do \
       curl -fsSL --retry 3 -o dbip-country-lite.csv.gz "https://download.db-ip.com/free/dbip-country-lite-$m.csv.gz" \

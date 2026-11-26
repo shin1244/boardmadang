@@ -7,8 +7,8 @@
 #
 # 바뀐 파일로 거르지 않습니다(paths). 필수 검사가 건너뛰어지면 그 풀 리퀘스트는 머지할 수 없게 되기 때문입니다. 전부 2분이 안 걸립니다.
 # Go는 운영 이미지를 만드는 것과 같은 golang 이미지(Dockerfile의 build 단계) 안에서 돌립니다. 러너에 깔린 Go는 GitHub가 올리는 대로
-# 바뀌어서, 운영과 다른 Go로 테스트하게 됩니다 (Go 1.26은 ServeMux의 경로 리다이렉트가 301이 아니라 307).
-# Dockerfile의 Go 버전을 바꾸면 여기도 같이 바꿉니다. Node는 러너에 깔린 것을 쓰고 18 이상이면 됩니다.
+# 바뀌어서, 그대로 쓰면 운영과 다른 Go로 테스트하게 됩니다 (예: Go 1.26부터 ServeMux의 자동 리다이렉트가 301에서 307로 바뀜).
+# Dockerfile의 Go 버전을 바꾸면 여기와 server/go.mod의 go 줄도 같이 바꿉니다. Node는 러너에 깔린 것을 쓰고 18 이상이면 됩니다.
 name: Test
 
 on:
@@ -37,7 +37,7 @@ jobs:
       - name: Go 서버
         run: |
           # cmd/server의 테스트가 레포 루트의 web/, games/를 읽으므로 레포 전체를 붙입니다
-          docker run --rm -v "$PWD:/repo" -w /repo/server -e GOFLAGS=-buildvcs=false golang:1.24 \
+          docker run --rm -v "$PWD:/repo" -w /repo/server -e GOFLAGS=-buildvcs=false golang:1.27 \
             sh -c 'go version && go vet ./... && go test ./...'
 
       # Go가 실패해도 이쪽 결과까지 보이게 돌립니다

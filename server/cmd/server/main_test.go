@@ -41,6 +41,7 @@ func TestSiteRoutes(t *testing.T) {
 	}{
 		{"/", http.StatusMovedPermanently, "/web/"},
 		{"/web", http.StatusMovedPermanently, "/web/"},
+		{"/web?lang=en", http.StatusMovedPermanently, "/web/?lang=en"},
 		{"/games/tictactoe?lang=en", http.StatusMovedPermanently, "/games/tictactoe/?lang=en"},
 		{"/web/", http.StatusOK, ""},
 		{"/web/match.html", http.StatusOK, ""},
