@@ -131,3 +131,35 @@ func TestStats(t *testing.T) {
 		t.Fatalf("no cookie = %d", code)
 	}
 }
+
+// 나라별 방문은 기간의 날마다 온 사람을 나라별로 더합니다. 나라를 모르는 방문은 따로 셉니다
+func TestStatsCountries(t *testing.T) {
+	f := setup(t)
+	// stats는 실제 시계로 날을 나누므로 날짜도 실제 시계로 정합니다. 그제는 나라를 세기 전이라 빠집니다
+	today := stats.Day(time.Now())
+	yesterday := stats.AddDays(today, -1)
+	os.MkdirAll(filepath.Join(f.dir, "stats"), 0o755)
+	os.WriteFile(filepath.Join(f.dir, "stats", "days.jsonl"), []byte(
+		`{"day":"`+stats.AddDays(today, -2)+`","visitors":7,"members":1,"mau":7,"mauMembers":1}`+"\n"+
+			`{"day":"`+yesterday+`","visitors":5,"members":1,"mau":8,"mauMembers":1,"countries":{"KR":3,"JP":1}}`+"\n"), 0o644)
+	visits, err := stats.Open(f.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.h.Visits = visits
+
+	if _, st := f.stats(t, "", &f.boss); st.Geo || len(st.Countries) != 2 || st.CountryUnknown != 1 {
+		t.Fatalf("나라 파일 없음: %+v %d %v", st.Countries, st.CountryUnknown, st.Geo)
+	}
+	visits.Locate = func(*http.Request) string { return "US" }
+	visits.Visit(httptest.NewRequest("GET", "/api/me", nil), identity.User{ID: "g_x", Kind: identity.KindGuest})
+	_, st := f.stats(t, "", &f.boss)
+	want := []CountryVisits{{"KR", 3}, {"JP", 1}, {"US", 1}}
+	if !st.Geo || !slices.Equal(st.Countries, want) || st.CountryUnknown != 1 || st.CountriesSince != yesterday {
+		t.Fatalf("countries = %+v, unknown %d, geo %v, since %s", st.Countries, st.CountryUnknown, st.Geo, st.CountriesSince)
+	}
+	// 오늘만 보면 어제는 빠집니다
+	if _, st := f.stats(t, "?days=1", &f.boss); !slices.Equal(st.Countries, []CountryVisits{{"US", 1}}) || st.CountryUnknown != 0 || st.CountriesSince != today {
+		t.Fatalf("days=1: %+v %d", st.Countries, st.CountryUnknown)
+	}
+}

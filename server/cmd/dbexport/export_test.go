@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"database/sql"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -123,16 +124,22 @@ func fixture(t *testing.T) (data, site string, alice, bob identity.User) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tracker.Seen(alice.ID, true)
-	tracker.Seen(g.ID, false)
-	tracker.Seen(g.ID, false) // 같은 날 두 번은 한 번
+	tracker.Locate = func(r *http.Request) string { return r.Header.Get("X-Test-Country") }
+	from := func(country string) *http.Request {
+		r := httptest.NewRequest("GET", "/api/me", nil)
+		r.Header.Set("X-Test-Country", country)
+		return r
+	}
+	tracker.Visit(from("KR"), alice)
+	tracker.Visit(from("US"), g)
+	tracker.Visit(from("JP"), g) // 같은 날 두 번은 한 번 (처음 나라)
 	req := httptest.NewRequest("POST", "/api/ai/tictactoe/plays", nil)
 	tracker.AIPlay(req, g, "tictactoe")
 	tracker.AIEnd(req, g, "tictactoe", stats.AIWin)
 	// 끝난 날의 방문 수 (서버가 날짜가 바뀔 때 남기는 줄)
 	writeFile(t, filepath.Join(data, "stats", "days.jsonl"),
 		`{"day":"2026-11-02","visitors":5,"members":2,"mau":9,"mauMembers":3}`+"\n"+
-			`{"day":"2026-11-03","visitors":7,"members":3,"mau":11,"mauMembers":4}`+"\n")
+			`{"day":"2026-11-03","visitors":7,"members":3,"mau":11,"mauMembers":4,"countries":{"KR":5,"US":1,"x<":1}}`+"\n")
 
 	// 올린 게임 (upload의 game.json 모양)
 	writeFile(t, filepath.Join(data, "uploads", "rockfall", "game.json"), `{
@@ -188,7 +195,7 @@ func TestExport(t *testing.T) {
 		t.Errorf("Skipped = %v", sum.Skipped)
 	}
 	want := map[string]int{"games": 3, "game_releases": 2, "accounts": 2, "matches": 4, "match_players": 8, "match_actions": 7,
-		"comments": 2, "stars": 2, "visits": 2, "daily_visits": 2, "ai_plays": 1, "export_info": 2}
+		"comments": 2, "stars": 2, "visits": 2, "daily_visits": 2, "daily_countries": 2, "ai_plays": 1, "export_info": 2}
 	for table, n := range want {
 		if sum.Rows[table] != n {
 			t.Errorf("Rows[%s] = %d, want %d", table, sum.Rows[table], n)
@@ -279,6 +286,15 @@ func TestExport(t *testing.T) {
 	one(t, db, "SELECT visitors FROM daily_visits WHERE day = '2026-11-03'", &n)
 	if n != 7 {
 		t.Errorf("daily_visits = %d", n)
+	}
+	one(t, db, "SELECT visitors FROM daily_countries WHERE day = '2026-11-03' AND country = 'KR'", &n)
+	if n != 5 {
+		t.Errorf("daily_countries KR = %d", n)
+	}
+	var countries string
+	one(t, db, "SELECT group_concat(coalesce(country, '-'), ',') FROM (SELECT country FROM visits ORDER BY member DESC)", &countries)
+	if countries != "KR,US" {
+		t.Errorf("visits countries = %s", countries)
 	}
 	one(t, db, "SELECT plays, wins FROM ai_plays WHERE game_id = 'tictactoe'", &plays, &wins)
 	if plays != 1 || wins != 1 {

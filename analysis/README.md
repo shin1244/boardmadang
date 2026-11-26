@@ -5,7 +5,7 @@
 
 | 파일 | 내용 |
 |---|---|
-| [`queries.sql`](queries.sql) | 분석 쿼리 예시 (DAU, 게임별 인기, 끝난 이유, 선공 승률, 리텐션 등) |
+| [`queries.sql`](queries.sql) | 분석 쿼리 예시 (DAU, 게임별 인기, 끝난 이유, 선공 승률, 리텐션, 나라별 방문 등) |
 | [`server/cmd/dbexport/schema.sql`](../server/cmd/dbexport/schema.sql) | 표와 칸의 뜻 |
 | `data/`, `*.tgz`, `*.db` | 받아 온 데이터와 만든 파일. 실제 이용자의 정보라 깃에 올라가지 않습니다 (`.gitignore`) |
 
@@ -87,8 +87,9 @@ go run ./cmd/dbexport -data ../analysis/data
 | `match_actions` | 대국의 행동(클릭) 하나 | 전부 |
 | `comments` | 게임 의견 하나 | 전부 |
 | `stars` | 즐겨찾기 하나 | 지금 |
-| `visits` | 그날 온 사람 하나 (누구인지 모르는 해시) | 최근 30일 |
+| `visits` | 그날 온 사람 하나 (누구인지 모르는 해시와 나라) | 최근 30일 |
 | `daily_visits` | 하루의 DAU, MAU | 방문을 세기 시작한 날부터 |
+| `daily_countries` | 하루, 나라 하나의 방문 수 | 나라를 세기 시작한 날부터 |
 | `ai_plays` | 하루, 게임 하나의 AI 대국 수 | 전부 |
 
 시각은 모두 한국 시간이고, `day`는 한국 날짜입니다. 서버의 운영자 화면과 같은 기준입니다.
@@ -111,7 +112,7 @@ go run ./cmd/dbexport -data ../analysis/data
 - 방문만 하고 대국을 두지 않은 사람: 방문 해시와 대국의 사람 id를 일부러 잇지 않습니다
 - 게스트가 계정을 만든 경우: 게스트 id(g_)와 계정 id(m_)가 이어지지 않습니다
 - AI 대국을 누가 몇 판 뒀는지: 날마다, 게임마다 수만 셉니다
-- 어디서(나라, 지역) 접속했는지: IP 주소를 모으지 않습니다
+- 나라보다 자세한 위치(도시, 지역): 나라만 알아내고 IP 주소는 남기지 않습니다
 
 ## 개인정보
 

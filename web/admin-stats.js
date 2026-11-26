@@ -1,4 +1,4 @@
-// 운영자 화면 위쪽의 통계: GET /api/admin/stats?days=N 의 숫자, 그래프, 많이 둔 게임, 표.
+// 운영자 화면 위쪽의 통계: GET /api/admin/stats?days=N 의 숫자, 그래프, 많이 둔 게임, 나라별 방문, 표.
 // 날짜는 한국 날짜이고 마지막 날이 오늘입니다 (서버 internal/admin/stats.go). 그래프는 라이브러리 없이 SVG로 그립니다.
 // 그래프 위에 마우스를 올리거나, 그래프에 초점을 두고 ←/→를 누르면 그날의 수가 보입니다. 같은 수는 "표로 보기"에도 있습니다.
 
@@ -367,6 +367,59 @@ function renderTop(gameName) {
   return list;
 }
 
+/** 나라별 방문에서 이름을 보이는 나라 수. 나머지는 한 줄로 묶습니다 */
+const MAX_COUNTRIES = 10;
+
+/** 나라 코드(KR) → 화면 언어의 나라 이름 (대한민국, South Korea) */
+function countryName(code) {
+  try {
+    return new Intl.DisplayNames([lang], { type: 'region' }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+/** 나라별 방문. 서버가 많은 나라부터 줍니다 (internal/admin/stats.go) */
+function renderCountries() {
+  const rows = stats.countries.slice(0, MAX_COUNTRIES).map((c) => [countryName(c.country), c.visitors]);
+  const rest = stats.countries.slice(MAX_COUNTRIES);
+  if (rest.length) rows.push([t('stats.countries.rest', { n: num(rest.length) }), rest.reduce((s, c) => s + c.visitors, 0)]);
+  if (stats.countryUnknown) rows.push([t('stats.countries.unknown'), stats.countryUnknown, 'muted']);
+
+  const out = [];
+  if (rows.length) {
+    const total = rows.reduce((s, [, n]) => s + n, 0);
+    const max = Math.max(...rows.map(([, n]) => n));
+    const list = el('ol', 'stat-top');
+    for (const [name, n, className = ''] of rows) {
+      const li = el('li', className);
+      const bar = el('span', 'stat-bar');
+      const fill = el('i');
+      fill.style.width = `${(n / max) * 100}%`;
+      bar.append(fill);
+      const pct = ((n / total) * 100).toLocaleString(lang, { maximumFractionDigits: 1 });
+      li.append(el('span', 'stat-game', name), bar, el('b', 'stat-count', t('stats.countries.count', { n: num(n), pct })));
+      list.append(li);
+    }
+    out.push(list);
+  } else {
+    out.push(el('p', 'empty', t('stats.countries.empty')));
+  }
+  let note = t('stats.countries.note');
+  if (stats.countriesSince && stats.countriesSince > stats.days[0].day) note += ` ${t('stats.countries.since', { date: longDay(stats.countriesSince) })}`;
+  if (!stats.geo) note += ` ${t('stats.countries.noGeo')}`;
+  out.push(el('p', 'stat-note', note));
+  // DB-IP의 라이선스(CC BY 4.0): 나라를 보여 주는 화면에 DB-IP로 가는 링크를 둡니다
+  const source = el('p', 'stat-note', `${t('stats.countries.source')} `);
+  const link = el('a', '', 'IP Geolocation by DB-IP');
+  link.href = 'https://db-ip.com';
+  link.rel = 'noopener';
+  link.target = '_blank';
+  source.append(link);
+  out.push(source);
+  return out;
+}
+
 const COLUMNS = [
   ['visitors', 'stats.s.visitors'], ['members', 'stats.s.members'], ['mau', 'stats.s.mau'], ['plays', 'stats.col.online'],
   ['aiPlays', 'stats.col.ai'], ['aiEnds', 'stats.col.aiEnds'], ['aiWins', 'stats.col.aiWins'],
@@ -418,6 +471,8 @@ export function renderStats(gameName) {
   section.querySelector('#stat-top-title').textContent = t('stats.top', { n: days });
   const top = section.querySelector('#stat-top');
   top.replaceChildren(stats.top.length ? renderTop(gameName) : el('p', 'empty', t('stats.top.empty')));
+  section.querySelector('#stat-countries-title').textContent = t('stats.countries', { n: days });
+  section.querySelector('#stat-countries').replaceChildren(...renderCountries());
   section.querySelector('#stat-table-label').textContent = t('stats.table');
   section.querySelector('#stat-table').replaceChildren(renderTable());
 }

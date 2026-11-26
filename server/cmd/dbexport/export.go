@@ -28,8 +28,9 @@ import (
 var schema string
 
 var (
-	dayLog  = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.log$`)
-	dayJSON = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.json$`)
+	dayLog      = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.log$`)
+	dayJSON     = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.json$`)
+	countryCode = regexp.MustCompile(`^[A-Z]{2}$`)
 )
 
 // Summary는 표마다 넣은 줄 수와 읽지 못해 건너뛴 파일입니다.
@@ -548,7 +549,7 @@ func (e *exporter) stars() error {
 	return e.insert("stars", []string{"game_id", "account_id"}, rows...)
 }
 
-// visits는 stats/visits/<날짜>.log입니다. 한 줄에 "m <해시>"(계정) 또는 "g <해시>"(게스트).
+// visits는 stats/visits/<날짜>.log입니다. 한 줄에 "m <해시> KR"(계정) 또는 "g <해시> KR"(게스트). 나라는 없을 수 있습니다.
 func (e *exporter) visits() error {
 	dir := filepath.Join(e.data, "stats", "visits")
 	files, err := dirEntries(dir)
@@ -562,31 +563,37 @@ func (e *exporter) visits() error {
 			continue
 		}
 		member := map[string]bool{}
+		country := map[string]string{}
 		var order []string
 		err := eachLine(filepath.Join(dir, f.Name()), func(_ int, data []byte) {
-			kind, h, ok := strings.Cut(strings.TrimSpace(string(data)), " ")
-			if !ok || h == "" {
+			fields := strings.Fields(string(data))
+			if len(fields) < 2 {
 				return
 			}
+			h := fields[1]
 			if _, seen := member[h]; !seen {
 				order = append(order, h)
 			}
-			member[h] = member[h] || kind == "m"
+			member[h] = member[h] || fields[0] == "m"
+			if len(fields) > 2 && country[h] == "" && countryCode.MatchString(fields[2]) {
+				country[h] = fields[2] // stats와 같이 그날 처음 나라
+			}
 		})
 		if err != nil {
 			return err
 		}
 		for _, h := range order {
-			rows = append(rows, []any{m[1], h, boolInt(member[h])})
+			rows = append(rows, []any{m[1], h, boolInt(member[h]), nullable(country[h])})
 		}
 	}
-	return e.insert("visits", []string{"day", "visitor", "member"}, rows...)
+	return e.insert("visits", []string{"day", "visitor", "member", "country"}, rows...)
 }
 
 // dailyVisits는 stats/days.jsonl입니다. 한 날이 두 번 있으면 나중 줄을 씁니다.
 func (e *exporter) dailyVisits() error {
 	file := filepath.Join(e.data, "stats", "days.jsonl")
 	byDay := map[string][]any{}
+	countries := map[string]map[string]int{}
 	err := eachLine(file, func(n int, data []byte) {
 		var v stats.Visits
 		if err := json.Unmarshal(data, &v); err != nil || v.Day == "" {
@@ -597,15 +604,24 @@ func (e *exporter) dailyVisits() error {
 			return
 		}
 		byDay[v.Day] = []any{v.Day, v.Visitors, v.Members, v.MAU, v.MAUMembers}
+		countries[v.Day] = v.Countries
 	})
 	if err != nil {
 		return err
 	}
-	rows := make([][]any, 0, len(byDay))
+	var rows, countryRows [][]any
 	for _, day := range slices.Sorted(maps.Keys(byDay)) {
 		rows = append(rows, byDay[day])
+		for _, c := range slices.Sorted(maps.Keys(countries[day])) {
+			if countryCode.MatchString(c) {
+				countryRows = append(countryRows, []any{day, c, countries[day][c]})
+			}
+		}
 	}
-	return e.insert("daily_visits", []string{"day", "visitors", "members", "mau", "mau_members"}, rows...)
+	if err := e.insert("daily_visits", []string{"day", "visitors", "members", "mau", "mau_members"}, rows...); err != nil {
+		return err
+	}
+	return e.insert("daily_countries", []string{"day", "country", "visitors"}, countryRows...)
 }
 
 // aiPlays는 stats/ai/<날짜>.json입니다 {"<게임>": stats.AICount}.

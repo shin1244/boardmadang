@@ -32,6 +32,21 @@ type Stats struct {
 	Accounts    int       `json:"accounts"` // 지금 있는 계정 수
 	Uploads     int       `json:"uploads"`  // 지금까지 올린 게임 수 (내린 게임 포함)
 	Top         []TopGame `json:"top"`      // 이 기간에 많이 둔 게임 (온라인 + AI, TopGames개까지)
+
+	// 이 기간의 나라별 방문 (많은 나라부터). 날마다 온 사람을 더한 수라 여러 날 온 사람은 그날 수만큼 들어갑니다
+	Countries []CountryVisits `json:"countries"`
+	// 그중 나라를 모르는 방문 (사설망 주소, 나라 파일이 없을 때). 나라를 세기 시작한 날(CountriesSince)부터만 셉니다
+	CountryUnknown int `json:"countryUnknown"`
+	// 기간 안에서 나라를 센 첫날. 그 앞 날의 방문은 나라별 수에 들어가지 않습니다. 나라를 센 날이 없으면 ""
+	CountriesSince string `json:"countriesSince"`
+	// 서버가 IP 주소로 나라를 알아낼 수 있는지 (GEO_FILE을 읽었는지, internal/geo)
+	Geo bool `json:"geo"`
+}
+
+// CountryVisits는 한 나라의 방문 수입니다.
+type CountryVisits struct {
+	Country  string `json:"country"` // ISO 3166-1 두 글자 (KR, US, …)
+	Visitors int    `json:"visitors"`
 }
 
 // DayStats는 하루의 수입니다.
@@ -62,7 +77,7 @@ type TopGame struct {
 func (h *Handler) Stats(n int) Stats {
 	today := stats.Day(h.now())
 	from := stats.AddDays(today, -(n - 1))
-	out := Stats{Today: today, Days: make([]DayStats, n), Top: []TopGame{}}
+	out := Stats{Today: today, Days: make([]DayStats, n), Top: []TopGame{}, Countries: []CountryVisits{}}
 	index := make(map[string]*DayStats, n)
 	for i := range out.Days {
 		d := &out.Days[i]
@@ -80,11 +95,31 @@ func (h *Handler) Stats(n int) Stats {
 	if h.Visits != nil {
 		visits, since := h.Visits.Range(n)
 		out.VisitsSince = since
+		out.Geo = h.Visits.Locate != nil
+		countries := make(map[string]int)
 		for _, v := range visits {
 			if d := index[v.Day]; d != nil {
 				d.Visitors, d.Members, d.MAU, d.MAUMembers = v.Visitors, v.Members, v.MAU, v.MAUMembers
 			}
+			if out.CountriesSince == "" && len(v.Countries) == 0 {
+				continue // 나라를 세기 전의 날 (Range는 오래된 날부터)
+			}
+			if out.CountriesSince == "" {
+				out.CountriesSince = v.Day
+			}
+			known := 0
+			for c, k := range v.Countries {
+				countries[c] += k
+				known += k
+			}
+			out.CountryUnknown += max(v.Visitors-known, 0)
 		}
+		for c, k := range countries {
+			out.Countries = append(out.Countries, CountryVisits{Country: c, Visitors: k})
+		}
+		slices.SortFunc(out.Countries, func(a, b CountryVisits) int {
+			return cmp.Or(cmp.Compare(b.Visitors, a.Visitors), cmp.Compare(a.Country, b.Country))
+		})
 		for day, games := range h.Visits.AIDaily(from) {
 			d := index[day]
 			if d == nil {

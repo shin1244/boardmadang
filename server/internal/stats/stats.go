@@ -7,11 +7,14 @@
 // MAU(최근 30일)를 세는 데 필요한 30일이 지나면 그날 파일을 지웁니다. 지우기 전에 그날의 수만 따로 남깁니다.
 // 게스트로 왔다가 그날 로그인한 사람은 게스트와 계정으로 두 번 셉니다.
 //
+// 어느 나라에서 왔는지도 셉니다 (Locate, internal/geo). IP 주소로 나라 코드만 알아내 남기고 IP 주소는 남기지 않습니다.
+// 그날 처음 왔을 때의 나라로 셉니다. 나라를 모르면(나라 파일이 없거나 사설망 주소) 나라 없이 셉니다.
+//
 // DATA_DIR 아래에 이렇게 씁니다.
 //
 //	stats/key                 해시 키. 처음 켤 때 만듭니다
-//	stats/visits/<날짜>.log   그날 온 사람마다 한 줄 "m <해시>"(계정) 또는 "g <해시>"(게스트). 30일 동안만
-//	stats/days.jsonl          끝난 날의 수 {"day":"2026-11-03","visitors":12,"members":3,"mau":40,"mauMembers":10}
+//	stats/visits/<날짜>.log   그날 온 사람마다 한 줄 "m <해시> KR"(계정) 또는 "g <해시> KR"(게스트). 나라를 모르면 나라 없이. 30일 동안만
+//	stats/days.jsonl          끝난 날의 수 {"day":"2026-11-03","visitors":12,"members":3,"mau":40,"mauMembers":10,"countries":{"KR":10,"US":1}}
 //	stats/ai/<날짜>.json      그날 게임마다의 AI 대국 수 (ai.go)
 package stats
 
@@ -23,7 +26,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"maps"
 	"net/http"
@@ -63,7 +65,19 @@ type Visits struct {
 	Members    int    `json:"members"`    // 그중 계정
 	MAU        int    `json:"mau"`        // 그날까지 Window일 동안 온 사람
 	MAUMembers int    `json:"mauMembers"` // 그중 계정
+	// 그날 온 사람의 나라별 수 (나라 코드 → 사람). 나라를 모르는 사람은 빠지므로 합이 Visitors보다 작을 수 있습니다.
+	// 나라를 세기 전의 날에는 없습니다
+	Countries map[string]int `json:"countries,omitempty"`
 }
+
+// visitor는 그날 온 한 사람입니다 (해시로만 압니다).
+type visitor struct {
+	member  bool
+	country string // 나라 코드. 모르면 ""
+}
+
+// countryCode는 나라 코드 모양(대문자 두 글자)인지입니다. 파일에서 읽은 값을 믿지 않고 봅니다.
+var countryCode = regexp.MustCompile(`^[A-Z]{2}$`)
 
 var (
 	dayFile = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.log$`)
@@ -73,14 +87,17 @@ var (
 
 // Tracker는 날마다 온 사람을 셉니다. 여러 고루틴에서 같이 써도 됩니다.
 type Tracker struct {
+	// Locate는 요청이 온 나라의 코드입니다 (모르면 ""). 없으면 나라를 세지 않습니다. 열고 나서 쓰기 전에 정합니다
+	Locate func(r *http.Request) string
+
 	dir string
 	key []byte
 	now func() time.Time // 테스트에서 시간을 바꾸려고 둡니다
 
 	mu     sync.Mutex
-	today  string                     // 마지막으로 본 날짜. 바뀌면 끝난 날을 정리합니다 (roll)
-	days   map[string]map[string]bool // 날짜 → 해시 → 계정인지. 최근 Window일
-	closed map[string]Visits          // 끝난 날의 수 (days.jsonl)
+	today  string                        // 마지막으로 본 날짜. 바뀌면 끝난 날을 정리합니다 (roll)
+	days   map[string]map[string]visitor // 날짜 → 해시 → 그 사람. 최근 Window일
+	closed map[string]Visits             // 끝난 날의 수 (days.jsonl)
 
 	ai      map[string]map[string]*AICount // 날짜 → 게임 → AI 대국 수 (ai.go). 지우지 않습니다
 	aiToday map[string]*aiPerson           // 오늘 사람(해시)마다 센 AI 대국. 날이 바뀌면 비웁니다
@@ -95,7 +112,7 @@ func open(dir string, now func() time.Time) (*Tracker, error) {
 	t := &Tracker{
 		dir:     filepath.Join(dir, "stats"),
 		now:     now,
-		days:    make(map[string]map[string]bool),
+		days:    make(map[string]map[string]visitor),
 		closed:  make(map[string]Visits),
 		ai:      make(map[string]map[string]*AICount),
 		aiToday: make(map[string]*aiPerson),
@@ -170,12 +187,18 @@ func (t *Tracker) loadVisits() error {
 		if err != nil {
 			return err
 		}
-		set := make(map[string]bool)
+		set := make(map[string]visitor)
 		for _, line := range strings.Split(string(data), "\n") {
-			kind, h, ok := strings.Cut(strings.TrimSpace(line), " ")
-			if ok && h != "" {
-				set[h] = set[h] || kind == "m"
+			f := strings.Fields(line)
+			if len(f) < 2 {
+				continue
 			}
+			v := set[f[1]]
+			v.member = v.member || f[0] == "m"
+			if len(f) > 2 && v.country == "" && countryCode.MatchString(f[2]) {
+				v.country = f[2]
+			}
+			set[f[1]] = v
 		}
 		t.days[m[1]] = set
 	}
@@ -218,10 +241,16 @@ func (t *Tracker) roll() {
 // count는 남아 있는 파일로 센 그날의 방문 수입니다. mu를 잡고 부릅니다.
 func (t *Tracker) count(day string) Visits {
 	v := Visits{Day: day}
-	for _, member := range t.days[day] {
+	for _, p := range t.days[day] {
 		v.Visitors++
-		if member {
+		if p.member {
 			v.Members++
+		}
+		if p.country != "" {
+			if v.Countries == nil {
+				v.Countries = make(map[string]int)
+			}
+			v.Countries[p.country]++
 		}
 	}
 	from := AddDays(day, -(Window - 1))
@@ -230,8 +259,8 @@ func (t *Tracker) count(day string) Visits {
 		if d < from || d > day {
 			continue
 		}
-		for h, member := range set {
-			seen[h] = seen[h] || member
+		for h, p := range set {
+			seen[h] = seen[h] || p.member
 		}
 	}
 	for _, member := range seen {
@@ -279,29 +308,43 @@ func (t *Tracker) Visit(r *http.Request, u identity.User) {
 	if u.ID == "" || botAgent.MatchString(r.UserAgent()) {
 		return
 	}
-	t.Seen(u.ID, u.IsMember())
+	country := ""
+	if t.Locate != nil {
+		country = t.Locate(r)
+	}
+	t.seen(u.ID, u.IsMember(), country)
 }
 
-// Seen은 id를 오늘 온 사람으로 셉니다. 오늘 이미 왔으면 아무것도 하지 않습니다.
+// Seen은 id를 오늘 온 사람으로 셉니다 (나라는 모름). 오늘 이미 왔으면 아무것도 하지 않습니다.
 func (t *Tracker) Seen(id string, member bool) {
+	t.seen(id, member, "")
+}
+
+func (t *Tracker) seen(id string, member bool, country string) {
+	if !countryCode.MatchString(country) {
+		country = ""
+	}
 	h := t.hash(id)
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.roll()
 	set := t.days[t.today]
 	if set == nil {
-		set = make(map[string]bool)
+		set = make(map[string]visitor)
 		t.days[t.today] = set
 	}
 	if _, ok := set[h]; ok {
 		return
 	}
-	set[h] = member
-	kind := "g"
+	set[h] = visitor{member: member, country: country}
+	line := "g " + h
 	if member {
-		kind = "m"
+		line = "m " + h
 	}
-	if err := appendText(t.visitFile(t.today), fmt.Sprintf("%s %s\n", kind, h)); err != nil {
+	if country != "" {
+		line += " " + country
+	}
+	if err := appendText(t.visitFile(t.today), line+"\n"); err != nil {
 		log.Printf("방문을 남기지 못했습니다: %v", err)
 	}
 }

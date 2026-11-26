@@ -108,14 +108,14 @@
           <li><b>계정</b>: 로그인한 곳(Google 또는 GitHub)과 그곳의 사용자 번호, 보드마당에서 정한 이름(바꾸기 전 이름 포함),
             가입하고 이름을 바꾼 때, 정지 기록. 이메일과 프로필 사진은 저장하지 않습니다. 로그인한 곳의 이름은 이름 칸의 처음 값으로만 씁니다.</li>
           <li><b>게스트</b>: 브라우저마다 만든 게스트 번호</li>
-          <li><b>방문</b>: 사이트를 연 날짜와, 계정이나 게스트 번호 대신 서버만 아는 키로 만든 해시. 하루 방문자 수를 세는 데만 씁니다.</li>
+          <li><b>방문</b>: 사이트를 연 날짜, 계정이나 게스트 번호 대신 서버만 아는 키로 만든 해시, 접속한 나라. 하루 방문자 수와 나라별 방문자 수를 세는 데만 씁니다.</li>
           <li><b>AI 대국</b>: 게임과 날짜마다 AI와 둔 판 수와 결과(이김, 짐, 비김)의 수. 누가 뒀는지는 남기지 않습니다.</li>
           <li><b>기보</b>: 두 사람의 계정이나 게스트 번호와 이름, 둔 수, 결과, 시각. 대국 주소를 아는 사람은 누구나 다시볼 수 있습니다.</li>
           <li><b>의견과 신고</b>: 쓴 글, 쓴 계정, 시각. 신고는 신고한 계정과 사유</li>
           <li><b>즐겨찾기</b>: 별을 단 게임과 계정. 게임마다 별 수만 공개합니다</li>
           <li><b>올린 게임</b>: 코드, 등록 정보, 올린 계정, 클리어 기보</li>
           <li><b>운영 기록</b>: 운영자가 한 조치와 메모</li>
-          <li>IP 주소는 따로 모으지 않습니다. 다만 서버의 오류 기록에 잠시 남을 수 있습니다.</li>
+          <li>IP 주소는 저장하지 않습니다. 방문을 셀 때 IP 주소로 나라만 알아내고(DB-IP의 자료를 서버 안에서 찾아 봅니다. 외부로 보내지 않습니다) IP 주소는 바로 버립니다. 다만 서버의 오류 기록에 잠시 남을 수 있습니다.</li>
         </ul>
         <h3>쿠키와 브라우저 저장소</h3>
         <p>로그인 상태를 기억하는 쿠키(<code>bm_session</code>, 최대 180일)와 로그인하는 동안에만 쓰는 쿠키가 있습니다.
@@ -149,14 +149,14 @@
             when you signed up and changed your name, and suspensions. We don't store your email or profile picture. Your name from the login provider
             is only used to prefill the name field.</li>
           <li><b>Guests</b>: a guest number made for each browser</li>
-          <li><b>Visits</b>: the days you opened the site, with a hash of your account or guest number made with a key only the server knows. Used only to count daily visitors.</li>
+          <li><b>Visits</b>: the days you opened the site, a hash of your account or guest number made with a key only the server knows, and the country you visited from. Used only to count daily visitors and visitors by country.</li>
           <li><b>Games against the AI</b>: for each game and day, how many games were played against the AI and how they ended (won, lost, drawn). We don't keep who played.</li>
           <li><b>Match records</b>: both players' account or guest numbers and names, the moves, the result, and the time. Anyone with a match's address can replay it.</li>
           <li><b>Comments and reports</b>: what you wrote, your account, and the time. For reports, the reporting account and the reason</li>
           <li><b>Stars</b>: which games you starred, with your account. Only the number of stars per game is public</li>
           <li><b>Uploaded games</b>: the code, the listing, the uploading account, and the clear replay</li>
           <li><b>Moderation log</b>: what moderators did and their notes</li>
-          <li>We don't collect IP addresses, though they may briefly appear in the server's error logs.</li>
+          <li>We don't store IP addresses. When counting a visit we look up only the country from the IP address (in DB-IP data kept on our server; it isn't sent anywhere) and then discard the address. IP addresses may briefly appear in the server's error logs.</li>
         </ul>
         <h3>Cookies and browser storage</h3>
         <p>One cookie remembers your login (<code>bm_session</code>, up to 180 days), and others are used only while you log in.

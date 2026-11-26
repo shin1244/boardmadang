@@ -199,3 +199,18 @@ FROM matches
 WHERE counted = 1
 GROUP BY weekday
 ORDER BY weekday;
+
+
+-- 15. 어디서 오나: 나라별 방문 ---------------------------------------------------
+-- 하루에 한 번씩 센 방문을 나라별로 더합니다 (운영자 화면과 같은 기준). 나라를 세기 시작한 날부터 있습니다.
+SELECT country, sum(visitors) AS visits, count(DISTINCT day) AS days
+FROM daily_countries
+GROUP BY country
+ORDER BY visits DESC;
+
+-- 15-1. 최근 30일, 나라별로 서로 다른 사람 수 (visits는 30일만 있습니다)
+-- 날마다 다른 나라에서 온 사람(여행, VPN)은 두 나라에 다 들어갑니다.
+SELECT coalesce(country, '알 수 없음') AS country, count(DISTINCT visitor) AS people, count(*) AS visits
+FROM visits
+GROUP BY country
+ORDER BY people DESC;

@@ -115,6 +115,7 @@ CREATE TABLE visits (
   day     TEXT NOT NULL,
   visitor TEXT NOT NULL,
   member  INTEGER NOT NULL,               -- 그날 계정으로 왔는지
+  country TEXT,                           -- 그날 처음 왔을 때의 나라 (KR, US, …). 모르면 NULL
   PRIMARY KEY (day, visitor)
 );
 
@@ -125,6 +126,14 @@ CREATE TABLE daily_visits (
   members     INTEGER NOT NULL,           -- 그중 계정
   mau         INTEGER NOT NULL,           -- 그날까지 30일 동안 온 사람
   mau_members INTEGER NOT NULL
+);
+
+-- 끝난 날의 나라별 방문 수. 나라를 세기 시작한 날부터 있습니다. 나라를 모르는 사람은 빠집니다
+CREATE TABLE daily_countries (
+  day      TEXT NOT NULL,
+  country  TEXT NOT NULL,                 -- KR, US, …
+  visitors INTEGER NOT NULL,
+  PRIMARY KEY (day, country)
 );
 
 -- 날마다, 게임마다 AI 대국 수. 브라우저에서만 돌아서 기보는 없고 수만 있습니다
