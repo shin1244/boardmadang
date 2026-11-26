@@ -1,4 +1,4 @@
-// 운영자 화면 위쪽의 통계: GET /api/admin/stats?days=N 의 숫자, 그래프, 많이 둔 게임, 나라별 방문, 표.
+// 운영자 화면 위쪽의 통계: GET /api/admin/stats?days=N 의 숫자, 그래프, 많이 둔 게임, 나라별 방문, 다시 오는 사람(리텐션), 표.
 // 날짜는 한국 날짜이고 마지막 날이 오늘입니다 (서버 internal/admin/stats.go). 그래프는 라이브러리 없이 SVG로 그립니다.
 // 그래프 위에 마우스를 올리거나, 그래프에 초점을 두고 ←/→를 누르면 그날의 수가 보입니다. 같은 수는 "표로 보기"에도 있습니다.
 
@@ -113,9 +113,10 @@ const tickText = (v) => (v >= 10000 ? new Intl.NumberFormat(lang, { notation: 'c
 
 // ---- 숫자 칸 ----
 
+/** 숫자 칸 하나. value가 글자면 그대로 씁니다 (비율 등) */
 function tile(label, value, sub) {
   const box = el('div', 'stat-tile');
-  box.append(el('span', 'stat-label', label), el('b', 'stat-value', num(value)), el('span', 'stat-sub', sub));
+  box.append(el('span', 'stat-label', label), el('b', 'stat-value', typeof value === 'string' ? value : num(value)), el('span', 'stat-sub', sub));
   return box;
 }
 
@@ -435,29 +436,125 @@ function renderCountries() {
   return out;
 }
 
-const COLUMNS = [
-  ['visitors', 'stats.s.visitors'], ['members', 'stats.s.members'], ['mau', 'stats.s.mau'], ['plays', 'stats.col.online'],
-  ['aiPlays', 'stats.col.ai'], ['aiEnds', 'stats.col.aiEnds'], ['aiWins', 'stats.col.aiWins'],
-  ['newGames', 'stats.s.new'], ['updates', 'stats.s.updates'], ['signups', 'stats.s.signups'],
-];
+// ---- 표 ----
 
-function renderTable() {
-  const table = el('table', 'stat-table');
-  const head = el('tr');
-  head.append(el('th', '', t('stats.col.day')), ...COLUMNS.map(([, key]) => el('th', '', t(key))));
-  table.append(el('thead'), el('tbody'));
-  table.tHead.append(head);
-  const since = stats.visitsSince;
-  for (const d of [...stats.days].reverse()) {
-    const tr = el('tr');
-    tr.append(el('th', '', longDay(d.day)));
-    for (const [key] of COLUMNS) {
-      const unknown = ['visitors', 'members', 'mau'].includes(key) && !(since && d.day >= since);
-      tr.append(el('td', '', unknown ? '–' : num(d[key])));
+/** 표의 날짜 칸: 짧은 날짜와 요일. 올해가 아니면 연도도 씁니다 */
+function dayCell(day) {
+  const d = new Date(`${day}T12:00:00+09:00`);
+  const sameYear = day.slice(0, 4) === stats.today.slice(0, 4);
+  const date = d.toLocaleDateString(lang, { year: sameYear ? undefined : 'numeric', month: 'short', day: 'numeric', timeZone: 'Asia/Seoul' });
+  const th = el('th', 'stat-day', date);
+  th.scope = 'row';
+  th.append(' ', el('span', 'stat-weekday', d.toLocaleDateString(lang, { weekday: 'short', timeZone: 'Asia/Seoul' })));
+  if (day === stats.today) th.append(' ', el('span', 'stat-today', t('stats.today')));
+  return th;
+}
+
+/**
+ * 숫자 칸. 0은 흐리게, 모르거나 아직 셀 수 없는 값(null)은 –로.
+ * pct를 주면 숫자 옆에 비율을 작게 붙입니다. 0이나 –여도 그 자리를 비워 두어 숫자의 세로줄이 맞습니다
+ */
+function numCell(v, pct) {
+  const td = v == null ? el('td', 'none', '–') : el('td', v === 0 ? 'zero' : '', num(v));
+  if (pct !== undefined) td.append(el('span', 'stat-pct', v ? pct : ''));
+  return td;
+}
+
+const percent = (n, of) => (of ? `${Math.round((n / of) * 100).toLocaleString(lang)}%` : '');
+
+/**
+ * 날짜를 줄로 둔 표. groups는 [묶음 이름 키, [[칸 이름 키, 줄 → 칸]]]이고, 묶음 이름이 있으면 머리글이 두 줄입니다.
+ * rows는 위에서부터 보일 순서 (최근 날부터). narrow면 칸이 적은 표라 화면 폭에 맞춰 늘리지 않습니다
+ */
+function dayTable(groups, rows, { narrow = false } = {}) {
+  const table = el('table', narrow ? 'stat-table narrow' : 'stat-table');
+  const head = table.createTHead();
+  const grouped = groups.some(([label]) => label);
+  const top = head.insertRow();
+  const corner = el('th', 'stat-corner', t('stats.col.day'));
+  corner.scope = 'col';
+  top.append(corner);
+  const sub = grouped ? head.insertRow() : top;
+  if (grouped) corner.rowSpan = 2;
+  for (const [label, cols] of groups) {
+    if (grouped) {
+      const g = el('th', 'stat-group group-start', t(label));
+      g.colSpan = cols.length;
+      g.scope = 'colgroup';
+      top.append(g);
     }
-    table.tBodies[0].append(tr);
+    cols.forEach(([key], i) => {
+      const th = el('th', i === 0 && grouped ? 'group-start' : '', t(key));
+      th.scope = 'col';
+      sub.append(th);
+    });
+  }
+  const body = table.createTBody();
+  for (const row of rows) {
+    const tr = body.insertRow();
+    if (row.day === stats.today) tr.className = 'today';
+    tr.append(dayCell(row.day));
+    for (const [, cols] of groups) {
+      cols.forEach(([, cell], i) => {
+        const td = cell(row);
+        if (i === 0 && grouped) td.classList.add('group-start');
+        tr.append(td);
+      });
+    }
   }
   return table;
+}
+
+/** 기보와 등록 기록에서 세는 칸. 방문 칸은 세기 시작한 날부터만 있습니다 */
+const COUNTS = ['plays', 'aiPlays', 'aiEnds', 'aiWins', 'newGames', 'updates', 'signups'];
+
+/** "표로 보기": 날마다의 수. 방문을 세기 전이고 아무 기록도 없는 날은 뺍니다 (위 그래프 아래에 세기 시작한 날이 있습니다) */
+function renderTable() {
+  const since = stats.visitsSince;
+  const counted = (d) => since && d.day >= since;
+  const visit = (key) => (d) => numCell(counted(d) ? d[key] : null);
+  const count = (key) => (d) => numCell(d[key]);
+  const rows = [...stats.days].reverse().filter((d) => counted(d) || COUNTS.some((k) => d[k] > 0));
+  return dayTable([
+    ['stats.g.visits', [['stats.s.all', visit('visitors')], ['stats.c.members', visit('members')], ['stats.s.mau', visit('mau')]]],
+    ['stats.g.plays', [['stats.s.online', count('plays')], ['stats.s.ai', count('aiPlays')]]],
+    ['stats.g.ai', [['stats.c.ends', count('aiEnds')], ['stats.c.wins', count('aiWins')]]],
+    ['stats.g.growth', [['stats.c.new', count('newGames')], ['stats.c.updates', count('updates')], ['stats.s.signups', count('signups')]]],
+  ], rows);
+}
+
+// ---- 리텐션 ----
+
+/** 셀 수 있는 날의 묶음만 더한 비율 {n, of}. 다음 날이 아직 안 온 묶음은 다음 날 비율에 넣지 않습니다 */
+function retentionSum(pick, usable) {
+  const rows = stats.retention.filter(usable);
+  return { n: rows.reduce((s, c) => s + pick(c), 0), of: rows.reduce((s, c) => s + c.new, 0) };
+}
+
+/** 오늘 처음 온 사람은 아직 다시 올 날이 없으므로 "다시 옴"을 셀 수 없습니다 */
+const returned = (c) => (c.day === stats.today ? null : c.returned);
+
+/** 다시 오는 사람: 요약 숫자 세 개와 설명. 날마다 표는 renderRetentionTable */
+function renderRetention() {
+  if (!stats.retention.length) return [el('p', 'empty', t('stats.ret.empty'))];
+  const box = (label, { n, of }) => tile(t(label), of ? percent(n, of) : '–', of ? t('stats.ret.of', { n: num(n), of: num(of) }) : t('stats.ret.notYet'));
+  const tiles = el('div', 'stat-tiles');
+  tiles.append(
+    box('stats.ret.d1', retentionSum((c) => c.d1, (c) => c.d1 != null)),
+    box('stats.ret.d7', retentionSum((c) => c.d7, (c) => c.d7 != null)),
+    box('stats.ret.back', retentionSum((c) => c.returned, (c) => returned(c) != null)),
+  );
+  return [tiles, el('p', 'stat-note', t('stats.ret.note'))];
+}
+
+function renderRetentionTable() {
+  const share = (pick) => (c) => numCell(pick(c), c.new ? percent(pick(c) ?? 0, c.new) : '');
+  return dayTable([['', [
+    ['stats.ret.new', (c) => numCell(c.new)],
+    ['stats.ret.c.d1', share((c) => c.d1)],
+    ['stats.ret.c.d7', share((c) => c.d7)],
+    ['stats.ret.c.back', share(returned)],
+  ]]], [...stats.retention].reverse(), { narrow: true });
 }
 
 // ---- 그리기 ----
@@ -488,6 +585,11 @@ export function renderStats(gameName) {
   top.replaceChildren(stats.top.length ? renderTop(gameName) : el('p', 'empty', t('stats.top.empty')));
   section.querySelector('#stat-countries-title').textContent = t('stats.countries', { n: days });
   section.querySelector('#stat-countries').replaceChildren(...renderCountries());
+  section.querySelector('#stat-ret-title').textContent = t('stats.ret', { n: days });
+  section.querySelector('#stat-ret').replaceChildren(...renderRetention());
+  section.querySelector('#stat-ret-label').textContent = t('stats.ret.table');
+  section.querySelector('#stat-ret-table').replaceChildren(stats.retention.length ? renderRetentionTable() : '');
+  section.querySelector('#stat-ret-label').parentElement.hidden = !stats.retention.length;
   section.querySelector('#stat-table-label').textContent = t('stats.table');
   section.querySelector('#stat-table').replaceChildren(renderTable());
 }

@@ -148,7 +148,7 @@ func TestStatsCountries(t *testing.T) {
 	}
 	f.h.Visits = visits
 
-	if _, st := f.stats(t, "", &f.boss); st.Geo || len(st.Countries) != 2 || st.CountryUnknown != 1 {
+	if _, st := f.stats(t, "", &f.boss); st.Geo || len(st.Countries) != 2 || st.CountryUnknown != 1 || st.Retention == nil {
 		t.Fatalf("나라 파일 없음: %+v %d %v", st.Countries, st.CountryUnknown, st.Geo)
 	}
 	visits.Locate = func(*http.Request) string { return "US" }

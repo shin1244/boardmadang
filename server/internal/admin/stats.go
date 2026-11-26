@@ -41,6 +41,8 @@ type Stats struct {
 	CountriesSince string `json:"countriesSince"`
 	// 서버가 IP 주소로 나라를 알아낼 수 있는지 (GEO_FILE을 읽었는지, internal/geo)
 	Geo bool `json:"geo"`
+	// 날마다 새로 온 사람이 다시 왔는지 (리텐션, 오래된 날부터). 방문 기록이 30일만 남아 그 안에서 셉니다 (stats.Tracker.Retention)
+	Retention []stats.Cohort `json:"retention"`
 }
 
 // CountryVisits는 한 나라의 방문 수입니다.
@@ -77,7 +79,7 @@ type TopGame struct {
 func (h *Handler) Stats(n int) Stats {
 	today := stats.Day(h.now())
 	from := stats.AddDays(today, -(n - 1))
-	out := Stats{Today: today, Days: make([]DayStats, n), Top: []TopGame{}, Countries: []CountryVisits{}}
+	out := Stats{Today: today, Days: make([]DayStats, n), Top: []TopGame{}, Countries: []CountryVisits{}, Retention: []stats.Cohort{}}
 	index := make(map[string]*DayStats, n)
 	for i := range out.Days {
 		d := &out.Days[i]
@@ -96,6 +98,7 @@ func (h *Handler) Stats(n int) Stats {
 		visits, since := h.Visits.Range(n)
 		out.VisitsSince = since
 		out.Geo = h.Visits.Locate != nil
+		out.Retention = h.Visits.Retention(n)
 		countries := make(map[string]int)
 		for _, v := range visits {
 			if d := index[v.Day]; d != nil {
