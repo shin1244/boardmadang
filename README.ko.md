@@ -104,6 +104,7 @@ python trainer/train.py games/tictactoe --minutes 5
 | [`sdk/`](sdk/README.ko.md) | npm 패키지 `boardmadang`: API 타입, 플레이그라운드, 검사 | MIT |
 | [`games/`](games) | 예제 게임 (틱택토) | MIT |
 | [`trainer/`](trainer/README.md) | AlphaZero 방식 AI 학습 | MIT |
+| [`analysis/`](analysis/README.md) | 운영 데이터를 SQLite로 옮겨 분석하기 | AGPL-3.0 |
 | [`docs/`](docs) | 설계 문서 | |
 
 ## 내 컴퓨터에서 실행

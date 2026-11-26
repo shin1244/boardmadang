@@ -6,6 +6,12 @@
 # 공개하지 않는 게임 — 이 폴더는 깃허브에 올라가지 않습니다.
 /games/private/
 
+# 분석용으로 받아 온 운영 데이터와 만든 SQLite 파일 (analysis/README.md). 실제 이용자의 정보입니다
+/analysis/data/
+/analysis/*.tgz
+/analysis/*.db
+/analysis/*.db.tmp
+
 # Go
 /server/bin/
 # 개발 서버가 저장한 기보 (DATA_DIR 기본값)

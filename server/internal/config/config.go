@@ -18,6 +18,9 @@ type Config struct {
 	DataDir string
 	// 화면(web/)과 게임 코드(games/)가 있는 폴더, 곧 레포 루트 (internal/site). 비어 있으면 ..(server 폴더에서 켠 기준).
 	SiteDir string
+	// IP 주소로 나라를 알아내는 DB-IP의 나라 파일(.csv.gz, internal/geo). 운영자 화면의 나라별 방문 수에 씁니다.
+	// 도커 이미지에는 빌드할 때 받아 넣습니다. 비어 있거나 못 읽으면 나라 없이 셉니다.
+	GeoFile string
 
 	// 브라우저가 보는 사이트 주소 (https://boardmadang.com). 소셜 로그인에서 돌아올 주소를 만듭니다.
 	// 비어 있으면 요청의 Host로 만듭니다.
@@ -38,6 +41,7 @@ func Load() Config {
 		SessionSecret: os.Getenv("SESSION_SECRET"),
 		DataDir:       os.Getenv("DATA_DIR"),
 		SiteDir:       os.Getenv("SITE_DIR"),
+		GeoFile:       os.Getenv("GEO_FILE"),
 		PublicURL:     os.Getenv("PUBLIC_URL"),
 
 		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),

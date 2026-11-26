@@ -104,9 +104,12 @@ GCP 프로젝트 `boardmadang`에 이렇게 놓았습니다. gcloud의 기본 �
    `encode`는 브라우저가 받을 수 있으면 응답을 zstd나 gzip으로 압축합니다. 브라우저 AI의 onnxruntime-web WebAssembly가
    14.8 MB에서 3.8 MB쯤으로, 화면의 JS와 CSS는 3~4분의 1로 줄어듭니다. 이미 압축된 그림 파일은 건드리지 않습니다.
    Caddy는 웹소켓을 그대로 넘기고, `X-Forwarded-Proto: https`를 붙여 줍니다. 서버는 이것을 보고 쿠키에 `Secure`를 붙입니다.
+   방문자의 IP 주소는 `X-Forwarded-For`로 넘겨 줍니다. 서버는 이것으로 나라만 알아내 방문 통계에 씁니다 (`internal/geo`).
    Host도 그대로 넘기므로 웹소켓의 같은 출처 확인이 통과합니다 (`ALLOWED_ORIGINS`는 비워 둡니다).
 4. **서버 환경변수**: `startup.sh`가 `PUBLIC_URL=https://boardmadang.com`과 Secret Manager의 비밀값으로 만듭니다.
-   `DATA_DIR`, `SITE_DIR`은 이미지에 정해져 있습니다. `DEV_LOGIN`은 넣지 않습니다.
+   `DATA_DIR`, `SITE_DIR`, `GEO_FILE`은 이미지에 정해져 있습니다. `DEV_LOGIN`은 넣지 않습니다.
+   `GEO_FILE`(DB-IP의 나라 파일)은 이미지를 만들 때마다 그달 것을 받으므로, 배포가 오래 없으면 그만큼 오래된 자료를 씁니다.
+   나라 단위라 몇 달 지나도 거의 그대로입니다. 받지 못한 빌드는 서버 로그와 운영자 화면에 나라를 세지 않는다고 나옵니다.
 5. **소셜 로그인**: 운영용 OAuth 앱은 개발용과 따로 둡니다.
    - GitHub: 새 OAuth App. Homepage `https://boardmadang.com`, callback `https://boardmadang.com/auth/github/callback`
    - Google: 웹 클라이언트에 리디렉션 URI `https://boardmadang.com/auth/google/callback`을 더합니다.

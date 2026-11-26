@@ -18,6 +18,7 @@ import (
 	"github.com/shin1244/boardmadang/server/internal/auth"
 	"github.com/shin1244/boardmadang/server/internal/comment"
 	"github.com/shin1244/boardmadang/server/internal/config"
+	"github.com/shin1244/boardmadang/server/internal/geo"
 	"github.com/shin1244/boardmadang/server/internal/hub"
 	"github.com/shin1244/boardmadang/server/internal/identity"
 	"github.com/shin1244/boardmadang/server/internal/record"
@@ -73,6 +74,9 @@ func main() {
 		log.Fatalf("방문 기록을 읽지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
 	}
 	ids.OnMe = visits.Visit
+	if countries := openGeo(cfg.GeoFile); countries != nil {
+		visits.Locate = func(r *http.Request) string { return countries.Country(geo.ClientIP(r)) }
+	}
 	var pages *site.Site // 아래에서 엽니다
 	models, err := ai.Open(cfg.DataDir)
 	if err != nil {
@@ -129,6 +133,21 @@ func main() {
 	}
 	records.Close() // 쓰는 중인 기보를 마저 씁니다
 	// TODO: 진행 중인 방에 종료를 알리고 기보로 남기기 (docs/deploy-gcp.md 참고)
+}
+
+// openGeo는 방문의 나라를 세는 나라 파일을 엽니다 (internal/geo). 없거나 못 읽으면 nil이고 나라 없이 셉니다.
+func openGeo(file string) *geo.DB {
+	if file == "" {
+		log.Println("GEO_FILE이 없어 방문의 나라를 세지 않습니다")
+		return nil
+	}
+	db, err := geo.Open(file)
+	if err != nil {
+		log.Printf("경고: 나라 파일을 읽지 못해 방문의 나라를 세지 않습니다 (GEO_FILE): %v", err)
+		return nil
+	}
+	log.Printf("나라 파일: IP 범위 %d칸 (%s)", db.Len(), file)
+	return db
 }
 
 // sessionSecret은 세션 토큰 서명 비밀값입니다. 없으면 임시 값을 만듭니다 (개발용).

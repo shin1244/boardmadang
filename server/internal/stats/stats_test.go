@@ -1,9 +1,11 @@
 package stats
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -102,7 +104,7 @@ func TestDaysAndMAU(t *testing.T) {
 		{Day: "2026-11-04", Visitors: 1, MAU: 4, MAUMembers: 2},
 	}
 	for i := range want {
-		if out[i] != want[i] {
+		if !reflect.DeepEqual(out[i], want[i]) {
 			t.Fatalf("day %d = %+v, want %+v", i, out[i], want[i])
 		}
 	}
@@ -111,7 +113,7 @@ func TestDaysAndMAU(t *testing.T) {
 	tr2, _ := open(dir, c.now)
 	out2, _ := tr2.Range(5)
 	for i := range want {
-		if out2[i] != want[i] {
+		if !reflect.DeepEqual(out2[i], want[i]) {
 			t.Fatalf("after restart day %d = %+v, want %+v", i, out2[i], want[i])
 		}
 	}
@@ -136,7 +138,7 @@ func TestOldDaysAreDeleted(t *testing.T) {
 	}
 	// 지운 날의 수는 남습니다
 	out, since := tr.Range(31)
-	if since != "2026-10-01" || out[0] != (Visits{Day: "2026-10-01", Visitors: 1, Members: 1, MAU: 1, MAUMembers: 1}) {
+	if since != "2026-10-01" || !reflect.DeepEqual(out[0], Visits{Day: "2026-10-01", Visitors: 1, Members: 1, MAU: 1, MAUMembers: 1}) {
 		t.Fatalf("closed day: %q %+v", since, out[0])
 	}
 	// 같은 사람이 다시 와도 새로 셉니다
@@ -169,7 +171,58 @@ func TestNothingYet(t *testing.T) {
 	c := &clock{kst("2026-11-04 09:00")}
 	tr, _ := open(t.TempDir(), c.now)
 	out, since := tr.Range(3)
-	if since != "" || len(out) != 3 || out[2] != (Visits{Day: "2026-11-04"}) || out[0].Day != "2026-11-02" {
+	if since != "" || len(out) != 3 || !reflect.DeepEqual(out[2], Visits{Day: "2026-11-04"}) || out[0].Day != "2026-11-02" {
 		t.Fatalf("empty: %q %+v", since, out)
+	}
+}
+
+// 나라는 그날 처음 왔을 때의 나라로 세고, 끝난 날의 수(days.jsonl)와 다시 켠 뒤에도 남습니다. IP 주소는 어디에도 남지 않습니다.
+func TestCountries(t *testing.T) {
+	dir := t.TempDir()
+	c := &clock{kst("2026-11-01 10:00")}
+	tr, _ := open(dir, c.now)
+	from := map[string]string{"1.1.1.1": "KR", "2.2.2.2": "US", "3.3.3.3": "kr", "4.4.4.4": ""}
+	tr.Locate = func(r *http.Request) string { return from[r.RemoteAddr] }
+	visit := func(ip, id string) {
+		r := httptest.NewRequest("GET", "/api/me", nil)
+		r.RemoteAddr = ip
+		tr.Visit(r, identity.User{ID: id, Kind: identity.KindGuest})
+	}
+	visit("1.1.1.1", "g_1")
+	visit("2.2.2.2", "g_1") // 그날 두 번째는 세지 않으므로 KR 그대로
+	visit("2.2.2.2", "g_2")
+	visit("3.3.3.3", "g_3") // 나라 코드 모양이 아니면 모름
+	visit("4.4.4.4", "g_4") // 모름
+	tr.Seen("m_alice", true)
+	want := map[string]int{"KR": 1, "US": 1}
+	if got := last(t, tr, 1); got.Visitors != 5 || !reflect.DeepEqual(got.Countries, want) {
+		t.Fatalf("today = %+v", got)
+	}
+
+	c.t = kst("2026-11-02 10:00")
+	visit("2.2.2.2", "g_1")
+	out, _ := tr.Range(2)
+	if !reflect.DeepEqual(out[0].Countries, want) || !reflect.DeepEqual(out[1].Countries, map[string]int{"US": 1}) {
+		t.Fatalf("Range = %+v", out)
+	}
+	days, _ := os.ReadFile(filepath.Join(dir, "stats", "days.jsonl"))
+	if !strings.Contains(string(days), `"countries":{"KR":1,"US":1}`) {
+		t.Errorf("days.jsonl = %s", days)
+	}
+	for _, f := range []string{"stats/days.jsonl", "stats/visits/2026-11-01.log", "stats/visits/2026-11-02.log"} {
+		data, _ := os.ReadFile(filepath.Join(dir, f))
+		if strings.Contains(string(data), "1.1.1.1") || strings.Contains(string(data), "2.2.2.2") {
+			t.Errorf("%s에 IP 주소가 남았습니다: %s", f, data)
+		}
+	}
+
+	// 다시 켜면 오늘 파일에서 나라를 다시 읽습니다. 예전 모양(나라 없는 줄)과 깨진 나라도 읽습니다
+	file := filepath.Join(dir, "stats", "visits", "2026-11-02.log")
+	f, _ := os.OpenFile(file, os.O_APPEND|os.O_WRONLY, 0o644)
+	f.WriteString("g 0123456789abcdef\ng fedcba9876543210 <script>\n")
+	f.Close()
+	tr2, _ := open(dir, c.now)
+	if got := last(t, tr2, 1); got.Visitors != 3 || !reflect.DeepEqual(got.Countries, map[string]int{"US": 1}) {
+		t.Fatalf("after restart = %+v", got)
 	}
 }
