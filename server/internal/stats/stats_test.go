@@ -250,3 +250,57 @@ func TestCountryFilledLater(t *testing.T) {
 		t.Fatalf("after restart = %+v", got)
 	}
 }
+
+// 리텐션: 기록이 남은 첫 7일 뒤부터, 그날 처음 온 사람이 다음 날, 7일째, 언제든 다시 왔는지 셉니다
+func TestRetention(t *testing.T) {
+	dir := t.TempDir()
+	c := &clock{kst("2026-10-25 10:00")}
+	tr, _ := open(dir, c.now)
+	tr.Seen("g_old", false) // 기록의 첫날에 온 사람: 11월 1일에 다시 와도 새로 온 사람이 아님
+	if got := tr.Retention(30); len(got) != 0 {
+		t.Fatalf("기록이 7일 안 됐는데 %+v", got)
+	}
+	at := func(day string, ids ...string) {
+		c.t = kst(day + " 12:00")
+		for _, id := range ids {
+			tr.Seen(id, strings.HasPrefix(id, "m_"))
+		}
+	}
+	at("2026-11-01", "g_old", "g_a", "m_b")
+	at("2026-11-02", "g_a")
+	at("2026-11-08", "m_b", "g_c")
+	at("2026-11-09", "g_a", "g_c")
+
+	ptr := func(n int) *int { return &n }
+	want := map[string]Cohort{
+		"2026-11-01": {Day: "2026-11-01", New: 2, D1: ptr(1), D7: ptr(1), Returned: 2},
+		"2026-11-02": {Day: "2026-11-02", New: 0, D1: ptr(0), D7: ptr(0), Returned: 0},
+		"2026-11-08": {Day: "2026-11-08", New: 1, D1: ptr(1), D7: nil, Returned: 1}, // 9일이 오늘: 지금까지
+		"2026-11-09": {Day: "2026-11-09", New: 0, D1: nil, D7: nil, Returned: 0},
+	}
+	got := tr.Retention(30)
+	if len(got) != 9 || got[0].Day != "2026-11-01" || got[8].Day != "2026-11-09" {
+		t.Fatalf("days: %d %+v", len(got), got)
+	}
+	for _, g := range got {
+		if w, ok := want[g.Day]; ok && !reflect.DeepEqual(g, w) {
+			t.Errorf("%s = %+v (d1 %v d7 %v), want %+v", g.Day, g, deref(g.D1), deref(g.D7), w)
+		}
+	}
+	// 짧은 기간을 봐도 새로 온 사람은 앞의 기록 전체로 가립니다
+	if short := tr.Retention(2); len(short) != 2 || !reflect.DeepEqual(short[0], want["2026-11-08"]) {
+		t.Fatalf("Retention(2) = %+v", short)
+	}
+	// 다시 켜도 같습니다 (방문 파일에서 읽음)
+	tr2, _ := open(dir, c.now)
+	if again := tr2.Retention(30); !reflect.DeepEqual(again, got) {
+		t.Fatalf("after restart = %+v", again)
+	}
+}
+
+func deref(p *int) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}

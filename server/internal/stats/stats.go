@@ -356,6 +356,80 @@ func (t *Tracker) seen(id string, member bool, country string) {
 	}
 }
 
+// Cohort는 하루에 새로 온 사람들이 그 뒤에 다시 왔는지입니다 (리텐션, 운영자 화면).
+type Cohort struct {
+	Day      string `json:"day"`
+	New      int    `json:"new"`      // 그날 새로 온 사람
+	D1       *int   `json:"d1"`       // 그중 다음 날 온 사람. 그날이 아직 안 왔으면 null, 오늘이면 지금까지
+	D7       *int   `json:"d7"`       // 그중 7일째 되는 날 온 사람
+	Returned int    `json:"returned"` // 그중 그 뒤 오늘까지 하루라도 다시 온 사람
+}
+
+// RetentionLookback은 새로 온 사람을 가를 때 앞에 있어야 하는 방문 기록의 일수입니다.
+// 기록이 남은 첫 며칠은 원래 오던 사람도 처음 온 것처럼 보이므로, 기록이 이만큼 쌓인 날부터 셉니다.
+const RetentionLookback = 7
+
+// Retention은 오늘까지 n일 가운데 리텐션을 셀 수 있는 날마다의 묶음입니다 (오래된 날부터, 마지막이 오늘).
+//
+// "새로 온 사람"은 남아 있는 방문 기록(Window일) 안에서 그날 처음 온 사람입니다. 기록이 Window일만 남으므로
+// 그보다 오래전에 왔다가 다시 온 사람도 새로 셀 수 있고, 기록이 남은 첫 RetentionLookback일은 빼고 셉니다.
+// 방문처럼 게스트가 쿠키를 지우거나 다른 브라우저로 오면 다른 사람이고, 게스트로 왔다가 계정으로 오면 다른 사람입니다.
+func (t *Tracker) Retention(n int) []Cohort {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.roll()
+	out := []Cohort{}
+	if len(t.days) == 0 {
+		return out
+	}
+	oldest := slices.Min(slices.Collect(maps.Keys(t.days)))
+	start := max(AddDays(oldest, RetentionLookback), AddDays(t.today, -(n-1)))
+	came := func(day, h string) bool {
+		_, ok := t.days[day][h]
+		return ok
+	}
+	seen := make(map[string]bool) // 앞의 날에 온 사람
+	for day := oldest; day <= t.today; day = AddDays(day, 1) {
+		if day >= start {
+			c := Cohort{Day: day}
+			var cohort []string
+			for h := range t.days[day] {
+				if !seen[h] {
+					cohort = append(cohort, h)
+				}
+			}
+			c.New = len(cohort)
+			later := func(k int) *int {
+				d := AddDays(day, k)
+				if d > t.today {
+					return nil
+				}
+				n := 0
+				for _, h := range cohort {
+					if came(d, h) {
+						n++
+					}
+				}
+				return &n
+			}
+			c.D1, c.D7 = later(1), later(7)
+			for _, h := range cohort {
+				for d := AddDays(day, 1); d <= t.today; d = AddDays(d, 1) {
+					if came(d, h) {
+						c.Returned++
+						break
+					}
+				}
+			}
+			out = append(out, c)
+		}
+		for h := range t.days[day] {
+			seen[h] = true
+		}
+	}
+	return out
+}
+
 // Range는 오늘까지 n일의 방문 수입니다 (오래된 날부터, 마지막이 오늘). 오늘은 지금까지 온 사람입니다.
 // since는 방문을 세기 시작한 날입니다 (그 앞 날은 0이고, 아직 아무도 오지 않았으면 "").
 func (t *Tracker) Range(n int) (out []Visits, since string) {
