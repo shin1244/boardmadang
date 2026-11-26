@@ -14,8 +14,9 @@ trainer/*
 !trainer/env.js
 !trainer/mcts.js
 
-# 운영에 필요 없는 것
+# 운영에 필요 없는 것. analysis/에는 받아 온 운영 데이터가 있을 수 있습니다
 .git/
+analysis/
 .github/
 docs/
 **/node_modules/

@@ -102,6 +102,7 @@ python trainer/train.py games/tictactoe --minutes 5
 | [`sdk/`](sdk/README.md) | npm package `boardmadang`: API types, playground, checks | MIT |
 | [`games/`](games) | Example game (tic-tac-toe) | MIT |
 | [`trainer/`](trainer/README.md) | AlphaZero-style AI training | MIT |
+| [`analysis/`](analysis/README.md) | Export server data to SQLite for analysis (Korean) | AGPL-3.0 |
 | [`docs/`](docs) | Design docs (Korean) | |
 
 ## Run it locally
