@@ -69,6 +69,10 @@ export const MARK_TYPES = ['dot', 'ring', 'last-move', 'danger', 'ghost', 'block
 /** frame 테두리와 선(lines)의 두께. 칸 한 변에 대한 %입니다 */
 export const FRAME_WIDTH = { min: 1, max: 30 };
 export const LINE_WIDTH = { min: 1, max: 50, default: 20 };
+/** 칸 사이 벽(view().walls)의 두께 (칸 한 변의 %). 기본값이면 글자 패의 여백에 꼭 맞습니다 */
+export const WALL_WIDTH = { min: 1, max: 50, default: 16 };
+/** 벽이 서는 변: e = 칸의 오른쪽 변, s = 칸의 아래 변 (판 기준) */
+export const WALL_SIDES = ['e', 's'];
 
 export const isInt = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
 /** 1 ~ max자의 글자 */
@@ -83,6 +87,19 @@ export const validWidth = (w, range) => Number.isFinite(w) && w >= range.min && 
 const COLOR_NAMES = Object.keys(NAMED_COLORS);
 /** 게임이 color에 쓸 수 있는 값인지: 0 / 1(플레이어 색), 이름 붙은 색(NAMED_COLORS), '#rrggbb' */
 export const isColor = (c) => c === 0 || c === 1 || (typeof c === 'string' && (COLOR_NAMES.includes(c) || /^#[0-9a-fA-F]{6}$/.test(c)));
+/**
+ * 칸 사이 벽(view().walls) 하나가 맞는 모양인지: { row, col, side: 'e' | 's', length?: 1~32, color?, width?, hover? }.
+ * side가 's'면 (row, col)부터 오른쪽으로 length칸(없으면 1)의 아래 변, 'e'면 (row, col)부터 아래로 length칸의 오른쪽 변입니다.
+ * 벽이 붙는 칸이 모두 판(rows × cols) 안이어야 합니다. area는 rows, cols가 있는 것입니다.
+ */
+export function isWall(w, area) {
+  if (!isCell(w, area) || !WALL_SIDES.includes(w.side)) return false;
+  const len = w.length === undefined ? 1 : w.length;
+  if (!isInt(len, 1, SHAPE_LIMITS.boardSize)) return false;
+  const last = w.side === 's' ? { row: w.row, col: w.col + len - 1 } : { row: w.row + len - 1, col: w.col };
+  return isCell(last, area) && (w.color === undefined || isColor(w.color))
+    && (w.width === undefined || validWidth(w.width, WALL_WIDTH)) && (w.hover === undefined || isCell(w.hover, area));
+}
 /** 특수 행동 이름으로 쓸 수 있는지: 1~24자이고, 'click'은 칸 클릭이라 안 됩니다 */
 export const isSpecialKind = (k) => isName(k, SHAPE_LIMITS.kindChars) && k !== 'click';
 
@@ -100,6 +117,12 @@ export const PIECE_SETS = Object.keys(BUILT_IN_PIECES);
  */
 export const TILE_ARROWS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 
+/**
+ * 화면 기물의 묶음 (view().pieces의 group): 1~32자의 글자나 정수.
+ * 화면에서 바로 옆 칸에 같은 group의 글자 패가 있으면 그 변을 이어 그려서, 여러 칸을 차지하는 블록을 칸마다 한 패씩 놓아 한 덩어리로 보이게 합니다.
+ */
+export const isGroup = (g) => (typeof g === 'string' ? g.length >= 1 && g.length <= SHAPE_LIMITS.nameChars : Number.isSafeInteger(g));
+
 /** 글자 패를 체스 기물 그림으로 그릴 때 고르는 모양 (chess): 킹, 퀸, 룩, 비숍, 나이트, 폰 */
 export const CHESS_KINDS = ['K', 'Q', 'R', 'B', 'N', 'P'];
 
@@ -114,15 +137,14 @@ export function knowsPiece(pieceSet, name) {
 }
 
 /**
- * 기물 목록의 한 항목: 이름(1~32자), 또는 글자 패 { name, text(1~2자), player?, arrows?, chess? }.
+ * 기물 목록의 한 항목: 이름(1~32자), 또는 글자 패 { name, text(0~2자), player?, arrows?, color?, chess? }.
  * chess가 있으면 패 대신 그 체스 기물 그림을 그립니다 (선공은 흰 기물, 후공은 검은 기물) (text는 이 칸을 모르는 옛 화면이 쓰는 글자).
  * 알려진 칸만 남긴 것을 돌려주고, 맞지 않으면 null입니다.
  */
 export function cleanPiece(p) {
   if (isName(p, SHAPE_LIMITS.nameChars)) return p;
   if (!p || typeof p !== 'object' || Array.isArray(p) || !isName(p.name, SHAPE_LIMITS.nameChars) || typeof p.text !== 'string') return null;
-  const chars = [...p.text].length;
-  if (chars < 1 || chars > 2) return null;
+  if ([...p.text].length > 2) return null;
   const out = { name: p.name, text: p.text };
   if (p.player !== undefined) {
     if (p.player !== 0 && p.player !== 1) return null;
@@ -131,6 +153,10 @@ export function cleanPiece(p) {
   if (p.arrows !== undefined) {
     if (!Array.isArray(p.arrows) || !p.arrows.every((a) => TILE_ARROWS.includes(a)) || new Set(p.arrows).size !== p.arrows.length) return null;
     out.arrows = [...p.arrows];
+  }
+  if (p.color !== undefined) {
+    if (!isColor(p.color)) return null;
+    out.color = p.color;
   }
   if (p.chess !== undefined) {
     if (!CHESS_KINDS.includes(p.chess)) return null;
@@ -187,6 +213,16 @@ const CUSTOM_COLORS = ['#e0524f', '#4a7fdc', '#3a9a6b', '#d0942f', '#8f5bc4', '#
 const ARROW_VEC = { n: [0, -1], ne: [1, -1], e: [1, 0], se: [1, 1], s: [0, 1], sw: [-1, 1], w: [-1, 0], nw: [-1, -1] };
 const TILE_FACE = '#fbf7ee';
 const TILE_FONT = '"Noto Serif KR", "Noto Serif CJK KR", Batang, "Songti SC", SimSun, serif';
+
+/** '#rrggbb'의 [r, g, b] */
+const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+/** 색을 k배로 어둡게 (0~1) */
+const shade = (hex, k) => `rgb(${rgbOf(hex).map((v) => Math.round(v * k)).join(' ')})`;
+/** 색칠한 글자 패의 테두리와 글자 · 방향 색: 테두리는 면보다 어둡게, 글자는 밝은 면이면 어둡게 아니면 흰색 */
+function tileInk(face) {
+  const [r, g, b] = rgbOf(face);
+  return { edge: shade(face, 0.62), mark: 0.299 * r + 0.587 * g + 0.114 * b > 170 ? shade(face, 0.35) : '#fff' };
+}
 
 const COL_LABELS = 'abcdefghijklmnopqrstuvwxyzABCDEF';
 
@@ -326,6 +362,11 @@ function axisLayout(n, f0, f1, { sd, m, gap, pad, points, labBefore, labAfter })
 const motionKey = (p) => `${p.list ?? ''}:${p.row},${p.col},${p.from.list ?? ''}:${p.from.row},${p.from.col},${p.piece}`;
 /** 같은 칸인지 (목록의 칸은 같은 목록이어야) */
 const sameSpot = (a, b) => (a.list ?? -1) === (b.list ?? -1) && sameCell(a, b);
+/** 판의 칸('row,col')이나 목록의 칸('list:row,col')을 Map의 키로 */
+const spotKey = (c) => (c.list === undefined ? `${c.row},${c.col}` : `${c.list}:${c.row},${c.col}`);
+/** 글자 패의 변 [위, 오른쪽, 아래, 왼쪽]이 화면에서 가리키는 쪽 */
+const SIDES = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+const NO_SIDES = [false, false, false, false];
 
 /** 한 기물의 움직임 시간(ms)과 빠르기 곡선. dx, dy는 화면에서 움직이는 칸 수입니다 */
 function motionOf(dx, dy) {
@@ -823,10 +864,12 @@ export class BoardView {
       }
     }
 
-    // 말. 움직이는 중인 말은 from에서 제자리로 가는 길 위에 그립니다. 판 옆 목록의 말은 작게, 판의 말보다 먼저(아래에)
+    // 말. 움직이는 중인 말은 from에서 제자리로 가는 길 위에 그립니다. 판 옆 목록의 말은 작게, 판의 말보다 먼저(아래에).
+    // 같은 group의 글자 패끼리는 맞닿은 변을 이어 그립니다 (joined: 칸 → 이어진 변)
+    const joined = this.joinedSides(view, flip);
     for (const p of [...this.listPieces(view), ...(view.pieces ?? []).filter(shown)]) {
       const [x, y, k] = this.motions.length ? this.movingAt(p, flip, now) : this.spot(p, flip);
-      this.zoom(x, y, k, (x, y) => this.drawPiece(p.piece, x, y, 1));
+      this.zoom(x, y, k, (x, y) => this.drawPiece(p.piece, x, y, 1, joined.get(spotKey(p))));
     }
     for (const m of marksOf('ghost')) {
       const [x, y] = at(m.row, m.col);
@@ -834,6 +877,11 @@ export class BoardView {
     }
     // 효과: 말 위에 그려서, 그 칸으로 내려오거나 들어오는 말이 있어도 갈라지는 모습이 보이게 합니다
     for (const fx of this.effects) this.drawEffect(fx, flip, now);
+    // 벽: 칸과 칸 사이 홈에 서는 막대. 말 위에 그립니다. hover가 있으면 마우스가 그 칸에 있을 때만 연하게 (놓기 전의 미리보기)
+    for (const w of Array.isArray(view.walls) ? view.walls : []) {
+      if (!isWall(w, board) || (w.hover && !onHover(w.hover))) continue;
+      this.drawWall(w, flip, w.hover ? 0.45 : 1);
+    }
 
     // 선: 두 칸의 가운데를 잇는 반투명한 선. hover가 있으면 마우스가 그 칸에 있을 때만 그립니다.
     ctx.save();
@@ -859,6 +907,8 @@ export class BoardView {
     const outer = Math.max(2, S * 0.05); // 여백에 그리는 선의 굵기
     const outerHalf = S / 2 - outer / 2 - 1; // 그 선이 지나는 곳 (칸 가운데에서)
     const tiled = new Set((view.pieces ?? []).filter((p) => this.custom.get(p.piece)?.tile).map((p) => p.row * cols + p.col));
+    // 여백에 그리는 표시의 모양: 같은 group의 패와 이어진 변(joined)은 칸 끝까지 열어 둬서, 블록 전체의 바깥만 두르게 됩니다
+    const outerShape = (x, y, open, r) => this.tileShape(x, y, open.map((o) => (o ? S / 2 : outerHalf)), r, open, true);
     for (const m of marksOf('last-move')) {
       const [x, y] = at(m.row, m.col);
       if (this.points) {
@@ -868,7 +918,13 @@ export class BoardView {
       } else if (this.tiled) {
         ctx.strokeStyle = MARK.last;
         ctx.lineWidth = outer;
-        ctx.strokeRect(x - outerHalf, y - outerHalf, outerHalf * 2, outerHalf * 2);
+        const open = joined.get(spotKey(m));
+        if (open) {
+          outerShape(x, y, open, 0);
+          ctx.stroke();
+        } else {
+          ctx.strokeRect(x - outerHalf, y - outerHalf, outerHalf * 2, outerHalf * 2);
+        }
       } else {
         const inset = frameW + 3;
         ctx.strokeStyle = MARK.last;
@@ -881,7 +937,9 @@ export class BoardView {
       ctx.strokeStyle = MARK.ring;
       if (!this.points && tiled.has(m.row * cols + m.col)) {
         ctx.lineWidth = outer;
-        this.roundSquare(x, y, outerHalf, S * 0.12);
+        const open = joined.get(spotKey(m));
+        if (open) outerShape(x, y, open, S * 0.12);
+        else this.roundSquare(x, y, outerHalf, S * 0.12);
         ctx.stroke();
         continue;
       }
@@ -896,8 +954,11 @@ export class BoardView {
       if (!this.points && tiled.has(m.row * cols + m.col)) {
         const e = S / 2; // 칸 가운데에서 귀퉁이까지
         const l = S * 0.16; // 삼각형 두 변의 길이. 패의 둥근 모서리에 닿지 않을 만큼
+        const open = joined.get(spotKey(m)) ?? NO_SIDES;
         ctx.beginPath();
-        for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+        // 귀퉁이 k는 변 k - 1과 변 k 사이입니다 (왼쪽 위 = 왼쪽 변과 위 변). 이어진 변에 닿는 귀퉁이는 패가 덮고 있어서 건너뜁니다
+        for (const [k, [sx, sy]] of [[-1, -1], [1, -1], [1, 1], [-1, 1]].entries()) {
+          if (open[k] || open[(k + 3) % 4]) continue;
           ctx.moveTo(x + sx * e, y + sy * e);
           ctx.lineTo(x + sx * (e - l), y + sy * e);
           ctx.lineTo(x + sx * e, y + sy * (e - l));
@@ -1065,7 +1126,7 @@ export class BoardView {
   }
 
   /**
-   * 판에 새로 놓인 기물이 있으면 놓는 소리를 냅니다: 직전에 그린 화면에 없던 (칸, 기물)이 생겼을 때 한 번.
+   * 판에 새로 놓인 기물이나 벽이 있으면 놓는 소리를 냅니다: 직전에 그린 화면에 없던 (칸, 기물)이나 벽이 생겼을 때 한 번.
    * 기물을 고르거나 마우스를 올려 다시 그릴 때는 기물이 그대로라 소리가 없고, 잡혀서 사라지기만 한 것도 소리가 없습니다.
    * 움직여 오는 기물(from)은 도착할 때 냅니다. 처음 그리는 화면과 animate가 false인 화면(목록의 판, 다시보기에서 뒤로 가기)은 조용합니다.
    */
@@ -1073,6 +1134,10 @@ export class BoardView {
     const placed = new Set();
     for (const p of view.pieces ?? []) {
       if (isCell(p, this.board) && typeof p.piece === 'string' && this.isShown(p.row, p.col)) placed.add(`${p.row},${p.col},${p.piece}`);
+    }
+    // 새로 선 벽도 놓는 소리를 냅니다 (미리보기 벽은 빼고)
+    for (const w of Array.isArray(view.walls) ? view.walls : []) {
+      if (isWall(w, this.board) && !w.hover) placed.add(`wall ${w.row},${w.col},${w.side},${w.length ?? 1}`);
     }
     const before = this.onBoard;
     this.onBoard = placed;
@@ -1258,7 +1323,8 @@ export class BoardView {
     }
   }
 
-  drawPiece(piece, x, y, alpha) {
+  /** 기물 하나. open은 글자 패가 옆 패와 이어진 변 [위, 오른쪽, 아래, 왼쪽] (화면 기준, joinedSides) */
+  drawPiece(piece, x, y, alpha, open = NO_SIDES) {
     const { ctx, S } = this;
     // 기본 묶음에 있는 기물이면 그 묶음의 그림으로
     const set = typeof this.pieceSet === 'string' && knowsPiece(this.pieceSet, piece) ? this.pieceSet : null;
@@ -1298,7 +1364,7 @@ export class BoardView {
       const { chess, player } = this.custom.get(piece).figure;
       this.drawChess(chess, PIECE_INK[player === 1 ? 'b' : 'w'], x, y);
     } else if (this.custom.get(piece)?.tile) {
-      this.drawTile(this.custom.get(piece).tile, x, y);
+      this.drawTile(this.custom.get(piece).tile, x, y, open);
     } else {
       // 직접 정의한 기물: 목록 순서대로 색을 정하고 이름 앞 두 글자를 씁니다.
       const idx = this.custom.get(piece)?.index ?? -1;
@@ -1336,21 +1402,32 @@ export class BoardView {
   /**
    * 글자 패: 장기 · 쇼기 말처럼 네모난 패에 글자를 쓰고, 갈 수 있는 방향마다 가장자리에 작은 삼각형을 그립니다.
    * 주인(player)이 있으면 주인 색으로 칠하고 주인 쪽을 보고 섭니다: 화면 아래쪽 플레이어의 패는 바로, 위쪽 플레이어의 패는 거꾸로.
+   * open은 옆 패와 이어진 변 [위, 오른쪽, 아래, 왼쪽] (화면 기준)입니다.
    */
-  drawTile(tile, x, y) {
+  drawTile(tile, x, y, open = NO_SIDES) {
     const { ctx, S } = this;
     const owned = tile.player === 0 || tile.player === 1;
-    const ink = owned ? PLAYER_COLORS[tile.player] : MARK.ink;
+    const face = isColor(tile.color) ? colorOf(tile.color) : null;
+    const colored = face ? tileInk(face) : null;
+    // 테두리와 방향 · 글자 색. 주인이 있으면 주인 색 테두리
+    const edge = owned ? PLAYER_COLORS[tile.player] : colored ? colored.edge : MARK.ink;
+    const ink = colored ? colored.mark : edge;
     const top = this.board.flipForPlayer ?? 1; // 뒤집지 않은 화면에서 위쪽에 앉는 플레이어
     const bottom = this.flip ? top : 1 - top;
+    const turned = owned && tile.player !== bottom;
     ctx.translate(x, y);
-    if (owned && tile.player !== bottom) ctx.rotate(Math.PI);
+    if (turned) ctx.rotate(Math.PI);
 
-    this.roundSquare(0, 0, S * 0.42, S * 0.09); // 패 한 변의 반, 모서리
-    ctx.fillStyle = TILE_FACE;
+    // 패 한 변의 반, 모서리. 옆 패와 이어진 변은 칸 끝까지 (이음매가 보이지 않게 반 픽셀 더).
+    // 거꾸로 세워 그리는 패(turned)는 패 안에서 보면 화면의 반대쪽 변입니다
+    const sides = turned ? open.map((_, k) => open[(k + 2) % 4]) : open;
+    const ext = sides.map((o) => (o ? S / 2 + 0.5 : S * 0.42));
+    this.tileShape(0, 0, ext, S * 0.09, sides, false);
+    ctx.fillStyle = face ?? TILE_FACE;
     ctx.fill();
     ctx.lineWidth = Math.max(1.5, S * 0.045);
-    ctx.strokeStyle = ink;
+    ctx.strokeStyle = edge;
+    if (sides.some(Boolean)) this.tileShape(0, 0, ext, S * 0.09, sides, true);
     ctx.stroke();
 
     // 방향: 앞뒤좌우는 변 가운데의 삼각형, 대각선은 모서리를 채운 직각삼각형. 모두 바깥을 가리킵니다
@@ -1382,6 +1459,112 @@ export class BoardView {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, 0, S * 0.02);
+  }
+
+  /**
+   * 같은 group의 글자 패끼리 이어진 변. 칸(spotKey) → [위, 오른쪽, 아래, 왼쪽] (화면 기준, true면 이어짐). 이어진 변이 없는 칸은 넣지 않습니다.
+   * 화면에서 바로 옆 칸에 같은 group의 글자 패가 있는 변이 이어집니다. 화면 기준이라 뒤집은 화면에서도 따로 셈할 것이 없고,
+   * 판과 판 밖 영역 사이처럼 화면에서 떨어진 칸은 잇지 않습니다. 판 옆 목록의 패는 같은 목록 안에서만 잇습니다.
+   * 원 기물과 체스 기물 그림은 잇지 않습니다.
+   */
+  joinedSides(view, flip) {
+    const out = new Map();
+    const pieces = [...(view.pieces ?? []).filter((p) => this.isShown(p.row, p.col)), ...this.listPieces(view)];
+    const groups = new Map();
+    for (const p of pieces) if (isGroup(p.group) && this.custom.get(p.piece)?.tile) groups.set(spotKey(p), p.group);
+    if (!groups.size) return out;
+    const s = flip ? -1 : 1; // 뒤집은 화면에서는 화면의 위가 판의 아래 줄입니다
+    for (const p of pieces) {
+      const g = groups.get(spotKey(p));
+      if (g === undefined) continue;
+      const [x, y] = this.spot(p, flip);
+      const open = SIDES.map(([dx, dy]) => {
+        if (p.list !== undefined) return groups.get(spotKey({ list: p.list, row: p.row + dy, col: p.col + dx })) === g;
+        const q = { row: p.row + dy * s, col: p.col + dx * s };
+        if (groups.get(spotKey(q)) !== g) return false;
+        const [qx, qy] = this.spot(q, flip);
+        return Math.abs(qx - x - dx * this.S) < 1 && Math.abs(qy - y - dy * this.S) < 1;
+      });
+      if (open.some(Boolean)) out.set(spotKey(p), open);
+    }
+    return out;
+  }
+
+  /**
+   * 가운데가 (x, y)인 패 모양 경로. ext는 가운데에서 [위, 오른쪽, 아래, 왼쪽] 변까지의 거리, r은 모서리 반지름,
+   * open은 이어진 변 [위, 오른쪽, 아래, 왼쪽]입니다. 이어진 변에 닿는 모서리는 둥글리지 않습니다.
+   * stroke면 이어진 변을 빼고 그리는 열린 경로(테두리, 고리), 아니면 닫힌 경로(면)입니다.
+   */
+  tileShape(x, y, ext, r, open, stroke) {
+    const { ctx } = this;
+    const [n, e, s, w] = ext;
+    const corner = [[x - w, y - n], [x + e, y - n], [x + e, y + s], [x - w, y + s]]; // 변 k는 꼭짓점 k에서 k + 1로
+    const dir = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+    const rad = corner.map((_, k) => (open[k] || open[(k + 3) % 4] ? 0 : r));
+    // 테두리는 이어진 변 바로 다음부터 그려서 한 줄로 이어지게 합니다
+    const first = stroke && open.some(Boolean) ? open.indexOf(true) : 0;
+    ctx.beginPath();
+    let pen = false;
+    for (let j = 0; j < 4; j++) {
+      const k = (first + j) % 4;
+      const k1 = (k + 1) % 4;
+      if (stroke && open[k]) {
+        pen = false;
+        continue;
+      }
+      if (!pen) {
+        ctx.moveTo(corner[k][0] + dir[k][0] * rad[k], corner[k][1] + dir[k][1] * rad[k]);
+        pen = true;
+      }
+      const [cx, cy] = corner[k1];
+      ctx.lineTo(cx - dir[k][0] * rad[k1], cy - dir[k][1] * rad[k1]);
+      if (rad[k1]) ctx.arcTo(cx, cy, cx + dir[k1][0] * rad[k1], cy + dir[k1][1] * rad[k1], rad[k1]);
+    }
+    if (!stroke || !open.some(Boolean)) ctx.closePath();
+  }
+
+  /**
+   * 칸 사이 벽 하나의 화면 자리 { x, y, w, h } (CSS 픽셀의 직사각형). 그리지 않는 벽이면 null입니다:
+   * 벽이 붙는 칸이 모두 그리는 칸이고 화면에서 이어져 있어야 합니다 (판과 판 밖 영역에 걸친 벽은 그리지 않음).
+   * 두 끝은 칸 끝에서 조금 안쪽이라, 한 줄로 이어 놓은 두 벽이 한 벽으로 보이지 않습니다.
+   */
+  wallRect(w, flip) {
+    const { S } = this;
+    const len = w.length ?? 1;
+    const end = w.side === 's' ? { row: w.row, col: w.col + len - 1 } : { row: w.row + len - 1, col: w.col };
+    for (let k = 0; k < len; k++) {
+      if (!this.isShown(w.side === 's' ? w.row : w.row + k, w.side === 's' ? w.col + k : w.col)) return null;
+    }
+    const [x0, y0] = this.center(w.row, w.col, flip);
+    const [x1, y1] = this.center(end.row, end.col, flip);
+    if (Math.abs(Math.hypot(x1 - x0, y1 - y0) - (len - 1) * S) > 1) return null;
+    const t = (S * (validWidth(w.width, WALL_WIDTH) ? w.width : WALL_WIDTH.default)) / 100;
+    const half = S / 2 - S * 0.04; // 가운데 칸에서 벽 끝까지
+    // 판의 아래(s) · 오른쪽(e) 변은 뒤집은 화면에서 위 · 왼쪽입니다
+    const out = (flip ? -1 : 1) * (S / 2);
+    if (w.side === 's') {
+      const y = y0 + out;
+      return { x: Math.min(x0, x1) - half, y: y - t / 2, w: Math.abs(x1 - x0) + half * 2, h: t };
+    }
+    const x = x0 + out;
+    return { x: x - t / 2, y: Math.min(y0, y1) - half, w: t, h: Math.abs(y1 - y0) + half * 2 };
+  }
+
+  /** 칸 사이 벽 하나 (wallRect의 자리에 모서리가 둥근 막대). 색이 없으면 진한 회색이고, 테두리는 면보다 어둡게 */
+  drawWall(w, flip, alpha) {
+    const r = this.wallRect(w, flip);
+    if (!r) return;
+    const { ctx, S } = this;
+    const color = colorOf(w.color, MARK.ink);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    this.roundRect(r.x, r.y, r.w, r.h, Math.min(r.w, r.h) / 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = shade(color, 0.6);
+    ctx.lineWidth = Math.max(1, S * 0.02);
+    ctx.stroke();
+    ctx.restore();
   }
 
   circle(x, y, r) {
@@ -1492,7 +1675,8 @@ export function attachInput(board, canvas, { flip, canHover, click, hover }) {
   // 지금 화면에서 그 칸을 위한 미리보기가 있는지, 그 칸에 말이 있는지
   const previewed = (cell) => {
     const v = board.view ?? {};
-    return (v.tint ?? []).some((t) => sameCell(t.hover, cell)) || (v.lines ?? []).some((l) => sameCell(l.hover, cell));
+    return (v.tint ?? []).some((t) => sameCell(t.hover, cell)) || (v.lines ?? []).some((l) => sameCell(l.hover, cell))
+      || (Array.isArray(v.walls) ? v.walls : []).some((w) => sameCell(w?.hover, cell));
   };
   const hasPiece = (cell) => (board.view?.pieces ?? []).some((p) => sameCell(p, cell));
 

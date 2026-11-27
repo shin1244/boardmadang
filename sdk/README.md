@@ -223,6 +223,7 @@ view(state, player, lang) {
     tint:    [{ row: 0, col: 0, color: 0 }],  // color a square with player 0's color
     text:    [{ row: 2, col: 2, text: '4' }], // a short label on a square
     lines:   [{ from: { row: 0, col: 0 }, to: { row: 2, col: 2 }, color: 1 }], // a line between two squares
+    walls:   [{ row: 0, col: 0, side: 's', length: 2 }], // a wall in the groove between squares
     message: 'Your turn',
   };
 }
@@ -247,11 +248,29 @@ and `width` (1–50% of a square's side, default 20%). Add `hover: { row, col }`
 for example to preview which stones a move would connect to. If your game has `legal()`, the mouse only counts as over squares you can play.
 Lines aren't part of what the AI sees, and lines with `hover` aren't saved in thumbnails.
 
+**Walls (`walls`):** a wall standing in the groove between squares, drawn over the pieces as a bar with rounded ends. Use it for things that sit between squares rather than on them, like walls that block a path or fences.
+With `side: 's'` it runs along the bottom edge of `length` squares (default 1) going right from `(row, col)`; with `side: 'e'` it runs along the right edge of `length` squares going down.
+It follows the board, so it stands in the same groove on a flipped board. You can set `color` (default dark gray) and `width` (1–50% of a square's side, default 16%).
+
+```js
+walls: [
+  { row: 3, col: 4, side: 's', length: 2, color: 0 },                // a horizontal wall below (3,4) and (3,5)
+  { row: 5, col: 2, side: 'e', length: 2, hover: { row: 5, col: 2 } }, // only while the mouse is over (5,2): a vertical wall right of (5,2) and (6,2)
+],
+```
+
+- Every square the wall runs along must be on the board. A wall that would cross from the board into a panel isn't drawn.
+- Both ends stop a little short of the squares' corners, so two walls placed end to end still look like two walls.
+- With `hover`, it shows only while the mouse is over that square, lighter, like lines (a preview before placing the wall).
+  Players still click squares, not grooves: let them pick the direction with buttons like "horizontal wall / vertical wall", then a click on a square puts the wall in that square's bottom or right groove.
+- A new wall makes the same placing sound as a new piece.
+- Walls aren't part of what the AI sees. If the AI needs them, pass them in `observe()` (for example two channels: horizontal walls and vertical walls). Walls with `hover` aren't saved in thumbnails.
+
 **Paint previews:** a `tint` can also have `hover: { row, col }`. It's then drawn only while the mouse is over that square, lighter,
 in place of that square's usual tint — for example to show which squares a move would turn your color.
 Tints with `hover` aren't part of what the AI sees and aren't saved in thumbnails.
 
-**On phones:** a finger can't hover, so pressing the board and sliding shows the preview (lines and tints with `hover`) for the square under the finger,
+**On phones:** a finger can't hover, so pressing the board and sliding shows the preview (lines, tints and walls with `hover`) for the square under the finger,
 and lifting the finger plays that square. A quick tap plays right away, as before. Pressing a piece that has no preview clicks it at once,
 so players can pick a piece and drag it to where it should go (like on Lichess).
 
@@ -276,12 +295,37 @@ pieces: [
 ```
 
 - `name`: the name you use as `piece` in `view()`. The AI's observation is split by this name too.
-- `text`: the characters on the tile, 1 or 2.
+- `text`: the characters on the tile, 0 to 2.
 - `player` (optional): the tile's owner. The tile is drawn in that player's color and faces its owner: the bottom player's tiles stand upright and the top player's are upside down (also on a board flipped with `flipForPlayer`).
 - `arrows` (optional): the direction marks. `'n'` is forward from the owner's side, then clockwise `'ne'`, `'e'`, `'se'`, `'s'`, `'sw'`, `'w'`, `'nw'`.
+- `color` (optional): the color of the tile's face. Like any other `color`: a player color (`0`, `1`), a named color, or `'#rrggbb'`. The border is drawn darker than the face, and the characters and arrows in a color that stands out.
 - `chess` (optional): one of `'K'`, `'Q'`, `'R'`, `'B'`, `'N'`, `'P'`. Instead of a tile, that chess piece is drawn. As in chess, the first player's pieces are white and the second player's are black. Use it for a game played with chess pieces that also has pieces chess doesn't have, like a ball or a wall (`{ name: 'K0', text: 'K', player: 0, chess: 'K' }`). The figure always stands upright and `arrows` are not drawn.
 
 You can mix names and tiles in one list. `text` on a cell with a tile is drawn small in the cell's corner so it doesn't cover the tile (a count of pieces in hand, for example).
+
+**Blocks that cover several cells:** for something that takes up several cells, like a block in a sliding puzzle or a falling piece, put one tile in each cell and give those pieces in `view()` the same `group`.
+When the cell right next to a tile on screen has a tile with the same `group`, that side is joined, so the cells look like one piece (a joined side reaches the edge of the cell and has no border).
+
+```js
+pieces: [{ name: 'block', text: '', color: '#4a7fdc' }],   // the piece list: one tile per color
+
+view(state, player, lang) {
+  return {
+    pieces: [
+      // block 7: 3 cells wide, drawn as one bar
+      { row: 2, col: 4, piece: 'block', group: 7 },
+      { row: 2, col: 5, piece: 'block', group: 7 },
+      { row: 2, col: 6, piece: 'block', group: 7 },
+    ],
+  };
+},
+```
+
+- `group` is a string of 1 to 32 characters or a whole number. Give each block its own. Two blocks of the same color that touch are still drawn apart when their `group`s differ.
+- Only tiles are joined (not circles or chess figures). Tiles of different kinds join when they share a `group` (a block made of a tile with ★ and blank tiles, say).
+- Cells that are apart on screen, like a board cell and a panel cell, are not joined. Tiles in a side list (`view().lists`) join only within the same list.
+- Put `ring` or `last-move` on each cell of the block and they go around the outside of the whole block. When the block moves, give each cell the cell it came from as `from` and the block slides as one.
+- `group` is only for drawing. The AI still sees the piece name in each cell.
 
 ## Panels, buttons and motion
 

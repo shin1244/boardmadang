@@ -628,7 +628,7 @@ func TestCheckThumbnail(t *testing.T) {
 		`"x"`: "thumbnail: must be an object",
 		`[]`:  "thumbnail.board: must be an object", // 자바스크립트처럼 배열은 칸마다 검사합니다
 		`{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":2,"view":{"pieces":[]}}`:                                               "thumbnail.player: must be 0 or 1",
-		`{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[{"row":3,"col":0,"piece":"x"}]}}`:                  "thumbnail.view.pieces: each needs a place on the board and a piece name",
+		`{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[{"row":3,"col":0,"piece":"x"}]}}`:                  "thumbnail.view.pieces: each needs a place on the board and a piece name (and group, if present, up to 32 characters or a whole number)",
 		`{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[],"marks":null}}`:                                  "thumbnail.view.marks: must be a list if present",
 		`{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[],"tint":[{"row":0,"col":0,"color":2}]}}`:          "thumbnail.view.tint: each needs a place on the board and a color",
 		`{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[],"text":[{"row":0,"col":0,"text":"123456789"}]}}`: "thumbnail.view.text: each needs a place on the board and up to 8 characters",
@@ -655,12 +655,15 @@ func TestCheckThumbnail(t *testing.T) {
 			t.Errorf("%s: %v, want %q", in, p, want)
 		}
 	}
-	// 글자 패: { name, text(1~2자), player?, arrows? } (sdk/test/check.test.js와 같은 경우)
+	// 글자 패: { name, text(0~2자), player?, arrows?, color? } (sdk/test/check.test.js와 같은 경우)
 	tiles := map[string]bool{
 		`[{"name":"wK","text":"王","player":0,"arrows":["n","ne","e","se","s","sw","w","nw"]},"plain"]`: true,
 		`[{"name":"x","text":"侯爵"}]`:                               true,
 		`[{"name":"x","text":"三글자"}]`:                              false,
-		`[{"name":"x","text":""}]`:                                 false,
+		`[{"name":"x","text":""}]`:                                 true,
+		`[{"name":"x"}]`:                                           false,
+		`[{"name":"x","text":"","color":"#4a7fdc"}]`:               true,
+		`[{"name":"x","text":"","color":"pink"}]`:                  false,
 		`[{"name":"","text":"王"}]`:                                 false,
 		`[{"name":"x","text":"王","player":2}]`:                     false,
 		`[{"name":"x","text":"王","player":null}]`:                  false,
@@ -677,6 +680,36 @@ func TestCheckThumbnail(t *testing.T) {
 		if _, p := CheckThumbnail([]byte(in)); (len(p) == 0) != ok || (!ok && p[0] != "thumbnail.pieces: must look like the game's pieces") {
 			t.Errorf("글자 패 %s: %v", list, p)
 		}
+	}
+	// 화면 기물의 묶음(group): 1~32자의 글자나 정수만 받고 남깁니다 (sdk/test/check.test.js와 같은 경우)
+	grouped := `{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[{"row":0,"col":0,"piece":"x","group":3},{"row":0,"col":1,"piece":"x","group":"A"},{"row":0,"col":2,"piece":"x"}]}}`
+	if out, p := CheckThumbnail([]byte(grouped)); p != nil || !strings.Contains(string(out), `{"col":0,"group":3,"piece":"x","row":0},{"col":1,"group":"A","piece":"x","row":0},{"col":2,"piece":"x","row":0}`) {
+		t.Errorf("group: %s %v", out, p)
+	}
+	for _, g := range []string{`""`, `"` + strings.Repeat("g", 33) + `"`, `1.5`, `null`, `[1]`, `9007199254740992`} {
+		in := `{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[{"row":0,"col":0,"piece":"x","group":` + g + `}]}}`
+		if _, p := CheckThumbnail([]byte(in)); len(p) == 0 || !strings.HasPrefix(p[0], "thumbnail.view.pieces") {
+			t.Errorf("group %s: %v", g, p)
+		}
+	}
+	// 칸 사이 벽(walls): 미리보기 벽(hover)과 모르는 칸은 빼고, 판을 벗어나는 벽은 막습니다 (sdk/test/check.test.js와 같은 경우)
+	walled := `{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[],"walls":[` +
+		`{"row":0,"col":0,"side":"s","length":2,"color":1,"width":20,"extra":1},{"row":1,"col":2,"side":"e"},{"row":2,"col":0,"side":"e","hover":{"row":2,"col":0}}]}}`
+	if out, p := CheckThumbnail([]byte(walled)); p != nil || !strings.Contains(string(out), `"walls":[{"col":0,"color":1,"length":2,"row":0,"side":"s","width":20},{"col":2,"row":1,"side":"e"}]`) {
+		t.Errorf("walls: %s %v", out, p)
+	}
+	for _, w := range []string{
+		`{"row":0,"col":0,"side":"s","length":4}`, `{"row":1,"col":2,"side":"n"}`, `{"row":1,"col":2,"side":"e","width":60}`,
+		`{"row":2,"col":0,"side":"e","length":2}`, `{"row":0,"col":0,"side":"s","length":null}`, `{"row":0,"col":0,"side":"s","length":1.5}`,
+		`{"row":0,"col":0,"side":"s","color":"pink"}`, `{"row":0,"col":0,"side":"s","hover":{"row":3,"col":0}}`, `7`,
+	} {
+		in := `{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[],"walls":[` + w + `]}}`
+		if _, p := CheckThumbnail([]byte(in)); len(p) == 0 || p[0] != "thumbnail.view.walls: each wall needs row, col, side ('e' or 's') and length that stay on the board, and width from 1 to 50" {
+			t.Errorf("wall %s: %v", w, p)
+		}
+	}
+	if _, p := CheckThumbnail([]byte(`{"board":{"places":"cells","rows":3,"cols":3},"pieces":"xo","player":0,"view":{"pieces":[],"walls":{}}}`)); len(p) == 0 || p[0] != "thumbnail.view.walls: must be a list if present" {
+		t.Errorf("walls {}: %v", p)
 	}
 	big := `{"board":{"places":"cells","rows":32,"cols":32},"pieces":"xo","player":1,"view":{"pieces":[` +
 		strings.TrimSuffix(strings.Repeat(`{"row":1,"col":1,"piece":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"},`, 700), ",") + `]}}`

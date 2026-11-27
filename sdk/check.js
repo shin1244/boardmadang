@@ -6,8 +6,8 @@
 // 사이트가 보드 렌더러로 다시 그립니다. 판 설정과 기물 세트까지 들어 있어서 게임 코드 없이도 그릴 수 있습니다.
 
 import {
-  EFFECT_TYPES, FRAME_WIDTH, GAME_ID, LINE_WIDTH, LOOK_NAMES, MARK_TYPES, PIECE_SETS, PLACES, SHAPE_LIMITS,
-  cleanPieces, fieldOf, isCell, isColor, isInt, isSpecialKind, knowsPiece, listsOf, pieceName, starsOf, validWidth,
+  EFFECT_TYPES, FRAME_WIDTH, GAME_ID, LINE_WIDTH, LOOK_NAMES, MARK_TYPES, PIECE_SETS, PLACES, SHAPE_LIMITS, WALL_WIDTH,
+  cleanPieces, fieldOf, isCell, isColor, isGroup, isInt, isSpecialKind, isWall, knowsPiece, listsOf, pieceName, starsOf, validWidth,
 } from './playground/board.js';
 import { hashOf, makeRng, usesMoves } from './playground/platform.js';
 
@@ -81,7 +81,7 @@ export function checkMembers(g) {
   if (typeof g.id !== 'string' || !GAME_ID.test(g.id)) p.push(`id: must use only lowercase letters, numbers, and - (up to ${GAME_LIMITS.idChars} characters)`);
   p.push(...boardProblems(g.board, 'board'));
   if (!piecesOk(g.pieces)) {
-    p.push(`pieces: must be ${quoted(PIECE_SETS).join(', ')}, or a list of up to ${GAME_LIMITS.pieceKinds} names (1 to ${GAME_LIMITS.nameChars} characters) or tiles ({ name, text, player, arrows, chess })`);
+    p.push(`pieces: must be ${quoted(PIECE_SETS).join(', ')}, or a list of up to ${GAME_LIMITS.pieceKinds} names (1 to ${GAME_LIMITS.nameChars} characters) or tiles ({ name, text, player, arrows, color, chess })`);
   }
   if (!isInt(g.maxActions, 1, GAME_LIMITS.maxActions)) {
     p.push(`maxActions: must be a whole number from 1 to ${GAME_LIMITS.maxActions.toLocaleString('en')}`);
@@ -220,6 +220,8 @@ export function drawnPart(view) {
  *   - buttons에 specialActions에 없는 행동
  *   - effects에 모르는 종류
  *   - lists에 없는 목록이나 목록 밖의 칸
+ *   - pieces의 group이 1~32자의 글자나 정수가 아님
+ *   - walls에 판을 벗어나거나 모양이 틀린 벽
  */
 function viewWarnings(game, s, lang) {
   const out = [];
@@ -230,6 +232,10 @@ function viewWarnings(game, s, lang) {
     for (const b of Array.isArray(v.buttons) ? v.buttons : []) {
       if (!specials.includes(b?.kind)) out.push(`view().buttons has '${b?.kind}', which isn't in specialActions, so it isn't shown.`);
     }
+    const badGroup = (Array.isArray(v.pieces) ? v.pieces : []).find((x) => x?.group !== undefined && !isGroup(x.group));
+    if (badGroup) out.push(`view().pieces has group ${JSON.stringify(badGroup.group)}, which must be 1 to ${SHAPE_LIMITS.nameChars} characters or a whole number, so it isn't joined.`);
+    const badWall = (Array.isArray(v.walls) ? v.walls : []).find((w) => !isWall(w, game.board));
+    if (badWall) out.push(`view().walls has ${JSON.stringify(badWall)}, which isn't shown (${WALL_RULE}).`);
     for (const e of Array.isArray(v.effects) ? v.effects : []) {
       const type = e?.type ?? 'shatter';
       if (!EFFECT_TYPES.includes(type)) out.push(`view().effects has type '${type}', which boardmadang can't draw (use ${EFFECT_TYPES.map((t) => `'${t}'`).join(', ')}), so it isn't shown.`);
@@ -370,7 +376,8 @@ export function normalizeThumbnail(t) {
   // 판 밖 영역은 알려진 칸만 (validateThumbnail을 통과했으면 맞는 값입니다)
   if (b.areas !== undefined) board.areas = fieldOf(b).areas;
   const v = t.view;
-  const view = { pieces: v.pieces.map((x) => ({ ...cell(x), piece: x.piece })) };
+  // group은 맞는 값만 (makeThumbnail은 검사 전의 화면을 받습니다. 검사를 통과한 썸네일이면 모두 맞는 값입니다)
+  const view = { pieces: v.pieces.map((x) => (isGroup(x.group) ? { ...cell(x), piece: x.piece, group: x.group } : { ...cell(x), piece: x.piece })) };
   if (v.marks) {
     view.marks = v.marks.map((m) => {
       const out = { ...cell(m), type: m.type };
@@ -383,6 +390,14 @@ export function normalizeThumbnail(t) {
   // 마우스를 올렸을 때만 보이는 칠하기와 선(hover)은 썸네일에 넣지 않습니다
   if (v.tint) view.tint = v.tint.filter((x) => x.hover === undefined).map((x) => ({ ...cell(x), color: x.color }));
   if (v.text) view.text = v.text.map((x) => ({ ...cell(x), text: x.text }));
+  // 마우스를 올렸을 때만 보이는 벽(hover)도 넣지 않습니다
+  if (v.walls) {
+    view.walls = v.walls.filter((w) => w.hover === undefined).map((w) => {
+      const out = { ...cell(w), side: w.side };
+      for (const k of ['length', 'color', 'width']) if (w[k] !== undefined) out[k] = w[k];
+      return out;
+    });
+  }
   if (v.lines) {
     view.lines = v.lines.filter((l) => l.hover === undefined).map((l) => {
       const out = { from: cell(l.from), to: cell(l.to) };
@@ -406,10 +421,10 @@ export function validateThumbnail(t) {
 
   const b = t.board;
   const list = (k) => v[k] === undefined || Array.isArray(v[k]);
-  for (const k of ['marks', 'tint', 'text', 'lines']) if (!list(k)) p.push(`thumbnail.view.${k}: must be a list if present`);
+  for (const k of ['marks', 'tint', 'text', 'lines', 'walls']) if (!list(k)) p.push(`thumbnail.view.${k}: must be a list if present`);
   if (p.length) return p;
-  if (!v.pieces.every((x) => isCell(x, b) && typeof x.piece === 'string' && x.piece.length <= GAME_LIMITS.nameChars)) {
-    p.push('thumbnail.view.pieces: each needs a place on the board and a piece name');
+  if (!v.pieces.every((x) => isCell(x, b) && typeof x.piece === 'string' && x.piece.length <= GAME_LIMITS.nameChars && (x.group === undefined || isGroup(x.group)))) {
+    p.push('thumbnail.view.pieces: each needs a place on the board and a piece name (and group, if present, up to 32 characters or a whole number)');
   }
   if (!(v.marks ?? []).every((m) => isCell(m, b) && MARK_TYPES.includes(m.type)
     && (m.piece === undefined || typeof m.piece === 'string') && (m.color === undefined || isColor(m.color))
@@ -423,11 +438,15 @@ export function validateThumbnail(t) {
   if (!(v.lines ?? []).every((l) => isLine(l, b))) {
     p.push(`thumbnail.view.lines: each needs from and to on the board, and width from ${LINE_WIDTH.min} to ${LINE_WIDTH.max}`);
   }
+  if (!(v.walls ?? []).every((w) => isWall(w, b))) p.push(`thumbnail.view.walls: ${WALL_RULE}`);
   if (!p.length && new TextEncoder().encode(JSON.stringify(normalizeThumbnail(t))).length > GAME_LIMITS.thumbnailBytes) {
     p.push(`thumbnail is larger than ${GAME_LIMITS.thumbnailBytes / 1024}KB`);
   }
   return p;
 }
+
+/** 벽(view().walls) 하나의 규칙 (문제 글에 씁니다) */
+const WALL_RULE = `each wall needs row, col, side ('e' or 's') and length that stay on the board, and width from ${WALL_WIDTH.min} to ${WALL_WIDTH.max}`;
 
 /** 키 순서와 상관없이 같은 JSON인지 */
 function sameJson(a, b) {
