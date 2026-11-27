@@ -134,7 +134,8 @@ type Handler struct {
 	Providers []*Provider // 켜진 것만. 이 순서로 화면에 보입니다
 	IDs       *identity.Issuer
 	Accounts  *account.Store
-	Records   *record.Store // 있으면 로그인할 때 게스트의 대국을 계정으로 옮깁니다
+	Records   *record.Store   // 있으면 로그인할 때 게스트의 대국을 계정으로 옮깁니다
+	AIRecords *record.AIStore // 있으면 게스트의 AI 대국도 옮깁니다
 	// PublicURL은 브라우저가 보는 사이트 주소입니다 (https://boardmadang.com). 돌아올 주소를 만들 때 씁니다.
 	// 비어 있으면 요청의 Host로 만듭니다 (개발용).
 	PublicURL string
@@ -302,6 +303,14 @@ func (h *Handler) signIn(w http.ResponseWriter, r *http.Request, member identity
 			log.Printf("게스트 %s의 대국을 %s로 옮기지 못했습니다: %v", prev.ID, member.ID, err)
 		} else if n > 0 {
 			log.Printf("게스트 %s의 대국 %d개를 %s로 옮겼습니다", prev.ID, n, member.ID)
+		}
+	}
+	if prev, ok := h.IDs.FromRequest(r); ok && !prev.IsMember() && h.AIRecords != nil {
+		to := record.Player{ID: member.ID, Kind: member.Kind, Tag: member.Tag, Name: member.Name}
+		if n, err := h.AIRecords.Adopt(prev.ID, to); err != nil {
+			log.Printf("게스트 %s의 AI 대국을 %s로 옮기지 못했습니다: %v", prev.ID, member.ID, err)
+		} else if n > 0 {
+			log.Printf("게스트 %s의 AI 대국 %d개를 %s로 옮겼습니다", prev.ID, n, member.ID)
 		}
 	}
 	h.IDs.SetCookie(w, r, member)

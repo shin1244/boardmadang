@@ -214,3 +214,53 @@ SELECT coalesce(country, '알 수 없음') AS country, count(DISTINCT visitor) A
 FROM visits
 GROUP BY country
 ORDER BY people DESC;
+
+-- 16. 이탈: AI 대국에서 끝나기 전에 나간 판 -----------------------------------------
+-- 화면을 닫거나 다른 판으로 넘어간 판(status = left)이 몇 번째 행동에서 멈췄는지 게임마다 봅니다.
+-- 초반에 많이 나가면 규칙이나 화면이 어려운 것일 수 있습니다.
+SELECT game_id, count(*) AS left_games,
+       sum(actions < 10) AS under_10, sum(actions BETWEEN 10 AND 29) AS from_10_to_29, sum(actions >= 30) AS from_30,
+       round(avg(duration_sec)) AS avg_sec
+FROM ai_matches
+WHERE status = 'left'
+GROUP BY game_id
+ORDER BY left_games DESC;
+
+-- 16-1. 게임마다 AI 대국을 끝까지 둔 비율 (내보낸 때 두는 중인 판은 뺍니다)
+SELECT game_id, count(*) AS games, sum(status = 'ended') AS ended, sum(status = 'left') AS left_games,
+       round(100.0 * sum(status = 'left') / count(*), 1) AS left_pct
+FROM ai_matches
+WHERE status <> 'playing'
+GROUP BY game_id
+ORDER BY games DESC;
+
+-- 17. 온라인 대국에서 연결이 끊긴 뒤 돌아왔나 --------------------------------------
+-- 돌아오지 못한 끊김은 그 대국이 left(나감)로 끝난 것입니다.
+SELECT m.game_id, count(*) AS drops, sum(d.back_ms IS NOT NULL) AS came_back,
+       round(avg((d.back_ms - d.at_ms) / 1000.0), 1) AS avg_away_sec
+FROM match_drops d
+JOIN matches m ON m.id = d.match_id
+GROUP BY m.game_id
+ORDER BY drops DESC;
+
+-- 18. 나라별로 대국을 둔 사람 ------------------------------------------------------
+-- 대국을 시작할 때 접속한 나라입니다 (그 기능을 넣은 뒤의 대국만).
+SELECT coalesce(p.country, '알 수 없음') AS country, count(DISTINCT p.player_id) AS people, count(*) AS seats
+FROM match_players p
+JOIN matches m ON m.id = p.match_id
+WHERE m.counted = 1
+GROUP BY country
+ORDER BY people DESC;
+
+-- 19. 한 행동에 걸린 시간: 앞 행동과의 차이 -----------------------------------------
+-- 첫 행동은 대국 시작부터 잰 시간입니다. SQLite에는 중앙값이 없어 평균과 최대를 봅니다.
+WITH gaps AS (
+  SELECT match_id, seat, at_ms - lag(at_ms, 1, 0) OVER (PARTITION BY match_id ORDER BY seq) AS ms
+  FROM match_actions
+)
+SELECT m.game_id, count(*) AS actions, round(avg(g.ms) / 1000.0, 1) AS avg_sec, round(max(g.ms) / 1000.0) AS max_sec
+FROM gaps g
+JOIN matches m ON m.id = g.match_id
+WHERE m.counted = 1
+GROUP BY m.game_id
+ORDER BY actions DESC;

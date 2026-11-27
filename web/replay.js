@@ -128,7 +128,7 @@ function loadView(at) {
 /** 결과 한 줄: [글, 색 class] */
 function outcome() {
   const { winner, reason } = rec;
-  if (['desync', 'disagree', 'limit'].includes(reason)) return [t('match.void'), 'even'];
+  if (['desync', 'disagree', 'limit', 'shutdown'].includes(reason)) return [t('match.void'), 'even'];
   if (winner === null) return [t('match.draw'), 'even'];
   const side = t(winner === 0 ? 'match.first' : 'match.second');
   if (mode === 'clear') return [t('replay.clearWon', { side }), 'win'];

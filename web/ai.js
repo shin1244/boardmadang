@@ -1,6 +1,6 @@
-// AI와 두기: 학습한 AI와 혼자 둡니다 (?game=<id>). 서버와 웹소켓 없이 이 브라우저 안에서만 돌고, 기보와 랭킹에는 남기지 않습니다.
-// 운영 통계에 판 수만 알립니다 (report: 사람이 첫 수를 두면 play, 끝나면 end와 결과).
-// 두는 동안에는 방 목록의 진행 중인 대국에 보입니다 (listLive). 수는 서버에 보내지 않아 관전은 안 됩니다.
+// AI와 두기: 학습한 AI와 혼자 둡니다 (?game=<id>). 서버와 웹소켓 없이 이 브라우저 안에서만 돌고, 내 대국 목록과 랭킹에는 남기지 않습니다.
+// 운영 통계에 판 수를 알리고 (report: 사람이 첫 수를 두면 play, 끝나면 end와 결과), 기보는 분석용으로만 서버에 남깁니다 (sendRecord).
+// 두는 동안에는 방 목록의 진행 중인 대국에 보입니다 (listLive). 관전은 안 됩니다.
 //
 // 게임 코드와 AI의 탐색(trainer/mcts.js)은 게임 실행기(engine.js)의 샌드박스 Worker에서, 신경망은 사이트 쪽 Worker(ai-net.js)에서 돕니다.
 // AI 차례가 되면 실행기에 think를 부르고, 실행기가 신경망 계산을 부탁할 때마다(need) 관측을 ai-net.js에 넣어 결과를 answer로 돌려줍니다.
@@ -79,6 +79,7 @@ function savedLevel() {
 
 /** 다음 판으로 넘깁니다. 앞 판에서 기다리던 것들은 그만둡니다 */
 function nextRound() {
+  sendRecord(); // 앞 판에서 아직 안 보낸 수 (끝나지 않았으면 나간 판으로 남습니다)
   round++;
   for (const left of leaving.splice(0)) left();
   return round;
@@ -166,6 +167,7 @@ async function newGame(side) {
   moves = 0;
   hover = null;
   const seed = crypto.getRandomValues(new Uint32Array(1))[0];
+  startRecord(my, seed);
   const s = await runner.start(seed, lookOpts());
   if (my !== round) return;
   snap = s.look;
@@ -179,6 +181,7 @@ async function newGame(side) {
 
 /** player가 행동 하나를 둡니다. 판이 바뀌었는지 돌려줍니다 */
 async function act(player, action) {
+  noteMove(player, action);
   const r = await runner.play([{ player, action }], lookOpts());
   const step = r.steps[0];
   if (step.changed && step.turn !== player) moves++;
@@ -197,6 +200,7 @@ function checkEnd() {
   if (ended) {
     phase = 'ended';
     reportEnd(round);
+    endRecord(round);
   }
 }
 
@@ -229,6 +233,64 @@ function reportEnd(my) {
   report({ event: 'end', result: winner === null ? 'draw' : winner === seat ? 'win' : 'lose' });
 }
 
+// ---- 기보 (분석용) ----
+// 판을 통째로 서버에 보내 남깁니다 (POST /api/ai/{game}/match, server/internal/ai/matches.go, server/internal/record/ai.go).
+// 사람이 첫 수를 둔 판부터, LIVE_MS마다 수가 늘었으면, 끝났을 때, 다른 판으로 넘어가거나 화면을 닫을 때 보냅니다.
+// 서버는 받은 판으로 파일을 덮어쓰므로 요청 하나를 놓쳐도 다음 요청이 채웁니다. 끝 소식 없이 끊긴 판은 나간 판으로 남습니다.
+// 모든 행동(게임이 무시한 클릭 포함)과 판 시작부터 지난 시간을 남깁니다 (온라인 대국의 기보와 같은 모양).
+// ?sims=로 시험하는 판은 보내지 않습니다. 실패해도 대국에는 상관없습니다.
+
+const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 서버 record.NewID와 같은 글자, 10글자
+const KEEPALIVE_MAX = 60_000; // keepalive 요청은 본문이 64KB를 넘으면 브라우저가 보내지 않습니다
+// 지금 판의 기보. on은 사람이 첫 수를 둬서 보내기 시작했는지, sent는 보낸 행동 수, done은 끝까지 보냈는지
+let rec = null;
+
+function newRecordId() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(10)), (b) => ID_CHARS[b % ID_CHARS.length]).join('');
+}
+
+function startRecord(my, seed) {
+  rec = { round: my, id: newRecordId(), seed, seat, level, sims: sims(), t0: performance.now(), moves: [], end: null, on: false, sent: 0, done: false };
+}
+
+/** 지금 판에 행동 하나를 적습니다 (사람과 AI 모두) */
+function noteMove(player, action) {
+  if (rec?.round !== round) return;
+  const { kind, row = 0, col = 0 } = action;
+  rec.moves.push({ player, action: { kind, row, col }, at: Math.round(performance.now() - rec.t0) });
+}
+
+/** 판 my가 끝났으면 결과를 적고 보냅니다 */
+function endRecord(my) {
+  if (rec?.round !== my || !ended || rec.end) return;
+  const reason = { resign: 'resign', aiStuck: 'stuck' }[ended.why] ?? 'result'; // 수 상한, 둘 사람 없음도 규칙대로 끝난 것
+  rec.end = { winner: ended.winner, reason };
+  sendRecord();
+}
+
+/** 사람이 판 my의 첫 수를 뒀으면 보내기 시작합니다 */
+function recordOn(my) {
+  if (rec?.round !== my || rec.on) return;
+  rec.on = true;
+  sendRecord();
+}
+
+/** 아직 안 보낸 것(늘어난 수, 끝)이 있으면 판을 통째로 보냅니다 */
+function sendRecord() {
+  if (!rec?.on || rec.done || testSims !== null) return;
+  if (rec.moves.length === rec.sent && !rec.end) return;
+  const { id, seed, seat: s, level: l, sims: n, moves, end } = rec;
+  const body = JSON.stringify({ id, version: entry.version ?? '', seed, seat: s, level: l, sims: n, moves, end: end ?? undefined });
+  rec.sent = moves.length;
+  rec.done = !!end;
+  fetch(`/api/ai/${encodeURIComponent(gameId)}/match`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    keepalive: body.length < KEEPALIVE_MAX, // 화면을 닫으면서 보낼 때도 가게 (너무 크면 앞서 보낸 것까지만 남습니다)
+  }).catch(() => {});
+}
+
 // ---- 방 목록 ----
 // 두는 동안 방 목록의 진행 중인 대국에 보입니다 (POST·DELETE /api/ai/{game}/live, server/internal/ai/live.go).
 // 사람이 첫 수를 둔 판부터 올리고 LIVE_MS마다 다시 알립니다. 판이 끝나거나 화면을 닫으면 내립니다
@@ -251,7 +313,8 @@ function sendLive(method) {
 /** 지금 판을 방 목록에 올리거나(on) 내립니다 */
 function setLive(on) {
   clearInterval(beat);
-  beat = on ? setInterval(() => sendLive('POST'), LIVE_MS) : null;
+  // 다시 알릴 때 그사이 늘어난 수도 기보로 보냅니다
+  beat = on ? setInterval(() => (sendLive('POST'), sendRecord()), LIVE_MS) : null;
   sendLive(on ? 'POST' : 'DELETE');
 }
 
@@ -269,8 +332,9 @@ function syncLive() {
   setLive(false);
 }
 
-// 화면을 떠나면 내리고, 뒤로 가기로 그대로 돌아오면(bfcache) 다시 올립니다
+// 화면을 떠나면 내리고(아직 안 보낸 수는 기보로 보냄), 뒤로 가기로 그대로 돌아오면(bfcache) 다시 올립니다
 addEventListener('pagehide', () => {
+  sendRecord();
   if (listed >= 0) setLive(false);
 });
 addEventListener('pageshow', (e) => {
@@ -290,6 +354,7 @@ async function aiTurns(my) {
     if (!action) {
       ended = { winner: null, why: 'aiStuck' };
       phase = 'ended';
+      endRecord(my); // 운영 통계에는 알리지 않지만 기보에는 남깁니다
       break;
     }
     await act(aiSeat(), action);
@@ -314,6 +379,7 @@ function humanAct(action) {
     if (await act(seat, action)) {
       reportPlay(my);
       reportEnd(my); // 첫 수로 바로 끝난 판 (act 안의 checkEnd는 play를 알리기 전이라 못 알림)
+      recordOn(my); // 첫 수로 바로 끝났으면 끝까지 한 번에 보냅니다
       listLive(my);
     }
     render();
@@ -483,6 +549,7 @@ function setupButtons() {
     ended = { winner: aiSeat(), why: 'resign' };
     phase = 'ended';
     reportEnd(my);
+    endRecord(my);
     render();
   });
   $('#again').addEventListener('click', () => {

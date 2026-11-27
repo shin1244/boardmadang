@@ -32,6 +32,10 @@ type Handler struct {
 	Plays Plays
 	// Live는 진행 중인 AI 대국입니다 (live.go, 방 목록). nil이면 알려 줘도 적지 않고 목록은 늘 비어 있습니다
 	Live *Live
+	// Matches는 AI 대국의 기보입니다 (matches.go, record.AIStore). nil이면 받아도 남기지 않습니다
+	Matches Matches
+	// Locate는 요청이 온 나라의 코드입니다 (모르면 ""). AI 대국의 기보에 남깁니다. nil이면 남기지 않습니다
+	Locate func(r *http.Request) string
 }
 
 // Games는 올린 게임의 주인과 버전, 코드입니다 (upload.Store).

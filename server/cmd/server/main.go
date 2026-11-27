@@ -61,9 +61,6 @@ func main() {
 	}
 	comments.Names = accounts
 	uploads.Names = accounts
-	login := &auth.Handler{Providers: providers(cfg), IDs: ids, Accounts: accounts, Records: records, PublicURL: cfg.PublicURL}
-	// 탈퇴하면 계정을 지운 뒤 기보의 자리, 의견, 올린 게임, 즐겨찾기에서 그 계정을 지웁니다
-	mine := account.Handler{Store: accounts, IDs: ids, Forget: []func(string) error{records.Forget, comments.Forget, uploads.Forget, stars.Forget}}
 	ops, err := admin.Open(cfg.DataDir)
 	if err != nil {
 		log.Fatalf("운영 기록을 읽지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
@@ -74,8 +71,11 @@ func main() {
 		log.Fatalf("방문 기록을 읽지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
 	}
 	ids.OnMe = visits.Visit
+	// 나라: 방문 수, 대국과 AI 대국의 기보에 남깁니다 (IP 주소는 남기지 않습니다)
+	var locate func(r *http.Request) string
 	if countries := openGeo(cfg.GeoFile); countries != nil {
-		visits.Locate = func(r *http.Request) string { return countries.Country(geo.ClientIP(r)) }
+		locate = func(r *http.Request) string { return countries.Country(geo.ClientIP(r)) }
+		visits.Locate = locate
 	}
 	var pages *site.Site // 아래에서 엽니다
 	models, err := ai.Open(cfg.DataDir)
@@ -89,9 +89,18 @@ func main() {
 	}
 	// 모델은 있는 게임에만 올립니다. AI 만들기 요청과 코드 받기는 올린 게임만입니다
 	// AI 대국 수는 방문과 같은 통계(stats)에 셉니다
-	bots := &ai.Handler{Store: models, IDs: ids, Games: uploads, Known: known, Plays: visits, Live: ai.NewLive()}
+	aiRecords, err := record.OpenAI(cfg.DataDir)
+	if err != nil {
+		log.Fatalf("AI 대국 기보 폴더를 열지 못했습니다 (DATA_DIR=%s): %v", cfg.DataDir, err)
+	}
+	// AI 대국의 기보는 분석용으로 따로 남깁니다 (record/ai.go)
+	bots := &ai.Handler{Store: models, IDs: ids, Games: uploads, Known: known, Plays: visits, Live: ai.NewLive(), Matches: aiRecords, Locate: locate}
 	favs := &star.Handler{Store: stars, IDs: ids, Known: known}
+	login := &auth.Handler{Providers: providers(cfg), IDs: ids, Accounts: accounts, Records: records, AIRecords: aiRecords, PublicURL: cfg.PublicURL}
+	// 탈퇴하면 계정을 지운 뒤 기보와 AI 대국의 자리, 의견, 올린 게임, 즐겨찾기에서 그 계정을 지웁니다
+	mine := account.Handler{Store: accounts, IDs: ids, Forget: []func(string) error{records.Forget, aiRecords.Forget, comments.Forget, uploads.Forget, stars.Forget}}
 	h := hub.New(cfg, ids, records)
+	h.Locate = locate
 	ops.Records, ops.Visits, ops.Live = records, visits, h.Live
 	pages, err = site.Open(cfg.SiteDir)
 	if err != nil {
@@ -131,8 +140,11 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Println("종료 실패:", err)
 	}
+	// 웹소켓은 Shutdown이 기다리지 않으므로 아직 열려 있습니다. 진행 중인 대국을 끝내 기보로 남기고 화면에도 알립니다
+	if n := h.Shutdown(); n > 0 {
+		log.Printf("진행 중이던 대국 %d개를 기보로 남겼습니다", n)
+	}
 	records.Close() // 쓰는 중인 기보를 마저 씁니다
-	// TODO: 진행 중인 방에 종료를 알리고 기보로 남기기 (docs/deploy-gcp.md 참고)
 }
 
 // openGeo는 방문의 나라를 세는 나라 파일을 엽니다 (internal/geo). 없거나 못 읽으면 nil이고 나라 없이 셉니다.
@@ -253,6 +265,7 @@ func routes(h *hub.Hub, ids *identity.Issuer, records *record.Store, comments *c
 		mux.HandleFunc("DELETE /api/ai/{game}/request", bots.ServeCancel)
 		mux.HandleFunc("GET /api/ai/{game}/training", bots.ServeTraining)
 		mux.HandleFunc("POST /api/ai/{game}/plays", bots.ServePlays)
+		mux.HandleFunc("POST /api/ai/{game}/match", bots.ServeMatch)
 		mux.HandleFunc("GET /api/ai/live", bots.ServeLive)
 		mux.HandleFunc("POST /api/ai/{game}/live", bots.ServeLiveBeat)
 		mux.HandleFunc("DELETE /api/ai/{game}/live", bots.ServeLiveEnd)

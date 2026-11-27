@@ -36,12 +36,15 @@ import (
 	"github.com/shin1244/boardmadang/server/internal/stats"
 )
 
-// Player는 대국에 앉은 사람입니다. ID는 서버 안에서만 씁니다 (브라우저에는 View로 빼고 보냅니다).
+// Player는 대국에 앉은 사람입니다. ID와 나라는 서버 안에서만 씁니다 (브라우저에는 View로 빼고 보냅니다).
 type Player struct {
 	ID   string `json:"id"`
 	Kind string `json:"kind"`
 	Tag  string `json:"tag"`
 	Name string `json:"name,omitempty"`
+	// Country는 대국을 시작할 때 접속한 나라 코드입니다 (internal/geo, 분석용). 모르면 없음.
+	// 이 기능 전의 기보, 탈퇴한 사람의 자리에도 없습니다
+	Country string `json:"country,omitempty"`
 }
 
 // Move는 행동 하나입니다. 순번은 Moves 안의 위치입니다.
@@ -51,7 +54,23 @@ type Move struct {
 	At     int64           `json:"at"` // 대국 시작부터 지난 ms
 }
 
-// Match는 끝난 대국 하나입니다.
+// Drop은 대국 중에 연결이 끊긴 한 번입니다 (hub.ReconnectGrace 안에 돌아왔는지). 시각은 대국 시작부터 지난 ms입니다.
+type Drop struct {
+	Player int    `json:"player"`
+	At     int64  `json:"at"`
+	Back   *int64 `json:"back"` // 돌아온 때. 돌아오지 못했거나(left) 그사이 대국이 끝났으면 null
+}
+
+// AISide는 AI 대국에서 AI 쪽입니다 (internal/ai의 matches.go). 온라인 대국에는 없습니다.
+type AISide struct {
+	Seat  int    `json:"seat"`  // AI가 앉은 자리
+	Level string `json:"level"` // easy | normal | hard
+	Sims  int    `json:"sims"`  // 한 행동마다의 탐색 횟수
+	Model string `json:"model"` // 신경망 파일 (<해시>.onnx)
+}
+
+// Match는 대국 하나입니다. 온라인 대국은 끝난 판만 남깁니다.
+// AI 대국(AI가 있음)은 두는 동안에도 남기므로, 끝나지 않은 판은 Reason이 ""이고 Ended가 없습니다.
 type Match struct {
 	ID      string    `json:"id"`
 	Game    string    `json:"game"`
@@ -63,8 +82,11 @@ type Match struct {
 	Winner  *int      `json:"winner"`
 	Reason  string    `json:"reason"`          // protocol의 Reason* 값
 	Clock   *[2]int64 `json:"clock,omitempty"` // 끝났을 때 남은 시간(ms). 타이머가 없으면 없음
+	Drops   []Drop    `json:"drops,omitempty"` // 대국 중에 연결이 끊긴 때. 이 기능 전의 기보에는 없습니다
+	AI      *AISide   `json:"ai,omitempty"`
 	Started time.Time `json:"started"`
-	Ended   time.Time `json:"ended"`
+	Ended   time.Time `json:"ended,omitzero"`
+	Updated time.Time `json:"updated,omitzero"` // AI 대국: 마지막으로 소식이 온 때
 }
 
 // 기보 id. 방 코드와 같은 글자를 쓰지만, 방 코드는 다시 쓰이므로 따로 만듭니다.
@@ -118,11 +140,14 @@ func Open(dir string) (*Store, error) {
 	return s, nil
 }
 
-// counts는 둔 판 수에 세는 대국인지입니다. 무효가 된 대국, 행동이 하나도 없는 대국,
+// counts는 둔 판 수에 세는 대국인지입니다. 무효가 된 대국(서버를 끄느라 끝낸 대국 포함), 행동이 하나도 없는 대국,
 // 한 사람이 두 자리에 앉은 대국은 세지 않습니다 (혼자 판 수를 부풀리지 못하게).
-func counts(m *Match) bool {
+func counts(m *Match) bool { return Counts(m) }
+
+// Counts는 counts를 밖에서 쓸 때입니다 (cmd/dbexport의 counted).
+func Counts(m *Match) bool {
 	switch m.Reason {
-	case protocol.ReasonDesync, protocol.ReasonDisagree, protocol.ReasonLimit:
+	case protocol.ReasonDesync, protocol.ReasonDisagree, protocol.ReasonLimit, protocol.ReasonShutdown:
 		return false
 	}
 	return len(m.Moves) > 0 && m.Players[0].ID != m.Players[1].ID
@@ -402,7 +427,9 @@ func (s *Store) Adopt(guestID string, to Player) (int, error) {
 		}
 		for i := range m.Players {
 			if m.Players[i].ID == guestID {
-				m.Players[i] = to
+				p := to
+				p.Country = m.Players[i].Country // 그 판을 둘 때의 나라는 그대로
+				m.Players[i] = p
 			}
 		}
 		if err := s.writeMatch(m); err != nil {

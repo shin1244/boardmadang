@@ -19,7 +19,6 @@ import (
 	_ "modernc.org/sqlite" // 순수 Go라 cgo 없이 빌드됩니다 (Dockerfile의 CGO_ENABLED=0)
 
 	"github.com/shin1244/boardmadang/server/internal/comment"
-	"github.com/shin1244/boardmadang/server/internal/protocol"
 	"github.com/shin1244/boardmadang/server/internal/record"
 	"github.com/shin1244/boardmadang/server/internal/stats"
 )
@@ -97,6 +96,7 @@ func build(data, site, file string, now time.Time) (*Summary, error) {
 		{"게임", e.games},
 		{"계정", e.accounts},
 		{"대국", e.matches},
+		{"AI 대국 기보", e.aiMatches},
 		{"의견", e.comments},
 		{"즐겨찾기", e.stars},
 		{"방문", e.visits},
@@ -316,6 +316,7 @@ func (e *exporter) unknownGames() error {
 		SELECT game_id, 'unknown' FROM (
 			SELECT game_id FROM matches UNION SELECT game_id FROM comments
 			UNION SELECT game_id FROM stars UNION SELECT game_id FROM ai_plays
+			UNION SELECT game_id FROM ai_matches
 		) WHERE game_id NOT IN (SELECT id FROM games)`)
 	if err != nil {
 		return err
@@ -385,18 +386,11 @@ func (e *exporter) accounts() error {
 	return e.insert("accounts", []string{"id", "provider", "name", "created_at", "created_day", "renamed_at", "suspended"}, rows...)
 }
 
-// counted는 record.counts와 같은 기준입니다: 무효, 행동 없음, 한 사람이 두 자리에 앉은 대국은 세지 않습니다.
-func counted(m *record.Match) bool {
-	switch m.Reason {
-	case protocol.ReasonDesync, protocol.ReasonDisagree, protocol.ReasonLimit:
-		return false
-	}
-	return len(m.Moves) > 0 && m.Players[0].ID != m.Players[1].ID
-}
+// counted는 로비의 판 수와 같은 기준입니다 (record.Counts): 무효, 행동 없음, 한 사람이 두 자리에 앉은 대국은 세지 않습니다.
+func counted(m *record.Match) bool { return record.Counts(m) }
 
-// matches는 matches/<앞 두 글자>/<id>.json을 모두 읽습니다.
-func (e *exporter) matches() error {
-	root := filepath.Join(e.data, "matches")
+// matchFiles는 root/<앞 두 글자>/<id>.json 파일을 이름 순서로 돌려줍니다. 폴더가 없으면 비어 있습니다.
+func matchFiles(root string) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if errors.Is(err, os.ErrNotExist) && p == root {
@@ -405,16 +399,34 @@ func (e *exporter) matches() error {
 		if err != nil {
 			return err
 		}
+		if d.IsDir() && d.Name() == "users" && filepath.Dir(p) == root {
+			return fs.SkipDir // aimatches/users/의 목록 파일
+		}
 		if !d.IsDir() && strings.HasSuffix(p, ".json") { // 쓰는 중인 .tmp는 건너뜁니다
 			files = append(files, p)
 		}
 		return nil
 	})
+	slices.Sort(files)
+	return files, err
+}
+
+// actionRows는 기보의 행동을 match_actions(ai_match_actions)의 줄로 바꿉니다.
+func actionRows(m *record.Match) [][]any {
+	rows := make([][]any, len(m.Moves))
+	for seq, a := range m.Moves {
+		rows[seq] = []any{m.ID, seq, a.Player, a.Action.Kind, a.Action.Row, a.Action.Col, a.At}
+	}
+	return rows
+}
+
+// matches는 matches/<앞 두 글자>/<id>.json을 모두 읽습니다.
+func (e *exporter) matches() error {
+	files, err := matchFiles(filepath.Join(e.data, "matches"))
 	if err != nil {
 		return err
 	}
-	slices.Sort(files)
-	var matches, players, actions [][]any
+	var matches, players, actions, drops [][]any
 	for _, file := range files {
 		m := new(record.Match)
 		if _, err := readJSON(file, m); err != nil {
@@ -437,20 +449,82 @@ func (e *exporter) matches() error {
 			len(m.Moves), m.Reason, m.Winner, boolInt(counted(m)), left0, left1,
 		})
 		for seat, p := range m.Players {
-			players = append(players, []any{m.ID, seat, p.ID, p.Kind, nullable(p.Name)})
+			players = append(players, []any{m.ID, seat, p.ID, p.Kind, nullable(p.Name), nullable(p.Country)})
 		}
-		for seq, a := range m.Moves {
-			actions = append(actions, []any{m.ID, seq, a.Player, a.Action.Kind, a.Action.Row, a.Action.Col, a.At})
+		actions = append(actions, actionRows(m)...)
+		for n, d := range m.Drops {
+			drops = append(drops, []any{m.ID, n, d.Player, d.At, d.Back})
 		}
 	}
 	if err := e.insert("matches", []string{"id", "game_id", "version", "timer_minutes", "started_at", "ended_at", "day",
 		"duration_sec", "actions", "reason", "winner", "counted", "clock_left0_ms", "clock_left1_ms"}, matches...); err != nil {
 		return err
 	}
-	if err := e.insert("match_players", []string{"match_id", "seat", "player_id", "kind", "name"}, players...); err != nil {
+	if err := e.insert("match_players", []string{"match_id", "seat", "player_id", "kind", "name", "country"}, players...); err != nil {
+		return err
+	}
+	if err := e.insert("match_drops", []string{"match_id", "n", "seat", "at_ms", "back_ms"}, drops...); err != nil {
 		return err
 	}
 	return e.insert("match_actions", []string{"match_id", "seq", "seat", "kind", "row", "col", "at_ms"}, actions...)
+}
+
+// aiLeftAfter 동안 소식이 없는 끝나지 않은 AI 대국은 나간 판(left)으로 봅니다.
+// 화면은 두는 동안 20초마다 보내고, 뒤에 있는 탭은 브라우저가 1분에 한 번으로 늦춥니다 (ai.LiveBeat, liveTTL).
+const aiLeftAfter = 2 * time.Minute
+
+// aiMatches는 aimatches/<앞 두 글자>/<id>.json을 모두 읽습니다 (record/ai.go).
+func (e *exporter) aiMatches() error {
+	files, err := matchFiles(filepath.Join(e.data, "aimatches"))
+	if err != nil {
+		return err
+	}
+	var matches, actions [][]any
+	for _, file := range files {
+		m := new(record.Match)
+		if _, err := readJSON(file, m); err != nil {
+			e.skip(file, err)
+			continue
+		}
+		if !record.ValidID(m.ID) || m.Game == "" || m.AI == nil || (m.AI.Seat != 0 && m.AI.Seat != 1) || m.Updated.IsZero() {
+			e.skip(file, errors.New("AI 대국 기보 모양이 아닙니다"))
+			continue
+		}
+		human := 1 - m.AI.Seat
+		p := m.Players[human]
+		last := m.Ended
+		status, result := "ended", any(nil)
+		switch {
+		case m.Reason == "" && e.now.Sub(m.Updated) > aiLeftAfter:
+			status, last = "left", m.Updated
+		case m.Reason == "":
+			status, last = "playing", m.Updated
+		case m.Winner == nil:
+			result = "draw"
+		case *m.Winner == human:
+			result = "win"
+		default:
+			result = "lose"
+		}
+		var duration any
+		if !m.Started.IsZero() {
+			duration = last.Sub(m.Started).Seconds()
+		}
+		matches = append(matches, []any{
+			m.ID, m.Game, nullable(m.Version), nullable(m.AI.Model), m.AI.Level, m.AI.Sims, human,
+			p.ID, p.Kind, nullable(p.Name), nullable(p.Country),
+			kst(m.Started), kst(m.Ended), kst(m.Updated), stats.Day(last), duration,
+			len(m.Moves), status, nullable(m.Reason), m.Winner, result,
+		})
+		actions = append(actions, actionRows(m)...)
+	}
+	if err := e.insert("ai_matches", []string{"id", "game_id", "version", "model", "level", "sims", "human_seat",
+		"player_id", "player_kind", "player_name", "country",
+		"started_at", "ended_at", "updated_at", "day", "duration_sec",
+		"actions", "status", "reason", "winner", "human_result"}, matches...); err != nil {
+		return err
+	}
+	return e.insert("ai_match_actions", []string{"match_id", "seq", "seat", "kind", "row", "col", "at_ms"}, actions...)
 }
 
 // comments는 comments/<게임>.jsonl을 처음부터 다시 적용합니다 (comment 패키지의 thread.apply와 같은 방법).

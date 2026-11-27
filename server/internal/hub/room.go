@@ -40,7 +40,10 @@ type Room struct {
 	clockSeq int    // 시계에 반영한 가장 최근 순번
 
 	started time.Time
-	at      []int64 // Log[i]가 시작부터 몇 ms 뒤에 왔는지. 기보에 남깁니다
+	at      []int64       // Log[i]가 시작부터 몇 ms 뒤에 왔는지. 기보에 남깁니다
+	country [2]string     // 자리마다 대국을 시작할 때 접속한 나라. 기보에 남깁니다 (끊겼다 다른 곳에서 돌아와도 그대로)
+	drops   []record.Drop // 대국 중에 연결이 끊긴 때. 기보에 남깁니다
+	dropAt  [2]int        // 자리마다 아직 돌아오지 않은 끊김의 drops 위치. 없으면 -1
 
 	drawBy    *int   // 무승부를 제안해 둔 자리. 없으면 nil (offers.go)
 	drawAt    [2]int // 자리별로 마지막에 제안했을 때의 행동 수. 그 뒤로 행동이 있어야 다시 제안할 수 있습니다
@@ -70,6 +73,8 @@ func newRoom(h *Hub, id, game, version string, seed uint32, minutes *int, player
 		inTurn:   make(map[string]bool),
 		clockSeq: -2,
 		started:  time.Now(),
+		country:  [2]string{players[0].country, players[1].country},
+		dropAt:   [2]int{-1, -1},
 		drawAt:   [2]int{-1, -1},
 		watchers: make(map[*Client]struct{}),
 	}
@@ -206,6 +211,8 @@ func (r *Room) playerLeft(player int, c *Client) {
 	r.awayGen[player]++
 	gen := r.awayGen[player]
 	r.away[player] = time.AfterFunc(ReconnectGrace, func() { r.expire(player, gen) })
+	r.dropAt[player] = len(r.drops)
+	r.drops = append(r.drops, record.Drop{Player: player, At: time.Since(r.started).Milliseconds()})
 	r.hub.markAway(c.user.ID, r) // 락 순서 r.mu → h.mu
 	away := protocol.Away{Type: protocol.TypeAway, Player: player, Seconds: int(ReconnectGrace / time.Second)}
 	r.Players[1-player].Send(away)
@@ -243,6 +250,11 @@ func (r *Room) resume(c *Client) bool {
 	r.away[seat].Stop()
 	r.away[seat] = nil
 	r.Players[seat] = c
+	if i := r.dropAt[seat]; i >= 0 && !r.ended { // 끝난 대국에 돌아온 것은 돌아온 것으로 치지 않습니다
+		back := time.Since(r.started).Milliseconds()
+		r.drops[i].Back = &back
+	}
+	r.dropAt[seat] = -1
 	otherSeat := 1 - seat
 	stillAway := r.away[otherSeat] != nil && r.Players[otherSeat].user.ID == c.user.ID
 	r.hub.seatClient(c, r, seat, r.ended, stillAway) // 락 순서 r.mu → h.mu
@@ -304,10 +316,13 @@ func (r *Room) record(winner *int, reason string) *record.Match {
 	}
 	for i, p := range r.Players {
 		u := p.user
-		m.Players[i] = record.Player{ID: u.ID, Kind: u.Kind, Tag: u.Tag, Name: u.Name}
+		m.Players[i] = record.Player{ID: u.ID, Kind: u.Kind, Tag: u.Tag, Name: u.Name, Country: r.country[i]}
 	}
 	for i, l := range r.Log {
 		m.Moves[i] = record.Move{Player: l.Player, Action: l.Action, At: r.at[i]}
+	}
+	if len(r.drops) > 0 {
+		m.Drops = append([]record.Drop{}, r.drops...)
 	}
 	if r.clock != nil {
 		rem := r.clock.remaining // stopClock이 끝난 시각으로 맞춰 둡니다
