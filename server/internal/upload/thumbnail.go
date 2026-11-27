@@ -23,11 +23,15 @@ const (
 	pieceKinds = 32 // GAME_LIMITS.pieceKinds
 )
 
-// 테두리(frame 표시)와 선(lines)의 두께 범위. 칸 한 변의 %입니다 (sdk/playground/board.js의 FRAME_WIDTH, LINE_WIDTH).
+// 테두리(frame 표시), 선(lines), 칸 사이 벽(walls)의 두께 범위. 칸 한 변의 %입니다 (sdk/playground/board.js의 FRAME_WIDTH, LINE_WIDTH, WALL_WIDTH).
 var (
 	frameWidth = [2]float64{1, 30}
 	lineWidth  = [2]float64{1, 50}
+	wallWidth  = [2]float64{1, 50}
 )
+
+// wallSides는 벽이 서는 변입니다: 칸의 오른쪽(e)과 아래(s) (sdk/playground/board.js의 WALL_SIDES).
+var wallSides = []string{"e", "s"}
 
 var (
 	places    = []string{"cells", "points", "both"}
@@ -66,7 +70,7 @@ func CheckThumbnail(data []byte) (json.RawMessage, []string) {
 
 	b := t["board"].(map[string]any)
 	rows, cols := b["rows"].(float64), b["cols"].(float64)
-	for _, k := range []string{"marks", "tint", "text", "lines"} {
+	for _, k := range []string{"marks", "tint", "text", "lines", "walls"} {
 		if x, present := view[k]; present {
 			if _, isList := x.([]any); !isList {
 				p = append(p, fmt.Sprintf("thumbnail.view.%s: must be a list if present", k))
@@ -97,9 +101,9 @@ func CheckThumbnail(data []byte) (json.RawMessage, []string) {
 	}
 	if !every("pieces", func(x map[string]any) bool {
 		s, isStr := x["piece"].(string)
-		return isCell(x) && isStr && jsLen(s) <= 32
+		return isCell(x) && isStr && jsLen(s) <= 32 && (!has(x, "group") || isGroup(x["group"]))
 	}) {
-		p = append(p, "thumbnail.view.pieces: each needs a place on the board and a piece name")
+		p = append(p, "thumbnail.view.pieces: each needs a place on the board and a piece name (and group, if present, up to 32 characters or a whole number)")
 	}
 	if !every("marks", func(m map[string]any) bool {
 		_, isStr := m["piece"].(string)
@@ -129,6 +133,29 @@ func CheckThumbnail(data []byte) (json.RawMessage, []string) {
 	}) {
 		p = append(p, fmt.Sprintf("thumbnail.view.lines: each needs from and to on the board, and width from %g to %g", lineWidth[0], lineWidth[1]))
 	}
+	// 칸 사이 벽: s면 (row, col)부터 오른쪽으로 length칸의 아래 변, e면 아래로 length칸의 오른쪽 변 (sdk/playground/board.js의 isWall)
+	if !every("walls", func(w map[string]any) bool {
+		if !isCell(w) || !slices.Contains(wallSides, str(w["side"])) {
+			return false
+		}
+		n := 1.0
+		if has(w, "length") {
+			var ok bool
+			if n, ok = whole(w["length"]); !ok || n < 1 || n > boardSize {
+				return false
+			}
+		}
+		last := map[string]any{"row": w["row"], "col": w["col"]}
+		if str(w["side"]) == "s" {
+			last["col"] = w["col"].(float64) + n - 1
+		} else {
+			last["row"] = w["row"].(float64) + n - 1
+		}
+		hover, _ := w["hover"].(map[string]any)
+		return isCell(last) && (!has(w, "color") || isColor(w["color"])) && isWidth(w, wallWidth) && (!has(w, "hover") || isCell(hover))
+	}) {
+		p = append(p, fmt.Sprintf("thumbnail.view.walls: each wall needs row, col, side ('e' or 's') and length that stay on the board, and width from %g to %g", wallWidth[0], wallWidth[1]))
+	}
 	if len(p) > 0 {
 		return nil, p
 	}
@@ -150,6 +177,9 @@ func CheckThumbnail(data []byte) (json.RawMessage, []string) {
 	for _, x := range items("pieces") {
 		c := cell(x)
 		c["piece"] = x["piece"]
+		if has(x, "group") {
+			c["group"] = x["group"]
+		}
 		pieces = append(pieces, c)
 	}
 	out["pieces"] = pieces
@@ -198,6 +228,24 @@ func CheckThumbnail(data []byte) (json.RawMessage, []string) {
 			lines = append(lines, c)
 		}
 		out["lines"] = lines
+	}
+	// 마우스를 올렸을 때만 보이는 벽(hover)도 넣지 않습니다
+	if _, present := view["walls"]; present {
+		walls := []any{}
+		for _, w := range items("walls") {
+			if has(w, "hover") {
+				continue
+			}
+			c := cell(w)
+			c["side"] = w["side"]
+			for _, k := range []string{"length", "color", "width"} {
+				if has(w, k) {
+					c[k] = w[k]
+				}
+			}
+			walls = append(walls, c)
+		}
+		out["walls"] = walls
 	}
 	norm := map[string]any{"board": board, "pieces": t["pieces"], "player": t["player"], "view": out}
 	var buf bytes.Buffer
@@ -310,7 +358,7 @@ var tileArrows = []string{"n", "ne", "e", "se", "s", "sw", "w", "nw"}
 // chessKinds는 글자 패를 체스 기물 그림으로 그릴 때의 모양입니다 (sdk/playground/board.js의 CHESS_KINDS).
 var chessKinds = []string{"K", "Q", "R", "B", "N", "P"}
 
-// pieceOk는 기물 목록의 한 항목이 이름이거나 글자 패 { name, text, player?, arrows?, chess? }인지입니다 (글자 패는 sdk/playground/board.js의 cleanPiece와 같은 규칙).
+// pieceOk는 기물 목록의 한 항목이 이름이거나 글자 패 { name, text, player?, arrows?, color?, chess? }인지입니다 (글자 패는 sdk/playground/board.js의 cleanPiece와 같은 규칙).
 func pieceOk(x any) bool {
 	if _, ok := x.(string); ok {
 		return true
@@ -324,7 +372,7 @@ func pieceOk(x any) bool {
 		return false
 	}
 	text, ok := m["text"].(string)
-	if n := utf8.RuneCountInString(text); !ok || n < 1 || n > 2 {
+	if !ok || utf8.RuneCountInString(text) > 2 {
 		return false
 	}
 	if has(m, "player") {
@@ -345,6 +393,9 @@ func pieceOk(x any) bool {
 			}
 			seen[s] = true
 		}
+	}
+	if has(m, "color") && !isColor(m["color"]) {
+		return false
 	}
 	if has(m, "chess") {
 		if s, ok := m["chess"].(string); !ok || !slices.Contains(chessKinds, s) {
@@ -373,6 +424,16 @@ func isColor(v any) bool {
 
 // colorNames는 게임이 쓸 수 있는 이름 붙은 색입니다 (sdk/playground/board.js의 NAMED_COLORS와 같아야 함).
 var colorNames = []string{"green", "yellow", "gray"}
+
+// isGroup은 화면 기물의 group(같은 값끼리 이어 그리는 묶음)으로 쓸 수 있는 값인지입니다: 1~32자의 글자나 정수
+// (sdk/playground/board.js의 isGroup).
+func isGroup(v any) bool {
+	if s, ok := v.(string); ok {
+		return s != "" && jsLen(s) <= 32
+	}
+	n, ok := whole(v)
+	return ok && math.Abs(n) <= 1<<53-1
+}
 
 // whole은 Number.isInteger입니다.
 func whole(v any) (float64, bool) {

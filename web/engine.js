@@ -26,7 +26,7 @@
 // 판, 기물, 화면에 쓸 수 있는 목록과 범위는 렌더러(sdk/playground/board.js)의 것을 그대로 씁니다. 여기에 다시 적지 않습니다.
 import {
   EFFECT_TYPES, FRAME_WIDTH, LINE_WIDTH, LOOK_NAMES, MARK_TYPES, PLACES, SHAPE_LIMITS,
-  cleanPieces, fieldOf, isCell, isColor, isInt, isSpecialKind, knowsPiece, listsOf, starsOf, validWidth,
+  cleanPieces, fieldOf, isCell, isColor, isGroup, isInt, isSpecialKind, isWall, knowsPiece, listsOf, starsOf, validWidth,
 } from '/sdk/playground/board.js';
 
 const FRAME = '/web/runner/frame.html';
@@ -132,9 +132,10 @@ function cleanView(v, board) {
   // 판 옆 목록(board.lists)의 칸 { list, row, col }
   const boxes = board.lists ?? [];
   const inList = (c) => !!c && isInt(c.list, 0, boxes.length - 1) && isCell(c, boxes[c.list]);
-  // from: 이 기물이 방금 어느 칸(판이나 목록)에서 왔는지 (화면이 움직여 보여 줌)
+  // from: 이 기물이 방금 어느 칸(판이나 목록)에서 왔는지 (화면이 움직여 보여 줌), group: 같은 값끼리 이어 그리는 묶음
   const withFrom = (x, o) => {
     if (x.from?.list === undefined ? cell(x.from) : inList(x.from)) o.from = x.from.list === undefined ? at(x.from) : { list: x.from.list, ...at(x.from) };
+    if (isGroup(x.group)) o.group = x.group;
     return o;
   };
   out.pieces = list(v.pieces).filter((x) => cell(x) && isPiece(x.piece)).map((x) => withFrom(x, { row: x.row, col: x.col, piece: x.piece }));
@@ -167,6 +168,15 @@ function cleanView(v, board) {
     if (cell(l.hover)) o.hover = at(l.hover);
     return o;
   });
+  // walls: 칸 사이 홈의 벽 (렌더러와 같은 규칙, isWall). 마우스를 올린 칸마다의 미리보기가 있을 수 있어 상한을 두 배로 둡니다
+  if (Array.isArray(v.walls)) {
+    out.walls = v.walls.slice(0, cap * 2).filter((w) => isWall(w, board)).map((w) => {
+      const o = { row: w.row, col: w.col, side: w.side };
+      for (const k of ['length', 'color', 'width']) if (w[k] !== undefined) o[k] = w[k];
+      if (w.hover !== undefined) o.hover = at(w.hover);
+      return o;
+    });
+  }
   // aliases: from 칸을 누르면 to 칸을 누른 것으로 (sdk/playground/board.js의 attachInput)
   if (Array.isArray(v.aliases)) {
     out.aliases = list(v.aliases).filter((a) => a && cell(a.from) && cell(a.to)).map((a) => ({ from: at(a.from), to: at(a.to) }));

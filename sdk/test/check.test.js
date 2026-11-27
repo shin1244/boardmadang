@@ -162,6 +162,49 @@ test('썸네일의 테두리 두께와 선: hover가 있는 칠하기와 선은 
   assert.match(broken((t) => { t.view.lines = {}; return t; })[0], /thumbnail\.view\.lines: must be a list/);
 });
 
+test('썸네일의 묶음(group): 맞는 값은 남기고, 틀린 값은 찍을 때 버리고 직접 넣으면 막습니다', () => {
+  const thumb = makeThumbnail(tictactoe, 0, {
+    pieces: [{ row: 0, col: 0, piece: 'x', group: 3 }, { row: 0, col: 1, piece: 'x', group: 'A' }, { row: 0, col: 2, piece: 'x', group: '' }],
+  });
+  assert.deepEqual(thumb.view.pieces, [{ row: 0, col: 0, piece: 'x', group: 3 }, { row: 0, col: 1, piece: 'x', group: 'A' }, { row: 0, col: 2, piece: 'x' }]);
+  assert.deepEqual(validateThumbnail(thumb), []);
+  for (const group of ['', 'g'.repeat(33), 1.5, null, [1]]) {
+    const t = structuredClone(thumb);
+    t.view.pieces[0].group = group;
+    assert.match(validateThumbnail(t)[0], /thumbnail\.view\.pieces/, JSON.stringify(group));
+  }
+});
+
+test('썸네일의 벽(walls): 미리보기 벽(hover)과 모르는 칸은 빼고, 판을 벗어나는 벽은 막습니다', () => {
+  const thumb = makeThumbnail(tictactoe, 0, {
+    pieces: [],
+    walls: [
+      { row: 0, col: 0, side: 's', length: 2, color: 1, width: 20, extra: 1 },
+      { row: 1, col: 2, side: 'e' },
+      { row: 2, col: 0, side: 'e', hover: { row: 2, col: 0 } },
+    ],
+  });
+  assert.deepEqual(thumb.view.walls, [{ row: 0, col: 0, side: 's', length: 2, color: 1, width: 20 }, { row: 1, col: 2, side: 'e' }]);
+  assert.deepEqual(validateThumbnail(thumb), []);
+  const broken = (f) => validateThumbnail(f(structuredClone(thumb)));
+  assert.match(broken((t) => { t.view.walls[0].length = 4; return t; })[0], /thumbnail\.view\.walls: each wall needs/);
+  assert.match(broken((t) => { t.view.walls[1].side = 'n'; return t; })[0], /thumbnail\.view\.walls/);
+  assert.match(broken((t) => { t.view.walls[1].width = 60; return t; })[0], /thumbnail\.view\.walls/);
+  assert.match(broken((t) => { t.view.walls = {}; return t; })[0], /thumbnail\.view\.walls: must be a list/);
+});
+
+test('view()의 벽이 판을 벗어나면 보이지 않는다고 경고합니다', () => {
+  const view = (s, p, lang) => ({ ...tictactoe.view(s, p, lang), walls: [{ row: 0, col: 2, side: 's', length: 2 }] });
+  const r = checkGame(variant({ view }), opts);
+  assert.ok(r.warnings.some((w) => w.startsWith('view().walls has {"row":0,"col":2,"side":"s","length":2}')), r.warnings.join('\n'));
+});
+
+test('view()의 기물에 틀린 group이 있으면 잇지 않는다고 경고합니다', () => {
+  const view = (s, p, lang) => ({ ...tictactoe.view(s, p, lang), pieces: [{ row: 0, col: 0, piece: 'x', group: 1.5 }] });
+  const r = checkGame(variant({ view }), opts);
+  assert.ok(r.warnings.some((w) => w.includes('view().pieces has group 1.5')), r.warnings.join('\n'));
+});
+
 test('찍은 뒤 게임의 판이나 기물을 바꾸면 다시 찍으라고 합니다', () => {
   const thumb = makeThumbnail(tictactoe, 0, tictactoe.view(midGame(), 0, 'ko'));
   const bigger = variant({ board: { ...tictactoe.board, rows: 4 } });
@@ -183,7 +226,7 @@ test('글자 패: { name, text, player, arrows }를 이름과 섞어 쓸 수 있
   assert.deepEqual(checkMembers({ ...tictactoe, pieces: tiles }), []);
   assert.deepEqual(checkMembers({ ...tictactoe, pieces: [...tiles, 'plain'] }), []);
   const bad = [
-    { name: 'x', text: '三글자' }, { name: 'x', text: '' }, { name: '', text: '王' }, { name: 'x' },
+    { name: 'x', text: '三글자' }, { name: '', text: '王' }, { name: 'x' }, { name: 'x', text: '', color: 'pink' },
     { name: 'x', text: '王', player: 2 }, { name: 'x', text: '王', player: null },
     { name: 'x', text: '王', arrows: ['up'] }, { name: 'x', text: '王', arrows: ['n', 'n'] }, { name: 'x', text: '王', arrows: 'n' },
     7, null, ['x'],

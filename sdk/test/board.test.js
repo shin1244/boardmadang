@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  BoardView, PLAYER_COLORS, PIECE_SETS, attachInput, buttonsOf, cleanPiece, cleanPieces, fieldOf, isColor, isSpecialKind, knowsPiece, listsOf,
+  BoardView, PLAYER_COLORS, PIECE_SETS, attachInput, buttonsOf, cleanPiece, cleanPieces, fieldOf, isColor, isGroup, isSpecialKind, isWall, knowsPiece, listsOf,
   paintPlayerDot, starsOf,
 } from '../playground/board.js';
 
@@ -431,13 +431,107 @@ test('기물 목록(cleanPieces): 기본 묶음의 이름이거나, 이름(1~32�
   assert.deepEqual(cleanPiece({ name: 'K0', text: 'K', player: 0, chess: 'K' }), { name: 'K0', text: 'K', player: 0, chess: 'K' });
   for (const bad of ['k', 'X', 'KQ', '', 1, null, ['K']]) assert.equal(cleanPiece({ name: 'K0', text: 'K', chess: bad }), null, JSON.stringify(bad));
   assert.equal(cleanPiece('p'.repeat(32)), 'p'.repeat(32));
+  // 면 색 (color). 글자는 없어도 됩니다. 모르는 칸은 버립니다 (블록은 패가 아니라 화면 기물의 group으로 잇습니다)
+  assert.deepEqual(cleanPiece({ name: 'b', text: '', color: 'green', joins: ['e'] }), { name: 'b', text: '', color: 'green' });
   for (const bad of ['', 'p'.repeat(33), 5, null, [], { name: 'k' }, { name: '', text: 'a' }, { name: 'k', text: 'abc' }, { name: 'k', text: 'a', player: 2 },
-    { name: 'k', text: 'a', arrows: ['n', 'n'] }, { name: 'k', text: 'a', arrows: ['up'] }]) {
+    { name: 'k', text: 'a', arrows: ['n', 'n'] }, { name: 'k', text: 'a', arrows: ['up'] },
+    { name: 'k', text: '', color: 'pink' }]) {
     assert.equal(cleanPiece(bad), null, JSON.stringify(bad));
   }
   // 기본 묶음의 기물 이름
   assert.ok(knowsPiece('chess', 'wK') && knowsPiece('go-stones', 'black') && knowsPiece('xo', 'o'));
   assert.ok(!knowsPiece('chess', 'x') && !knowsPiece('toString', 'x') && !knowsPiece('xo', 5));
+});
+
+test('묶음(group): 화면에서 바로 옆 칸에 같은 group의 글자 패가 있는 변을 잇습니다', () => {
+  for (const g of [0, -3, 7, 'A', 'p'.repeat(32)]) assert.ok(isGroup(g), String(g));
+  for (const g of ['', 'p'.repeat(33), 1.5, NaN, 2 ** 53, null, undefined, {}, [1]]) assert.ok(!isGroup(g), String(g));
+
+  const b = new BoardView(fakeCanvas(), tall, [{ name: 'b', text: '' }, { name: 'r', text: '★', color: 'green' }, 'stone', { name: 'K', text: 'K', chess: 'K' }]);
+  b.resize(480);
+  const view = {
+    pieces: [
+      // 가로 3칸 블록 (패 종류가 달라도 group이 같으면 잇습니다), 세로 2칸 블록, 둘 사이에 group이 다른 패 하나
+      { row: 0, col: 1, piece: 'b', group: 'A' }, { row: 0, col: 2, piece: 'r', group: 'A' }, { row: 0, col: 3, piece: 'b', group: 'A' },
+      { row: 1, col: 0, piece: 'b', group: 2 }, { row: 2, col: 0, piece: 'b', group: 2 },
+      { row: 1, col: 1, piece: 'b', group: 3 },
+      // 판의 끝 칸과 판 밖 영역의 첫 칸은 화면에서 떨어져 있어 잇지 않습니다
+      { row: 0, col: 7, piece: 'b', group: 9 }, { row: 0, col: 8, piece: 'b', group: 9 },
+      // 원 기물과 체스 기물 그림은 잇지 않습니다
+      { row: 3, col: 3, piece: 'stone', group: 5 }, { row: 3, col: 4, piece: 'stone', group: 5 },
+      { row: 4, col: 3, piece: 'K', group: 6 }, { row: 4, col: 4, piece: 'K', group: 6 },
+      // 틀린 group은 없는 것으로, 1과 '1'은 다른 group입니다
+      { row: 5, col: 0, piece: 'b', group: '' }, { row: 5, col: 1, piece: 'b', group: '' },
+      { row: 6, col: 0, piece: 'b', group: 1 }, { row: 6, col: 1, piece: 'b', group: '1' },
+    ],
+  };
+  const j = b.joinedSides(view, false);
+  // [위, 오른쪽, 아래, 왼쪽]
+  assert.deepEqual(j.get('0,1'), [false, true, false, false]);
+  assert.deepEqual(j.get('0,2'), [false, true, false, true]);
+  assert.deepEqual(j.get('0,3'), [false, false, false, true]);
+  assert.deepEqual(j.get('1,0'), [false, false, true, false]);
+  assert.deepEqual(j.get('2,0'), [true, false, false, false]);
+  for (const k of ['1,1', '0,7', '0,8', '3,3', '3,4', '4,3', '4,4', '5,0', '5,1', '6,0', '6,1']) assert.equal(j.get(k), undefined, k);
+  // 뒤집은 화면에서는 화면에서 보는 쪽이 반대입니다
+  const f = b.joinedSides(view, true);
+  assert.deepEqual(f.get('0,1'), [false, false, false, true]);
+  assert.deepEqual(f.get('1,0'), [true, false, false, false]);
+
+  // 판 옆 목록의 패는 같은 목록 안에서만 잇습니다 (목록 안은 뒤집지 않음)
+  const l = new BoardView(fakeCanvas(), withList(), [{ name: 'b', text: '' }]);
+  l.resize(480);
+  const lj = l.joinedSides({ pieces: [], lists: [{ pieces: [{ row: 0, col: 0, piece: 'b', group: 1 }, { row: 1, col: 0, piece: 'b', group: 1 }] }] }, true);
+  assert.deepEqual(lj.get('0:0,0'), [false, false, true, false]);
+  assert.deepEqual(lj.get('0:1,0'), [true, false, false, false]);
+});
+
+test('벽(walls): 모양 검사와 화면 자리. 판 기준이라 뒤집어도 같은 홈이고, 판 밖 영역에 걸치면 그리지 않습니다', () => {
+  const nine = { rows: 9, cols: 9 };
+  for (const w of [{ row: 0, col: 0, side: 's' }, { row: 3, col: 7, side: 's', length: 2 }, { row: 7, col: 8, side: 'e', length: 2, color: 1, width: 30 },
+    { row: 8, col: 8, side: 'e', hover: { row: 0, col: 0 } }]) assert.ok(isWall(w, nine), JSON.stringify(w));
+  for (const w of [null, { row: 0, col: 0 }, { row: 0, col: 0, side: 'n' }, { row: 3, col: 8, side: 's', length: 2 }, { row: 8, col: 0, side: 'e', length: 2 },
+    { row: 0, col: 0, side: 's', length: 0 }, { row: 0, col: 0, side: 's', length: 1.5 }, { row: 0, col: 0, side: 's', length: null },
+    { row: 0, col: 0, side: 's', color: 'pink' }, { row: 0, col: 0, side: 's', width: 60 }, { row: 0, col: 0, side: 's', hover: { row: 9, col: 0 } }]) {
+    assert.ok(!isWall(w, nine), JSON.stringify(w));
+  }
+
+  const b = new BoardView(fakeCanvas(), { places: 'cells', ...nine }, 'go-stones');
+  b.resize(400);
+  const { S } = b;
+  const near1 = (a, e) => Math.abs(a - e) < 0.01;
+  // (3,4)·(3,5) 아래의 가로 벽: 두 칸의 아래 경계에 칸 두 개 길이(양 끝 4%씩 짧게), 두께 16%
+  const [x4, y3] = b.center(3, 4, false);
+  const h = b.wallRect({ row: 3, col: 4, side: 's', length: 2 }, false);
+  assert.ok(near1(h.y + h.h / 2, y3 + S / 2) && near1(h.h, S * 0.16), JSON.stringify(h));
+  assert.ok(near1(h.x, x4 - S / 2 + S * 0.04) && near1(h.w, 2 * S - 2 * S * 0.04), JSON.stringify(h));
+  // 세로 벽: 칸의 오른쪽 경계
+  const v = b.wallRect({ row: 3, col: 4, side: 'e', length: 2, width: 30 }, false);
+  assert.ok(near1(v.x + v.w / 2, x4 + S / 2) && near1(v.w, S * 0.3) && near1(v.h, 2 * S - 2 * S * 0.04), JSON.stringify(v));
+  // 뒤집은 화면에서도 같은 홈: 판의 아래 변은 화면의 위쪽, 두 칸 사이
+  const [fx, fy] = b.center(3, 4, true);
+  const f = b.wallRect({ row: 3, col: 4, side: 's', length: 2 }, true);
+  assert.ok(near1(f.y + f.h / 2, fy - S / 2) && near1(f.x + f.w, fx + S / 2 - S * 0.04), JSON.stringify(f));
+  assert.ok(near1(f.y + f.h / 2, b.center(4, 4, true)[1] + S / 2));
+
+  // 판 밖 영역에 걸친 벽과 그리지 않는 칸의 벽은 자리가 없습니다
+  const t = new BoardView(fakeCanvas(), tall, 'go-stones');
+  t.resize(480);
+  assert.ok(t.wallRect({ row: 0, col: 6, side: 's', length: 2 }, false));
+  assert.equal(t.wallRect({ row: 0, col: 7, side: 's', length: 2 }, false), null);
+  assert.equal(t.wallRect({ row: 4, col: 9, side: 's' }, false), null);
+
+  // 그리기: 미리보기 벽은 마우스가 그 칸에 있을 때만
+  const canvas = fakeCanvas();
+  const d = new BoardView(canvas, { places: 'cells', ...nine }, 'go-stones');
+  d.resize(400);
+  const bars = () => canvas.calls.filter(([k]) => k === 'arcTo').length / 4;
+  const view = { pieces: [], walls: [{ row: 0, col: 0, side: 's', length: 2 }, { row: 2, col: 2, side: 'e', hover: { row: 2, col: 2 } }, { row: 8, col: 8, side: 's', length: 2 }] };
+  d.draw(view);
+  assert.equal(bars(), 1);
+  canvas.calls.length = 0;
+  d.draw(view, { hover: { row: 2, col: 2 } });
+  assert.equal(bars(), 2);
 });
 
 test('색과 특수 행동 이름: 게임이 쓸 수 있는 값', () => {

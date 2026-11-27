@@ -138,6 +138,25 @@ export interface Line {
   hover?: Cell;
 }
 
+/**
+ * 칸과 칸 사이 홈에 서는 벽 하나. 말 위에 둥근 막대로 그립니다.
+ * side가 's'면 (row, col)부터 오른쪽으로 length칸의 아래 변, 'e'면 (row, col)부터 아래로 length칸의 오른쪽 변입니다 (판 기준이라 뒤집은 화면에서도 같은 홈).
+ * 예: (3, 4)와 (3, 5) 아래의 2칸짜리 가로 벽은 `{ row: 3, col: 4, side: 's', length: 2 }`.
+ * 벽이 붙는 칸이 모두 판 안이어야 하고, 판과 판 밖 영역에 걸친 벽은 그리지 않습니다. 벽 두 끝은 칸 끝보다 조금 짧아서, 한 줄로 이어 놓은 두 벽은 따로 보입니다.
+ * 벽은 AI 관측에 들어가지 않으므로 AI가 알아야 하면 observe()로 넘깁니다. hover가 있는 벽은 썸네일에도 들어가지 않습니다.
+ */
+export interface Wall extends Cell {
+  side: 'e' | 's';
+  /** 벽이 걸치는 칸 수 (1~32). 없으면 1 */
+  length?: number;
+  /** 0 / 1이면 플레이어 색, 'green' · 'yellow' · 'gray'면 판 팔레트의 색, 아니면 '#rrggbb'. 없으면 진한 회색 */
+  color?: Player | ColorName | string;
+  /** 두께. 칸 한 변에 대한 % (1~50). 없으면 16% (글자 패와 칸 경계 사이의 여백에 꼭 맞음) */
+  width?: number;
+  /** 이 칸에 마우스를 올렸을 때만 연하게 그립니다 (벽을 놓기 전의 미리보기). legal()이 있으면 둘 수 있는 칸에만 마우스가 올라간 것으로 칩니다 */
+  hover?: Cell;
+}
+
 /** 화면에 보일 것. 그리는 건 플랫폼이 합니다. */
 export interface View {
   /**
@@ -147,8 +166,13 @@ export interface View {
    * 그 사이에 다른 기물에 새 from을 붙이면 그 기물만 움직입니다.
    * from이 판 옆 목록의 칸({ list, row, col })이면 목록에서 판으로 오면서 크기도 바뀝니다.
    * from은 AI 관측과 썸네일에 들어가지 않습니다.
+   *
+   * group(1~32자의 글자나 정수)은 여러 칸짜리 블록을 한 덩어리로 그릴 때 씁니다. 블록의 칸마다 글자 패를 하나씩 놓고 같은 group을 주면,
+   * 화면에서 바로 옆 칸에 같은 group의 글자 패가 있는 변을 이어 그립니다 (칸 끝까지 닿고 테두리가 없음). 블록마다 다른 값을 줍니다.
+   * 원 기물과 체스 기물 그림은 잇지 않고, 판과 판 밖 영역 사이처럼 화면에서 떨어진 칸도 잇지 않습니다.
+   * 블록의 칸마다 준 고른 기물(ring) · 마지막 수(last-move) 표시는 이어진 쪽을 비워서 블록 바깥만 두릅니다. AI 관측에는 들어가지 않습니다.
    */
-  pieces: Array<Cell & { piece: string; from?: Cell | ListCell }>;
+  pieces: Array<Cell & { piece: string; from?: Cell | ListCell; group?: string | number }>;
   marks?: Mark[];
   /**
    * 칸 칠하기. 0 / 1이면 플레이어 색, 'green' · 'yellow' · 'gray'면 판 팔레트의 색, 아니면 '#rrggbb'.
@@ -160,6 +184,8 @@ export interface View {
   text?: Array<Cell & { text: string }>;
   /** 두 칸을 잇는 선 */
   lines?: Line[];
+  /** 칸과 칸 사이 홈에 서는 벽 (길을 막는 벽, 울타리 같은 것) */
+  walls?: Wall[];
   /**
    * 클릭 옮기기. 마우스나 손가락이 from 칸에 있으면 to 칸에 있는 것으로 쳐서, 호버(미리보기)도 클릭도 to 칸입니다.
    * 조각이 판 밖으로 넘치는 끝 칸을 눌러도 들어맞는 자리에 놓게 하거나, 열 아무 데나 눌러 그 열에 두게 할 때 씁니다.
@@ -176,9 +202,9 @@ export interface View {
   effects?: Effect[];
   /**
    * 판 옆 목록(board.lists)에 놓을 기물. lists[i]가 board.lists[i]의 것이고, 칸은 목록 안 좌표(0 ~ rows-1, 0 ~ cols-1)입니다.
-   * from은 pieces와 같습니다 (판의 칸이나 목록의 칸). AI 관측과 썸네일에 들어가지 않습니다.
+   * from은 pieces와 같습니다 (판의 칸이나 목록의 칸). group도 pieces와 같고, 같은 목록 안에서만 잇습니다. AI 관측과 썸네일에 들어가지 않습니다.
    */
-  lists?: Array<{ pieces: Array<Cell & { piece: string; from?: Cell | ListCell }> }>;
+  lists?: Array<{ pieces: Array<Cell & { piece: string; from?: Cell | ListCell; group?: string | number }> }>;
   /** 보드 위 안내 문구 */
   message?: string;
 }
@@ -302,12 +328,14 @@ export type TileArrow = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
 export interface TilePiece {
   /** view()의 piece에 쓰는 이름 (32자까지) */
   name: string;
-  /** 패에 쓸 글자, 1~2자 */
+  /** 패에 쓸 글자, 0~2자 */
   text: string;
   /** 주인. 그 플레이어 색으로 칠하고 주인 쪽을 보고 서게 그립니다 (화면 아래쪽 플레이어의 패는 바로, 위쪽은 거꾸로) */
   player?: 0 | 1;
   /** 갈 수 있는 방향 표시 (겹치지 않게) */
   arrows?: TileArrow[];
+  /** 패의 면 색. 0 / 1이면 플레이어 색, 'green' · 'yellow' · 'gray'면 판 팔레트의 색, 아니면 '#rrggbb'. 테두리는 면보다 어둡게, 글자와 방향은 잘 보이게 정합니다 */
+  color?: Player | ColorName | string;
   /**
    * 패 대신 체스 기물 그림으로 그립니다: 킹, 퀸, 룩, 비숍, 나이트, 폰. 체스처럼 선공(player 0)은 흰 기물, 후공(player 1)은 검은 기물이고, 주인이 없으면 흰 기물입니다.
    * 그림은 늘 바로 서고 arrows는 그리지 않습니다. text는 이 칸을 모르는 옛 화면이 대신 쓰므로 그대로 적습니다.
