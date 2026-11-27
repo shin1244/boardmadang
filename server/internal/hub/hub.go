@@ -82,6 +82,12 @@ type Hub struct {
 	away  map[string]*Room     // 연결이 끊겨 돌아오기를 기다리는 user.ID → 그 방 (끝난 방일 수도 있습니다)
 	// 웹소켓이 열려 있는 user.ID → 연결 수 (탭마다 하나). 운영자 화면의 "지금 접속"에 씁니다
 	online map[string]int
+	// 서버를 끄는 중이면 새 대국을 받지 않습니다 (Shutdown)
+	closing bool
+
+	// Locate는 요청이 온 나라의 코드입니다 (모르면 ""). 대국의 기보에 자리마다 남깁니다. nil이면 남기지 않습니다.
+	// New 다음, ServeWS를 열기 전에 정합니다
+	Locate func(r *http.Request) string
 }
 
 // New는 허브를 만듭니다. records가 nil이면 기보를 저장하지 않습니다.
@@ -129,6 +135,9 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := newClient(h, conn, user)
+	if h.Locate != nil {
+		c.country = h.Locate(r)
+	}
 	h.mu.Lock()
 	h.online[user.ID]++
 	h.mu.Unlock()
@@ -162,6 +171,29 @@ func (h *Hub) Live() (online, playing int) {
 	return online, playing
 }
 
+// Shutdown은 진행 중인 대국을 모두 무효(shutdown)로 끝내 기보로 남기고, 그 뒤로는 새 대국을 받지 않습니다.
+// 서버를 끌 때 기보 저장소를 닫기 전에 부릅니다. 끝낸 대국 수를 돌려줍니다.
+// 양쪽과 관전자에게도 끝났다고 보내므로, 연결이 끊기기 전에 받은 화면은 왜 끝났는지 보여 줍니다.
+func (h *Hub) Shutdown() int {
+	h.mu.Lock()
+	h.closing = true
+	rooms := make([]*Room, 0, len(h.rooms))
+	for _, r := range h.rooms {
+		rooms = append(rooms, r)
+	}
+	h.mu.Unlock()
+	n := 0
+	for _, r := range rooms { // r.mu는 h.mu를 놓은 뒤에 잡습니다 (락 순서)
+		r.mu.Lock()
+		if !r.ended {
+			r.end(nil, protocol.ReasonShutdown)
+			n++
+		}
+		r.mu.Unlock()
+	}
+	return n
+}
+
 // seat는 c가 앉아 있는 방과 자리 번호입니다. 방에 없으면 nil.
 func (h *Hub) seat(c *Client) (*Room, int) {
 	h.mu.Lock()
@@ -176,6 +208,11 @@ func (h *Hub) seat(c *Client) (*Room, int) {
 func (h *Hub) begin(c *Client) bool {
 	h.dropRematch(c)
 	h.mu.Lock()
+	if h.closing {
+		h.mu.Unlock()
+		c.sendError("server closing")
+		return false
+	}
 	if c.busy() {
 		h.mu.Unlock()
 		c.sendError("already joined")

@@ -405,7 +405,7 @@ async function leave(e) {
 
 /** 내 쪽에서 본 결과: [글, class] */
 function resultOf(m) {
-  if (['desync', 'disagree', 'limit'].includes(m.reason)) return [t('history.void'), 'void'];
+  if (['desync', 'disagree', 'limit', 'shutdown'].includes(m.reason)) return [t('history.void'), 'void'];
   if (m.winner === null) return [t('history.draw'), 'draw'];
   if (m.you.length !== 1) return [t('history.self'), 'draw']; // 혼자 두 자리
   return m.winner === m.you[0] ? [t('history.win'), 'win'] : [t('history.lose'), 'lose'];

@@ -264,6 +264,7 @@ AI 모델을 올리면(`PUT /api/admin/ai/{game}`) 그 게임의 열린 요청�
 | `limit` | 행동 기록이 상한(5,000)에 닿음 → 무효 (`winner`는 `null`) |
 | `timeout` | 한쪽이 시간을 다 씀 → 상대 승 |
 | `agreed` | 무승부 제안을 상대가 수락함 (`winner`는 `null`) |
+| `shutdown` | 서버를 끄느라 끝냄 (재시작, 배포) → 무효 (`winner`는 `null`). 그때까지의 기보는 남습니다 |
 
 ### `error`의 `message`
 

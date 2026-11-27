@@ -10,6 +10,7 @@ import (
 
 	"github.com/shin1244/boardmadang/server/internal/identity"
 	"github.com/shin1244/boardmadang/server/internal/protocol"
+	"github.com/shin1244/boardmadang/server/internal/record"
 )
 
 const (
@@ -34,6 +35,8 @@ type Client struct {
 	conn *websocket.Conn
 	send chan []byte   // 보낼 메시지. 가득 차면 느린 클라이언트로 보고 연결을 끊습니다.
 	user identity.User // 세션 쿠키로 확인한 신원 (게스트 또는 계정)
+	// 접속한 나라 코드 (Hub.Locate). 모르면 "". 대국을 시작할 때 기보의 자리에 남깁니다
+	country string
 
 	done      chan struct{} // 닫히면 연결을 정리 중입니다. send 채널은 닫지 않습니다 (닫힌 채널에 보내면 패닉).
 	closeOnce sync.Once
@@ -237,16 +240,8 @@ func (c *Client) handle(data []byte) {
 }
 
 // validAction은 모양만 봅니다. 규칙에 맞는지는 클라이언트의 게임 로직이 판단합니다.
-// 좌표는 플랫폼 상한(rows, cols ≤ 32) 안이어야 합니다.
-func validAction(a protocol.Action) bool {
-	if a.Kind == "" || len(a.Kind) > 32 {
-		return false
-	}
-	if a.Kind == "click" {
-		return a.Row >= 0 && a.Row < 32 && a.Col >= 0 && a.Col < 32
-	}
-	return a.Row == 0 && a.Col == 0
-}
+// 좌표는 플랫폼 상한(rows, cols ≤ 32) 안이어야 합니다. AI 대국의 기보도 같은 규칙입니다 (record.ValidAction).
+func validAction(a protocol.Action) bool { return record.ValidAction(a) }
 
 // writePump는 send 채널에서 꺼내 웹소켓에 씁니다. 이 연결에 쓰는 유일한 곳입니다.
 func (c *Client) writePump() {

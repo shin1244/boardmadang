@@ -54,7 +54,8 @@ CREATE TABLE matches (
   duration_sec   REAL,                   -- 시작부터 끝까지
   actions        INTEGER NOT NULL,       -- 행동 수. 게임이 무시한 클릭도 들어 있어 "둔 수"보다 많을 수 있습니다
   reason         TEXT NOT NULL,          -- 끝난 이유: result(규칙대로 끝남), resign(기권), timeout(시간패), left(나감),
-                                         -- agreed(무승부 합의), spam(무시된 행동이 너무 많음), desync/disagree/limit(무효)
+                                         -- agreed(무승부 합의), spam(무시된 행동이 너무 많음), desync/disagree/limit(무효),
+                                         -- shutdown(서버를 끄느라 끝냄, 무효)
   winner         INTEGER,                -- 이긴 자리 0(선공) 또는 1(후공). NULL이면 무승부나 무효
   counted        INTEGER NOT NULL,       -- 판 수에 세는 대국인지. 무효, 행동 없음, 한 사람이 두 자리에 앉은 대국은 0 (로비 인기순과 같은 기준)
   clock_left0_ms INTEGER,                -- 끝났을 때 선공에게 남은 시간 (타이머가 있을 때)
@@ -70,6 +71,7 @@ CREATE TABLE match_players (
   player_id TEXT NOT NULL,                -- 탈퇴한 사람은 gone, gone-0, gone-1
   kind      TEXT NOT NULL,                -- member, guest, gone
   name      TEXT,                         -- 그때의 계정 이름 (계정만)
+  country   TEXT,                         -- 대국을 시작할 때 접속한 나라 (KR, US, …). 모르거나 이 기능 전의 대국이면 NULL
   PRIMARY KEY (match_id, seat)
 );
 CREATE INDEX match_players_player ON match_players (player_id);
@@ -83,6 +85,57 @@ CREATE TABLE match_actions (
   row      INTEGER NOT NULL,
   col      INTEGER NOT NULL,
   at_ms    INTEGER NOT NULL,              -- 대국 시작부터 지난 시간
+  PRIMARY KEY (match_id, seq)
+);
+
+-- 대국 중에 연결이 끊긴 한 번. 유예 시간(15초) 안에 돌아왔으면 back_ms가 있고, 못 돌아오면 그 대국은 left로 끝납니다.
+-- 이 기능 전의 대국에는 없습니다
+CREATE TABLE match_drops (
+  match_id TEXT NOT NULL,
+  n        INTEGER NOT NULL,              -- 그 대국에서 몇 번째 끊김인지 (0부터)
+  seat     INTEGER NOT NULL,              -- 끊긴 자리
+  at_ms    INTEGER NOT NULL,              -- 끊긴 때 (대국 시작부터)
+  back_ms  INTEGER,                       -- 돌아온 때. NULL이면 돌아오지 못했거나 그사이 대국이 끝남
+  PRIMARY KEY (match_id, n)
+);
+
+-- AI 대국 하나 (브라우저가 두는 동안 보낸 기보). 사람이 첫 수를 둔 판부터 있습니다. 이 기능 전의 AI 대국은 ai_plays의 수만 있습니다.
+-- 브라우저가 보고한 것이라 사람끼리의 대국(matches)과 따로 둡니다
+CREATE TABLE ai_matches (
+  id           TEXT PRIMARY KEY,
+  game_id      TEXT NOT NULL,
+  version      TEXT,                      -- 게임 코드 버전
+  model        TEXT,                      -- 신경망 파일 (<해시>.onnx). 모델을 바꾸면 달라집니다
+  level        TEXT NOT NULL,             -- easy, normal, hard
+  sims         INTEGER NOT NULL,          -- AI가 한 행동마다 탐색한 횟수
+  human_seat   INTEGER NOT NULL,          -- 사람이 앉은 자리 (0 선공, 1 후공)
+  player_id    TEXT NOT NULL,             -- 사람. 탈퇴했으면 gone-0, gone-1
+  player_kind  TEXT NOT NULL,             -- member, guest, gone
+  player_name  TEXT,
+  country      TEXT,                      -- 처음 보낸 때 접속한 나라. 모르면 NULL
+  started_at   TEXT,
+  ended_at     TEXT,                      -- 끝나지 않았으면 NULL
+  updated_at   TEXT NOT NULL,             -- 마지막으로 받은 때
+  day          TEXT NOT NULL,             -- 끝난 날 (끝나지 않았으면 마지막으로 받은 날)
+  duration_sec REAL,                      -- 시작부터 끝(끝나지 않았으면 마지막으로 받은 때)까지
+  actions      INTEGER NOT NULL,          -- 행동 수 (게임이 무시한 클릭 포함)
+  status       TEXT NOT NULL,             -- ended(끝까지 둠), left(끝나기 전에 나감: 화면을 닫음, 다른 판으로 넘어감), playing(내보낸 때 두는 중)
+  reason       TEXT,                      -- 끝난 이유: result(규칙대로), resign(사람이 기권), stuck(AI가 둘 수를 못 찾음). 안 끝났으면 NULL
+  winner       INTEGER,                   -- 이긴 자리. NULL이면 무승부거나 안 끝남
+  human_result TEXT                       -- 사람 쪽 결과: win, lose, draw. 안 끝났으면 NULL
+);
+CREATE INDEX ai_matches_game ON ai_matches (game_id);
+CREATE INDEX ai_matches_player ON ai_matches (player_id);
+
+-- AI 대국의 행동 하나하나 (match_actions와 같은 모양)
+CREATE TABLE ai_match_actions (
+  match_id TEXT NOT NULL,
+  seq      INTEGER NOT NULL,
+  seat     INTEGER NOT NULL,
+  kind     TEXT NOT NULL,
+  row      INTEGER NOT NULL,
+  col      INTEGER NOT NULL,
+  at_ms    INTEGER NOT NULL,
   PRIMARY KEY (match_id, seq)
 );
 
@@ -136,7 +189,7 @@ CREATE TABLE daily_countries (
   PRIMARY KEY (day, country)
 );
 
--- 날마다, 게임마다 AI 대국 수. 브라우저에서만 돌아서 기보는 없고 수만 있습니다
+-- 날마다, 게임마다 AI 대국 수 (운영 통계). 기보는 ai_matches에 있습니다 (그 기능을 넣은 뒤부터)
 CREATE TABLE ai_plays (
   day     TEXT NOT NULL,
   game_id TEXT NOT NULL,

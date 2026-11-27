@@ -482,7 +482,7 @@ const sameClick = (a, cell) => a.kind === 'click' && a.row === cell.row && a.col
 /** 결과 한 줄: [글, 색 class] */
 function outcome() {
   const { winner, reason } = ended;
-  if (['desync', 'disagree', 'limit'].includes(reason)) return [t('match.void'), 'even'];
+  if (['desync', 'disagree', 'limit', 'shutdown'].includes(reason)) return [t('match.void'), 'even'];
   if (winner === null) return [t('match.draw'), 'even'];
   return winner === seat ? [t('match.win'), 'win'] : [t('match.lose'), 'lose'];
 }

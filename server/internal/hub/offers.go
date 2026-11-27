@@ -112,7 +112,7 @@ func (h *Hub) startRematch(r *Room, players [2]*Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for _, p := range players {
-		if p.last != r || p.busy() || p.closed() {
+		if h.closing || p.last != r || p.busy() || p.closed() {
 			for _, q := range players {
 				q.Send(protocol.RematchOff{Type: protocol.TypeRematchOff})
 			}

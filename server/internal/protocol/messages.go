@@ -55,6 +55,7 @@ const (
 	ReasonLimit    = "limit"    // 행동 기록이 상한에 닿음 → 무효
 	ReasonTimeout  = "timeout"  // 한쪽이 시간을 다 씀 → 상대 승
 	ReasonAgreed   = "agreed"   // 무승부 합의
+	ReasonShutdown = "shutdown" // 서버를 끄느라 끝냄 (재시작, 배포) → 무효
 )
 
 // Action은 플레이어의 행동 하나입니다. 서버는 내용을 해석하지 않고 그대로 전달합니다.

@@ -84,10 +84,27 @@ func fixture(t *testing.T) (data, site string, alice, bob identity.User) {
 		{ID: "DDDDDDDDDD", Game: "oldgame", Players: [2]record.Player{seat(alice), seat(alice)},
 			Moves: []record.Move{click(0, 0, 0, 100)}, Winner: intp(1), Reason: protocol.ReasonResign, Started: start, Ended: start.Add(time.Second)},
 	}
+	// 첫 대국: 선공의 나라, 후공이 한 번 끊겼다가 돌아옴
+	back := int64(1500)
+	matches[0].Players[0].Country = "KR"
+	matches[0].Drops = []record.Drop{{Player: 1, At: 1000, Back: &back}}
 	for _, m := range matches {
 		records.Save(m)
 	}
 	records.Close()
+
+	// AI 대국 기보 (record.AIStore의 모양): 사람이 이긴 판과, 끝나기 전에 나간 판. users/의 목록 파일은 읽지 않습니다
+	writeFile(t, filepath.Join(data, "aimatches", "EE", "EEEEEEEEEE.json"), `{"id":"EEEEEEEEEE","game":"tictactoe","version":"v1","seed":3,"minutes":null,
+  "players":[{"id":"ai","kind":"ai","tag":""},{"id":"`+alice.ID+`","kind":"member","tag":"0001","name":"alice2","country":"KR"}],
+  "moves":[{"player":0,"action":{"kind":"click","row":1,"col":1},"at":400},{"player":1,"action":{"kind":"click","row":0,"col":0},"at":3000}],
+  "winner":1,"reason":"result","ai":{"seat":0,"level":"hard","sims":200,"model":"abc.onnx"},
+  "started":"2026-11-05T01:00:00Z","ended":"2026-11-05T01:00:30Z","updated":"2026-11-05T01:00:30Z"}`)
+	writeFile(t, filepath.Join(data, "aimatches", "FF", "FFFFFFFFFF.json"), `{"id":"FFFFFFFFFF","game":"tictactoe","seed":4,"minutes":null,
+  "players":[{"id":"g_guest1","kind":"guest","tag":"0002"},{"id":"ai","kind":"ai","tag":""}],
+  "moves":[{"player":0,"action":{"kind":"click","row":2,"col":2},"at":5000}],
+  "winner":null,"reason":"","ai":{"seat":1,"level":"easy","sims":1,"model":"abc.onnx"},
+  "started":"2026-11-05T02:00:00Z","updated":"2026-11-05T02:00:20Z"}`)
+	writeFile(t, filepath.Join(data, "aimatches", "users", alice.ID+".log"), "EEEEEEEEEE\n")
 
 	comments, err := comment.Open(data)
 	if err != nil {
@@ -195,6 +212,7 @@ func TestExport(t *testing.T) {
 		t.Errorf("Skipped = %v", sum.Skipped)
 	}
 	want := map[string]int{"games": 3, "game_releases": 2, "accounts": 2, "matches": 4, "match_players": 8, "match_actions": 7,
+		"match_drops": 1, "ai_matches": 2, "ai_match_actions": 3,
 		"comments": 2, "stars": 2, "visits": 2, "daily_visits": 2, "daily_countries": 2, "ai_plays": 1, "export_info": 2}
 	for table, n := range want {
 		if sum.Rows[table] != n {
@@ -248,6 +266,38 @@ func TestExport(t *testing.T) {
 	one(t, db, "SELECT player_id, kind, name FROM match_players WHERE match_id = 'AAAAAAAAAA' AND seat = 1", &player, &kind, &pname)
 	if player != "g_guest1" || kind != "guest" || pname.Valid {
 		t.Errorf("seat 1 = %s %s %v", player, kind, pname)
+	}
+	var country sql.NullString
+	one(t, db, "SELECT country FROM match_players WHERE match_id = 'AAAAAAAAAA' AND seat = 0", &country)
+	if country.String != "KR" {
+		t.Errorf("seat 0 country = %v", country)
+	}
+	one(t, db, "SELECT country FROM match_players WHERE match_id = 'AAAAAAAAAA' AND seat = 1", &country)
+	if country.Valid {
+		t.Errorf("seat 1 country = %v, want NULL", country)
+	}
+	var dropSeat int
+	var dropAt int64
+	var dropBack sql.NullInt64
+	one(t, db, "SELECT seat, at_ms, back_ms FROM match_drops WHERE match_id = 'AAAAAAAAAA' AND n = 0", &dropSeat, &dropAt, &dropBack)
+	if dropSeat != 1 || dropAt != 1000 || dropBack.Int64 != 1500 {
+		t.Errorf("drop = %d %d %v", dropSeat, dropAt, dropBack)
+	}
+
+	// AI 대국: 끝까지 둔 판은 사람 쪽 결과, 끝나지 않고 오래된 판은 나간 판
+	var status, level string
+	var result, reason, model sql.NullString
+	var humanSeat int
+	one(t, db, "SELECT status, human_result, reason, model, level, human_seat, country, day, duration_sec FROM ai_matches WHERE id = 'EEEEEEEEEE'",
+		&status, &result, &reason, &model, &level, &humanSeat, &country, &day, &duration)
+	if status != "ended" || result.String != "win" || reason.String != "result" || model.String != "abc.onnx" || level != "hard" ||
+		humanSeat != 1 || country.String != "KR" || day != "2026-11-05" || duration != 30 {
+		t.Errorf("ai match E = %s %v %v %v %s %d %v %s %v", status, result, reason, model, level, humanSeat, country, day, duration)
+	}
+	one(t, db, "SELECT status, human_result, reason, ended_at IS NULL, duration_sec, player_id FROM ai_matches WHERE id = 'FFFFFFFFFF'",
+		&status, &result, &reason, &n, &duration, &player)
+	if status != "left" || result.Valid || reason.Valid || n != 1 || duration != 20 || player != "g_guest1" {
+		t.Errorf("ai match F = %s %v %v %d %v %s", status, result, reason, n, duration, player)
 	}
 
 	// 지운 의견은 글을 넣지 않고, 세 명이 신고한 의견은 가려짐
